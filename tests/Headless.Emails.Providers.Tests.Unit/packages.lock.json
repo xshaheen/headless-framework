@@ -489,8 +489,10 @@
       "headless.emails.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Emails": "[1.0.0, )",
-          "Headless.Emails.Abstractions": "[1.0.0, )"
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.emails.mailkit": {

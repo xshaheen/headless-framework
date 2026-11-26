@@ -11,7 +11,7 @@ packages: Sms.Abstractions, Sms, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sm
 
 Install `Headless.Sms.Abstractions` and one provider package. Each provider package brings `Headless.Sms`, which owns `AddHeadlessSms`.
 
-- **Development and tests:** `Headless.Sms.Dev`. `UseDevelopment(path)` appends each message to a file. `UseNoop()` discards it.
+- **Development and tests:** `Headless.Sms.Dev`. `UseDevelopment()` captures each message in an in-memory inbox (`ISmsCaptureStore`), and optionally a file. `UseNoop()` discards it.
 - **International:** `Headless.Sms.Twilio`, `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip`.
 - **MENA:** `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
@@ -40,6 +40,7 @@ builder.Services.AddHeadlessSms(setup =>
 - Give each named sender a non-blank name that is unique in the call (ordinal comparison), and exactly one provider. A blank name throws `ArgumentException`. A duplicate name, or zero or several providers in one named instance, throws `InvalidOperationException`.
 - Resolve a named sender with `ISmsSenderProvider.GetSender(name)`, which throws `InvalidOperationException` for an unregistered name, or `GetSenderOrNull(name)`, which returns `null`. Both throw `ArgumentException` for a blank name. To validate a name from outside input, check `ISmsSenderProvider.RegisteredNames` first. `ISmsSenderProvider` never returns the default sender, and `RegisteredNames` does not list it.
 - Use `UseDevelopment` or `UseNoop` in development and in tests, so no real SMS leaves the machine.
+- Read what a development sender captured through `ISmsCaptureStore`, not by parsing its file. Follow new messages with `WaitForChangeAsync`, not by polling `Query`.
 - Address one recipient with `SendSingleSmsRequest.Destination` and the body with `Text`. The request has no `To` or `Message` property. `SmsRequestDestination` takes the country calling code (`Code`) and the local number (`Number`) as separate values.
 - Check `response.Success` after every send. A provider or transport failure returns a failed `SendSingleSmsResponse`. Only cancellation and argument validation (a null request, a null destination, empty text) throw. The response has `Success` and `FailureError`, not `IsSuccess` or `ErrorMessage`.
 - Never retry an `Unknown` failure automatically: a timeout or reset after sending is `Unknown`, because the provider may have delivered the message, and a retry can send it twice. A `Transient` failure means the request never left the process, so a retry is safe.
@@ -154,7 +155,7 @@ public sealed class OtpService(ISmsSender smsSender)
 }
 ```
 
-**Verify:** in a test, register `UseDevelopment(path)`, call your code, and assert that `response.Success` is `true` and the file contains the text.
+**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `ISmsCaptureStore.Query()` returns a message with the text.
 
 ### Design and runtime behavior
 
@@ -365,7 +366,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseConnekio(builder.Configuration
 
 ## Headless.Sms.Dev
 
-Development senders that deliver nothing.
+Development senders that deliver nothing. `UseDevelopment` captures every message in an in-memory inbox, `ISmsCaptureStore`, so a dev inbox page or a test can read it. It can also append a plain-text copy to a file. `UseNoop` discards every message.
 
 ### Setup
 
@@ -378,27 +379,54 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessSms(setup => setup.UseDevelopment("sms-log.txt"));
+    builder.Services.AddHeadlessSms(setup =>
+    {
+        setup.UseDevelopment(); // capture only
+        setup.AddNamed("otp", i => i.UseDevelopment("otp-sms.txt")); // also append a plain-text copy
+    });
     // Or discard: setup.UseNoop()
 }
 ```
 
-A file-writing named sender beside a real default:
+`UseDevelopment` has the usual overloads: `()`, `(string filePath)`, `(IConfiguration)`, `(Action<DevSmsOptions>)`, and `(Action<DevSmsOptions, IServiceProvider>)`. Each one is on the setup builder and on a named instance, and registers the sender as both `ISmsSender` and `IBulkSmsSender`.
+
+**Verify:** resolve `ISmsCaptureStore`, send one message, and assert that `store.Query()` returns it with your text. With a file path, the file contains the destination and the text.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `FilePath` | `null` | File to append a plain-text copy to. `null` writes no file. Must not be empty. |
+| `CaptureCapacity` | `500` | Messages the store keeps before it drops the oldest. Greater than 0. All development senders share one store, which takes the largest value any of them sets. |
+
+An invalid value fails the start with `OptionsValidationException`.
+
+### Read the captured messages
+
+Resolve `ISmsCaptureStore` from the container. It is registered only when a `UseDevelopment` sender is, so `GetService<ISmsCaptureStore>()` returning `null` means no development sender is in use.
 
 ```csharp
-builder.Services.AddHeadlessSms(setup =>
-{
-    setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio"));
-    setup.AddNamed("audit", i => i.UseDevelopment("audit-sms.txt"));
-});
+var store = app.Services.GetRequiredService<ISmsCaptureStore>();
+
+var otp = store.Query(new SmsCaptureQuery { SenderName = "otp", Search = "code", Limit = 50 });
+var parts = otp[0].Segmentation.SegmentCount;
+store.Delete(otp[0].Id);
+store.Clear();
 ```
 
-**Verify:** send one message and read the file. It contains the destination and the text.
+- `Query` returns a snapshot, newest first. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches the text and message id ignoring case, and the `+`-prefixed recipient numbers. `Limit` must be positive.
+- Each `CapturedSms` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `Destinations`, `IsBulk`, `Text`, `Segmentation`, `MessageId`, a copy of `Properties`, `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
+- A bulk send is captured once, with every recipient in `Destinations` and `IsBulk` set.
+- `Segmentation` is `SmsSegmentation.Measure(text)`: `Gsm7` when every character is in the GSM 03.38 alphabet (160 characters in one part, 153 per part when split, `€ [ ] { } ^ ~ | \` and form feed counting as two), else `Ucs2` (70 in one part, 67 per part). You can call `SmsSegmentation.Measure` in application code too, for example to warn before a send that costs several parts.
+
+To follow new messages live, wait on the version instead of polling the list: call `store.WaitForChangeAsync(version, cancellationToken)`, then `store.Query(new SmsCaptureQuery { AfterSequence = version })`, and keep the returned version. A delete or clear also bumps the version and adds nothing.
 
 ### Design and runtime behavior
 
-- `UseDevelopment(path)` appends each message to the file. `UseNoop()` discards it and returns `Succeeded()`.
-- Both senders implement `ISmsSender` and `IBulkSmsSender`, and both validate the request: a null destination or empty text throws.
+- `UseDevelopment` captures each message, appends it to `FilePath` when one is set, and returns `Succeeded(id)` with the capture id as `ProviderMessageId`. A file that cannot be written returns `Failed` with the I/O error, and the capture records it in `FailureError`.
+- Both senders implement `ISmsSender` and `IBulkSmsSender`, and both validate the request: a null destination or empty text throws, and nothing is captured.
+- The store lives in memory for the life of the process. A restart empties it. Nothing gates it on the environment, so register `UseDevelopment` only in development.
+- `UseNoop()` discards every message, captures nothing, and returns `Succeeded()`.
 
 ---
 

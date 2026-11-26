@@ -13,7 +13,7 @@ Install `Headless.Emails.Abstractions` and one provider package. Each provider p
 
 | Need | Package | Call |
 | --- | --- | --- |
-| Local development, tests | `Headless.Emails.Dev` | `UseDevelopment(path)` writes each email to a file. `UseNoop()` discards it. |
+| Local development, tests | `Headless.Emails.Dev` | `UseDevelopment()` captures each email in an in-memory inbox (`IEmailCaptureStore`), and optionally a file. `UseNoop()` discards it. |
 | Azure | `Headless.Emails.Azure` | `UseAzure(...)` sends through Azure Communication Services (ACS) Email. |
 | AWS | `Headless.Emails.Aws` | `UseAwsSes(awsOptions)` sends through AWS SES v2. |
 | Any SMTP server | `Headless.Emails.Mailkit` | `UseMailkit(...)` sends over pooled SMTP connections. |
@@ -43,6 +43,7 @@ builder.Services.AddHeadlessEmails(setup =>
 - Give each named sender a non-empty name that is unique in the call, and exactly one provider. A blank name throws `ArgumentException`. A duplicate name, or zero or several providers in one named instance, throws `InvalidOperationException`.
 - Resolve a named sender with `IEmailSenderProvider.GetSender(name)`, which throws `InvalidOperationException` for an unregistered name, or `GetSenderOrNull(name)`, which returns `null`. To validate a name from outside input, check `IEmailSenderProvider.RegisteredNames` first. `IEmailSenderProvider` never returns the default sender, and `RegisteredNames` does not list it.
 - Use `UseDevelopment` or `UseNoop` in development and in tests, gated on `builder.Environment.IsDevelopment()`, so no real email leaves the machine.
+- Read what a development sender captured through `IEmailCaptureStore` (`Query`, `Get`, `ToEml()`), not by parsing its file. Follow new emails with `WaitForChangeAsync`, not by polling `Query`.
 - Set both `From` and `Destination` on `SendSingleEmailRequest`; they are `required`. Set `MessageHtml`, `MessageText`, or both. A request with neither body throws `InvalidOperationException` from every sender except `UseNoop`, which discards everything without validation.
 - Check `response.Success` after every `SendAsync`. A provider or transport failure returns a failed `SendSingleEmailResponse` with a non-null `FailureError`. Only cancellation by your token and argument validation throw.
 - Keep an attachment's `File` memory unchanged until `SendAsync` returns. The providers read it during the send, without a copy.
@@ -95,7 +96,7 @@ builder.Services.AddHeadlessEmails(setup =>
 | `Headless.Emails.Azure` | You run on Azure and want managed-identity auth. | You need SMTP portability. | `SendAsync` waits for ACS to reach a terminal status. Managed-domain sends are limited to 5 per minute. The sender display name is ignored. |
 | `Headless.Emails.Aws` | You run on AWS and use SES. | You need SMTP portability. | A send without attachments uses the SES structured API; a send with attachments goes as raw MIME. |
 | `Headless.Emails.Mailkit` | You send through any SMTP server (SendGrid, Gmail, Outlook, on-premises). | You want a provider API with delivery events. | Pooled connections amortize connect and TLS cost. |
-| `Headless.Emails.Dev` | Local development, CI, tests. | Production. | No delivery. `UseDevelopment` writes to a file. `UseNoop` discards. |
+| `Headless.Emails.Dev` | Local development, CI, tests. | Production. | No delivery. `UseDevelopment` captures in memory and optionally a file. `UseNoop` discards. |
 
 ---
 
@@ -136,7 +137,7 @@ public sealed class NotificationService(IEmailSender emailSender, ILogger<Notifi
 }
 ```
 
-**Verify:** in a test, register `UseDevelopment(path)`, call your code, and assert that `response.Success` is `true` and the file contains the subject.
+**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `IEmailCaptureStore.Query()` returns an email with the subject.
 
 ### Design and runtime behavior
 
@@ -330,7 +331,7 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAzure(builder.Configuration
 
 ## Headless.Emails.Dev
 
-Development senders that deliver nothing.
+Development senders that deliver nothing. `UseDevelopment` captures every email in an in-memory inbox, `IEmailCaptureStore`, so a dev inbox page or a test can read it. It can also append a plain-text copy to a file. `UseNoop` discards every email.
 
 ### Setup
 
@@ -343,21 +344,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessEmails(setup => setup.UseDevelopment("path/to/emails.txt"));
-    // Or discard: setup.UseNoop()
-}
-else
-{
-    // A file-writing named sender beside a real default, keyed "audit":
     builder.Services.AddHeadlessEmails(setup =>
     {
-        setup.UseAwsSes(awsOptions);
-        setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
+        setup.UseDevelopment(); // capture only
+        setup.AddNamed("audit", i => i.UseDevelopment(o =>
+        {
+            o.FilePath = "audit-emails.txt"; // also append a plain-text copy
+            o.MaxCapturedAttachmentBytes = 256 * 1024; // keep small attachments for the .eml export
+        }));
     });
+    // Or discard: setup.UseNoop()
 }
 ```
 
-`UseDevelopment` appends each email to the file:
+`UseDevelopment` has the usual overloads: `()`, `(string filePath)`, `(IConfiguration)`, `(Action<DevEmailOptions>)`, and `(Action<DevEmailOptions, IServiceProvider>)`. Each one is on the setup builder and on a named instance.
+
+When `FilePath` is set, each email is appended to the file:
 
 ```text
 From: sender@example.com
@@ -369,12 +371,56 @@ Hello World!
 --------------------
 ```
 
-**Verify:** send one email and read the file. It ends with the message and a `--------------------` separator.
+**Verify:** resolve `IEmailCaptureStore`, send one email, and assert that `store.Query()` returns it with your subject. With a `FilePath`, the file ends with the message and a `--------------------` separator.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `FilePath` | `null` | File to append a plain-text copy to. `null` writes no file. Must not be empty. |
+| `CaptureCapacity` | `500` | Emails the store keeps before it drops the oldest. Greater than 0. All development senders share one store, which takes the largest value any of them sets. |
+| `MaxCapturedAttachmentBytes` | `0` | Largest attachment whose content the store keeps. `0` keeps only the name, content type, and size. Kept content stays in memory, so this times `CaptureCapacity` bounds the memory used. |
+
+An invalid value fails the start with `OptionsValidationException`.
+
+### Read the captured emails
+
+Resolve `IEmailCaptureStore` from the container. It is registered only when a `UseDevelopment` sender is, so `GetService<IEmailCaptureStore>()` returning `null` means no development sender is in use.
+
+```csharp
+var store = app.Services.GetRequiredService<IEmailCaptureStore>();
+
+var latest = store.Query(new EmailCaptureQuery { SenderName = "audit", Search = "invoice", Limit = 50 });
+var email = store.Get(latest[0].Id);
+var eml = email!.ToEml(); // RFC 5322 text for a "Download .eml" link
+store.Delete(email.Id);
+store.Clear();
+```
+
+- `Query` returns a snapshot, newest first. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches, ignoring case, the subject, both bodies, and every address and display name. `Limit` must be positive.
+- Each `CapturedEmail` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `From`, `To`, `Cc`, `Bcc`, `Subject`, `HtmlBody`, `TextBody`, `Attachments` (`FileName`, `ContentType`, `SizeBytes`, and `Content` when kept), `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
+- The capture copies the request's recipient lists and attachment bytes, so changing the request after the send does not change it.
+- `ToEml()` writes a MIME message with CRLF line endings: base64 UTF-8 bodies, RFC 2047 encoded non-ASCII headers, and a `Bcc` header. A kept attachment becomes a part. An attachment whose content was not kept is listed in an `X-Headless-Attachment-Omitted` header. The sender, trace id, correlation id, and failure go in `X-Headless-*` headers.
+
+To follow new emails live, for example from a server-sent events endpoint, wait on the version instead of polling the list:
+
+```csharp
+var version = store.Version;
+while (!cancellationToken.IsCancellationRequested)
+{
+    var next = await store.WaitForChangeAsync(version, cancellationToken);
+    var added = store.Query(new EmailCaptureQuery { AfterSequence = version });
+    // Push `added`. A delete or clear also bumps the version and adds nothing, so re-read the list when `added` is empty.
+    version = next;
+}
+```
 
 ### Design and runtime behavior
 
-- `UseDevelopment(string filePath)` creates the file if it does not exist and appends to it. It writes `MessageText` when present, else `MessageHtml`. Concurrent sends do not interleave. A request with no body throws `InvalidOperationException`, as the real providers do.
-- `UseNoop()` discards every request and always returns `Succeeded()`. It never validates the request.
+- `UseDevelopment` captures the email, then appends it to `FilePath` when one is set, and returns `Succeeded(id)` with the capture id as `ProviderMessageId`. The file copy writes `MessageText` when present, else `MessageHtml`. Concurrent sends do not interleave.
+- A request with no body throws `InvalidOperationException`, as the real providers do, and a file that cannot be written throws its `IOException`. Both are captured first with `FailureError` set, so the inbox shows the failed attempt.
+- The store lives in memory for the life of the process. A restart empties it. Nothing gates it on the environment, so register `UseDevelopment` only in development, as the setup above does.
+- `UseNoop()` discards every request and always returns `Succeeded()`. It never validates or captures the request.
 
 ---
 

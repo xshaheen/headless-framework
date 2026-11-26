@@ -12,7 +12,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_append_the_message_to_the_file()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -32,7 +32,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_serialize_concurrent_writes_without_corruption()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -61,7 +61,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_throw_when_missing_body()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         var request = _Request() with { MessageText = null, MessageHtml = null };
 
@@ -72,18 +72,18 @@ public sealed class DevEmailSenderTests : TestBase
     }
 
     [Fact]
-    public void should_reject_empty_path_when_constructor()
+    public void should_reject_an_empty_file_path_in_options()
     {
-        var act = () => new DevEmailSender("");
+        var result = new DevEmailOptionsValidator().Validate(new DevEmailOptions { FilePath = "" });
 
-        act.Should().Throw<ArgumentException>();
+        result.IsValid.Should().BeFalse();
     }
 
     [Fact]
     public async Task should_render_cc_and_bcc_lines_when_present()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -107,7 +107,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_omit_cc_and_bcc_lines_when_absent()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -126,7 +126,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_render_attachment_names_without_content()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -159,7 +159,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_write_html_body_when_text_is_missing()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -178,7 +178,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_prefer_text_body_when_both_bodies_present()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -197,7 +197,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_normalize_newlines_in_text_body()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -217,7 +217,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_render_display_name_in_from_header()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -238,7 +238,7 @@ public sealed class DevEmailSenderTests : TestBase
     public async Task should_honor_already_cancelled_token()
     {
         var path = Path.Combine(Path.GetTempPath(), $"emails-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevEmailSender(path);
+        using var sender = _Sender(path);
 
         try
         {
@@ -255,6 +255,14 @@ public sealed class DevEmailSenderTests : TestBase
         {
             File.Delete(path);
         }
+    }
+
+    private static DevEmailSender _Sender(string path)
+    {
+        return new DevEmailSender(
+            new DevEmailOptions { FilePath = path },
+            new EmailCaptureStore(500, TimeProvider.System)
+        );
     }
 
     private static SendSingleEmailRequest _Request(
