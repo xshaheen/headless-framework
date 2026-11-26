@@ -101,6 +101,111 @@ internal sealed class BlindIndexer(DataKeyRing ring, ICurrentTenant currentTenan
         }
     }
 
+    public async ValueTask<IReadOnlyList<BlindIndex>> ComputeAllAsync(
+        BlindIndexContext context,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(context);
+        _EnsureHashable(values);
+
+        if (values.Count == 0)
+        {
+            return [];
+        }
+
+        var scope = _ResolveScope(context);
+
+        using var key = await ring.GetOrCreateActiveAsync(
+                scope,
+                DataKeyKind.Lookup,
+                reopenShreddedScope: false,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var indexes = new BlindIndex[values.Count];
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            indexes[i] = new BlindIndex(key.Version, _Hash(key.Key, context, values[i]));
+        }
+
+        return indexes;
+    }
+
+    public async ValueTask<IReadOnlyList<IReadOnlyList<BlindIndex>>> ComputeAllCandidatesAsync(
+        BlindIndexContext context,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(context);
+        _EnsureHashable(values);
+
+        if (values.Count == 0)
+        {
+            return [];
+        }
+
+        var scope = _ResolveScope(context);
+
+        var keys = await ring.LeaseVersionsAsync(scope, DataKeyKind.Lookup, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            var candidates = new IReadOnlyList<BlindIndex>[values.Count];
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                var hashes = new BlindIndex[keys.Count];
+
+                for (var k = 0; k < keys.Count; k++)
+                {
+                    hashes[k] = new BlindIndex(keys[k].Version, _Hash(keys[k].Key, context, values[i]));
+                }
+
+                candidates[i] = hashes;
+            }
+
+            return candidates;
+        }
+        finally
+        {
+            foreach (var key in keys)
+            {
+                key.Dispose();
+            }
+        }
+    }
+
+    // Checks every value before a key is read or created, so a bad value late in a batch leaves no key behind and no
+    // partial result. The message names the position, never the value.
+    private static void _EnsureHashable(IReadOnlyList<string> values)
+    {
+        Argument.HasNoNulls(values);
+
+        for (var i = 0; i < values.Count; i++)
+        {
+            try
+            {
+                _StrictUtf8.GetByteCount(values[i]);
+            }
+            catch (EncoderFallbackException e)
+            {
+                throw new ArgumentException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"The value at index {i} is not valid UTF-16: it contains a lone surrogate."
+                    ),
+                    nameof(values),
+                    e
+                );
+            }
+        }
+    }
+
     private static byte[] _Hash(ReadOnlySpan<byte> lookupKey, BlindIndexContext context, string value)
     {
         // The purpose and a typical looked-up value are short, so both fit on the stack; a longer one uses the heap.

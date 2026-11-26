@@ -82,4 +82,52 @@ public interface IBlindIndexer
         string value,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Hashes each of <paramref name="values" /> under the scope's active lookup key, for writing a batch. Leases the key
+    /// once, so every hash uses the same version. Creates the scope's lookup key on first use.
+    /// </summary>
+    /// <remarks>
+    /// Each result equals what <see cref="ComputeAsync" /> returns for the same value under the same key version. Every
+    /// value is checked before a key is read or created, so an invalid value leaves the store unchanged.
+    /// </remarks>
+    /// <param name="context">The purpose, scope, and hash length.</param>
+    /// <param name="values">The normalized values to hash; duplicates are allowed.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>
+    /// One hash per value, in the order of <paramref name="values" />, all under one key version; empty for an empty
+    /// list, which reads no key.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="values" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">A value is <see langword="null" /> or contains a lone surrogate, which UTF-8 cannot encode.</exception>
+    /// <exception cref="DataKeyScopeShreddedException">The scope was shredded.</exception>
+    ValueTask<IReadOnlyList<BlindIndex>> ComputeAllAsync(
+        BlindIndexContext context,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Hashes each of <paramref name="values" /> under every stored lookup-key version of the scope, newest first, for
+    /// querying a batch. Reads the scope's versions from the store once per call. Never creates a key.
+    /// </summary>
+    /// <remarks>
+    /// Each entry equals what <see cref="ComputeCandidatesAsync" /> returns for the same value, and every entry uses the
+    /// same versions. Every value is checked before the store is read.
+    /// </remarks>
+    /// <param name="context">The purpose, scope, and hash length.</param>
+    /// <param name="values">The normalized values to hash; duplicates are allowed.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>
+    /// One candidate list per value, in the order of <paramref name="values" />, each with one hash per key version,
+    /// newest first. Each list is empty when the scope has no lookup key yet or was shredded. Empty for an empty list,
+    /// which reads nothing.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context" /> or <paramref name="values" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">A value is <see langword="null" /> or contains a lone surrogate, which UTF-8 cannot encode.</exception>
+    ValueTask<IReadOnlyList<IReadOnlyList<BlindIndex>>> ComputeAllCandidatesAsync(
+        BlindIndexContext context,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default
+    );
 }

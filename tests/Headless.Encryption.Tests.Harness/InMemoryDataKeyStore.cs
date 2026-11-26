@@ -14,6 +14,12 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
 
     public int InsertAttempts { get; private set; }
 
+    /// <summary>How many times a host read a scope's active key from the store.</summary>
+    public int ActiveReads { get; private set; }
+
+    /// <summary>How many times a host listed a scope's keys from the store.</summary>
+    public int ScopeListings { get; private set; }
+
     public IReadOnlyList<StoredDataKey> Snapshot()
     {
         lock (_gate)
@@ -34,6 +40,8 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
     {
         lock (_gate)
         {
+            ActiveReads++;
+
             return Task.FromResult(
                 _keys
                     .Where(k => string.Equals(k.Scope, scope, StringComparison.Ordinal) && k.Kind == kind)
@@ -46,6 +54,8 @@ public sealed class InMemoryDataKeyStore : IDataKeyStore
     {
         lock (_gate)
         {
+            ScopeListings++;
+
             return Task.FromResult<IReadOnlyList<StoredDataKey>>([
                 .. _keys.Where(k => string.Equals(k.Scope, scope, StringComparison.Ordinal)),
             ]);
