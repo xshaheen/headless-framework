@@ -25,7 +25,7 @@ internal sealed class HealthCheckMonitor(
 
     private readonly Lock _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly Dictionary<string, CheckHistory> _history = new(_NameComparer);
+    private readonly Dictionary<string, CheckHistory> _history = [with(_NameComparer)];
     private SharedRun? _inFlight;
     private long _lastRunNumber;
     private bool _disposed;
