@@ -145,6 +145,37 @@ internal sealed class SequenceNumberFormat
         return next is { } date ? _StartOf(date, policy.TimeZone) : null;
     }
 
+    /// <summary>
+    /// The first day of the period <paramref name="partition" /> names under the policy's reset, or
+    /// <see langword="null" /> when the policy never resets or the partition is not one the reset chooses.
+    /// </summary>
+    public static DateOnly? PeriodStart(SequencePolicy policy, string partition)
+    {
+        var (text, format) = policy.Reset switch
+        {
+            SequenceReset.Year => (partition, "yyyy"),
+            SequenceReset.Month => (partition, "yyyy-MM"),
+            SequenceReset.Day => (partition, "yyyy-MM-dd"),
+            SequenceReset.FiscalYear when partition.StartsWith("FY", StringComparison.Ordinal) => (
+                partition[2..],
+                "yyyy"
+            ),
+            _ => (null, null),
+        };
+
+        if (
+            text is null
+            || !DateOnly.TryParseExact(text, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)
+        )
+        {
+            return null;
+        }
+
+        return policy.Reset == SequenceReset.FiscalYear
+            ? new DateOnly(start.Year, policy.FiscalYearStartMonth, 1)
+            : start;
+    }
+
     /// <summary>The first instant whose date in <paramref name="zone" /> is <paramref name="date" /> or later, in UTC.</summary>
     private static DateTimeOffset _StartOf(DateOnly date, TimeZoneInfo zone)
     {

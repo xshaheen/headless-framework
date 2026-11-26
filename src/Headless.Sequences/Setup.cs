@@ -15,7 +15,8 @@ public static class SetupSequences
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <see cref="ISequenceGenerator" />, the gap-free <c>unit.Sequences</c> feature, and the chosen
+        /// Registers <see cref="ISequenceGenerator" />, the gap-free <c>unit.Sequences</c> feature, the read-only
+        /// <see cref="ISequenceInspector" />, and the chosen
         /// provider. Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or <c>UseSqlServer</c>) is required.
         /// </summary>
         /// <param name="configure">Chooses the provider and configures the numbering policies.</param>
@@ -58,6 +59,8 @@ public static class SetupSequences
             services.TryAddSingleton<SequenceBlocks>();
             services.TryAddSingleton<ISequenceGenerator, SequenceGenerator>();
             services.TryAddSingleton<IUnitOfWorkSequences, UnitOfWorkSequencesFeature>();
+            // Reads through the provider's ISequenceCounterReader; never issues a number.
+            services.TryAddSingleton<ISequenceInspector, SequenceInspector>();
 
             foreach (var extension in setup.Extensions)
             {
