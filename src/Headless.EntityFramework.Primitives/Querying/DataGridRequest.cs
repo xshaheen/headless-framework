@@ -8,20 +8,20 @@ namespace Headless.EntityFramework;
 [PublicAPI]
 public abstract class DataGridRequest : IDataGridRequest
 {
-    /// <summary>Optional page descriptor.</summary>
-    public IndexPageRequest? Page { get; init; }
+    /// <summary>The page to return. A data-grid query always pages.</summary>
+    public required IndexPageRequest Page { get; init; }
 
     /// <summary>Optional ordered list of sort columns.</summary>
     public List<OrderBy>? Orders { get; init; }
 }
 
 /// <summary>
-/// Contract for data-grid query requests that carry an optional page descriptor and an ordered list
+/// Contract for data-grid query requests that carry a page descriptor and an optional ordered list
 /// of sort columns.
 /// </summary>
 [PublicAPI]
 public interface IDataGridRequest : IHasMultiOrderByRequest
 {
-    /// <summary>Optional page descriptor. When <see langword="null"/> the full result set is returned.</summary>
-    IndexPageRequest? Page { get; }
+    /// <summary>The page to return. A data-grid query always pages, so a grid never reads a whole table.</summary>
+    IndexPageRequest Page { get; }
 }
