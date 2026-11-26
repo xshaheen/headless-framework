@@ -21,7 +21,7 @@ internal sealed class TusAzureContainerProvisioner(BlobServiceClient blobService
     // sibling folders such as "uploads-archive/" that are not tus uploads.
     private readonly string _blobPrefix = options.BlobPrefix.EnsureEndsWith('/');
 
-    public string Kind => "AzureBlob";
+    public string Kind => SetupTusAzure.ContainerResourceKind;
 
     public string Name => options.ContainerName;
 
@@ -39,7 +39,7 @@ internal sealed class TusAzureContainerProvisioner(BlobServiceClient blobService
         if (!exists.Value)
         {
             throw new ResourceProvisioningException(
-                $"The tus upload container '{options.ContainerName}' does not exist. Run 'resources provision -k AzureBlob' to create it."
+                $"The tus upload container '{options.ContainerName}' does not exist. Run 'resources provision -k {SetupTusAzure.ContainerResourceKind}' to create it."
             );
         }
     }

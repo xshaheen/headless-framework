@@ -24,7 +24,7 @@ internal sealed class RabbitMqTopologyProvisioner(
 
     private readonly RabbitMqMessagingOptions _options = options.Value;
 
-    public string Kind => "RabbitMQ";
+    public string Kind => SetupMessagingRabbitMq.TopologyResourceKind;
 
     public Task ProvisionAsync(MessagingTopology topology, CancellationToken cancellationToken) =>
         _RunAsync(

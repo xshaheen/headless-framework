@@ -279,6 +279,8 @@ A partitioned table keeps one range partition per calendar month of `created_at`
 | `UsePostgreSql` | `AuditLogStorageOptions.Partitioning = AuditLogPartitioning.Monthly` | the partitioned table, the partition functions, and the partitions, all through `resources provision` |
 | `UsePostgreSqlEntityFramework` | `migrationBuilder.AddHeadlessPostgreSqlAuditLogPartitions(...)` in the migration that creates the table | the partitioned table from the scaffolded `CreateTable`, the same functions, and partitions from the current month through `monthsAhead` months ahead (default 3) |
 
+With `UsePostgreSql`, `resources provision` creates the partitions as a resource of kind `AuditLogPartitions` (`SetupAuditLogPostgreSql.PartitionsResourceKind`), so `resources provision -k AuditLogPartitions` creates only the missing months.
+
 ```csharp
 // Raw PostgreSQL storage
 setup.ConfigureStorage(options =>

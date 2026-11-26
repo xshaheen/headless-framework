@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 
 namespace Headless.Encryption;
 
@@ -17,9 +18,7 @@ namespace Headless.Encryption;
 /// </remarks>
 internal sealed class EncryptionKeysProvisioner(IDataKeyManager manager, IDataKeyStore store) : IResourceProvisioner
 {
-    public const string ResourceKind = "EncryptionKeys";
-
-    public string Kind => ResourceKind;
+    public string Kind => SetupEncryption.KeysResourceKind;
 
     public string Name => "host";
 
@@ -40,7 +39,7 @@ internal sealed class EncryptionKeysProvisioner(IDataKeyManager manager, IDataKe
         {
             throw new ResourceProvisioningException(
                 $"The host-scope encryption keys are missing ({string.Join(", ", missing)}). Run "
-                    + $"'resources provision -k {ResourceKind}' to create them."
+                    + $"'resources provision -k {SetupEncryption.KeysResourceKind}' to create them."
             );
         }
     }
@@ -74,5 +73,5 @@ internal sealed class EncryptionKeysProvisioner(IDataKeyManager manager, IDataKe
 
     // The keys live in a table the schema runner creates.
     public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
-        provisioners.Where(static p => string.Equals(p.Kind, "Schema", StringComparison.Ordinal));
+        provisioners.Where(static p => string.Equals(p.Kind, SchemaRunner.ResourceKind, StringComparison.Ordinal));
 }

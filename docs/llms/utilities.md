@@ -680,13 +680,23 @@ To change a kind's check, call `services.ConfigureResourceProvisioning(o => o.St
 
 #### Resource kinds
 
-| Kind | Registered by | Name | Provision | Verify | Purge | Delete |
-| --- | --- | --- | --- | --- | --- | --- |
-| `Schema` | Every relational storage feature, one per schema contribution | `{dialect}/{schema}/{feature}`. When one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one. | Applies the missing steps, export-only contributions included | Fails on a missing step or a changed checksum | Deletes the rows of its tables, keeping host-state tables, sequences, and history | Drops its tables and sequences and deletes its history rows, so the next `provision` recreates them. A contribution that declares no objects supports neither. |
-| `EntityFramework` | `AddDbContextMigrations<TContext>()` | The context type name | Applies the pending migrations, after every `Schema` resource | Fails naming each pending migration | Unsupported | Unsupported |
-| `RabbitMQ` (any transport with topology) | `UseRabbitMq` | `topology` | Declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message, and the bindings. With dead-lettering enabled, also declares the `.dlx` exchanges and `headless_dlq.` queues those live queues use | Passively declares the lane exchanges and checks that the live queues and any configured dead-letter queues exist | Purges the queues this host consumes and their configured dead-letter queues | Deletes the queues this host consumes and their configured dead-letter queues. Keeps the exchanges. See [RabbitMQ topology](messaging/rabbitmq.md#names-and-topology). |
-| `AzureBlob` | `UseAzure` in `AddHeadlessTus` | The container name | Creates the container with `ContainerPublicAccessType` | Fails when the container does not exist | Deletes the blobs under `BlobPrefix`, every tenant's uploads included, keeping the container | Deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it (see [Tus](tus.md#headlesstusazure)) |
-| `S3Bucket` | `UseS3` in `AddHeadlessTus` | The bucket name | Creates the bucket. A bucket the account already owns counts as created. | Fails when the bucket does not exist | Deletes the store's objects under `Prefix`, every tenant's uploads included, keeping the bucket and every other object | Deletes the same objects, then the bucket only when nothing else is left in it (see [Tus](tus.md#headlesstuss3)) |
+Each kind has a public constant on the type that registers it. Compare `Kind` with the constant, never a copied string: the value is what an operator passes to `-k`, and the constant keeps the two in step.
+
+| Kind | Constant | Registered by | Name | Provision | Verify | Purge | Delete |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Schema` | `SchemaRunner.ResourceKind` | Every relational storage feature, one per schema contribution | `{dialect}/{schema}/{feature}`. When one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one. | Applies the missing steps, export-only contributions included | Fails on a missing step or a changed checksum | Deletes the rows of its tables, keeping host-state tables, sequences, and history | Drops its tables and sequences and deletes its history rows, so the next `provision` recreates them. A contribution that declares no objects supports neither. |
+| `EntityFramework` | `HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind` | `AddDbContextMigrations<TContext>()` | The context type name | Applies the pending migrations, after every `Schema` resource | Fails naming each pending migration | Unsupported | Unsupported |
+| `RabbitMQ` (any transport with topology) | `SetupMessagingRabbitMq.TopologyResourceKind` | `UseRabbitMq` | `topology` | Declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message, and the bindings. With dead-lettering enabled, also declares the `.dlx` exchanges and `headless_dlq.` queues those live queues use | Passively declares the lane exchanges and checks that the live queues and any configured dead-letter queues exist | Purges the queues this host consumes and their configured dead-letter queues | Deletes the queues this host consumes and their configured dead-letter queues. Keeps the exchanges. See [RabbitMQ topology](messaging/rabbitmq.md#names-and-topology). |
+| `AzureBlob` | `SetupTusAzure.ContainerResourceKind` | `UseAzure` in `AddHeadlessTus` | The container name | Creates the container with `ContainerPublicAccessType` | Fails when the container does not exist | Deletes the blobs under `BlobPrefix`, every tenant's uploads included, keeping the container | Deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it (see [Tus](tus.md#headlesstusazure)) |
+| `S3Bucket` | `SetupTusS3.BucketResourceKind` | `UseS3` in `AddHeadlessTus` | The bucket name | Creates the bucket. A bucket the account already owns counts as created. | Fails when the bucket does not exist | Deletes the store's objects under `Prefix`, every tenant's uploads included, keeping the bucket and every other object | Deletes the same objects, then the bucket only when nothing else is left in it (see [Tus](tus.md#headlesstuss3)) |
+
+These kinds belong to one package each, and its guide describes the operations:
+
+| Kind | Constant | Registered by |
+| --- | --- | --- |
+| `EncryptionKeys` | `SetupEncryption.KeysResourceKind` | `AddHeadlessEncryption` ([Encryption](encryption.md)) |
+| `MaxMind` | `SetupMaxMind.DatabasesResourceKind` | `UseMaxMind` ([IP geolocation](ip-geolocation.md)) |
+| `AuditLogPartitions` | `SetupAuditLogPostgreSql.PartitionsResourceKind` | `UsePostgreSql` with `AuditLogPartitioning.Monthly` ([Audit log](audit-log.md#monthly-partitions-postgresql)) |
 
 #### Provision as a development or test host starts
 
@@ -713,7 +723,43 @@ Implement `IResourceProvisioner` (`Kind`, `Name`, `ProvisionAsync`, `VerifyAsync
 - Throw `ResourceProvisioningException` from `VerifyAsync` with a message that tells the operator what to run.
 - Return `false` from `CanPurge` or `CanDelete` when that operation does not apply. Callers then skip it and report `Unsupported`, which is not a failure. Any exception an operation throws, `NotSupportedException` included, is `Failed`.
 - Override `StartupCheck` to choose `FailStart` or `None` instead of the `GateReadiness` default.
-- Override `DependsOn` to name the provisioners this one must follow. Two resources that depend on each other fail every operation with the cycle in the message.
+- Override `DependsOn` to name the provisioners this one must follow. Select them by the kind's public constant, from the [resource kinds](#resource-kinds) tables. Two resources that depend on each other fail every operation with the cycle in the message.
+
+```csharp
+// Creates reporting views over tables that the application's EF Core migrations create.
+public sealed class ReportingViewsProvisioner : IResourceProvisioner
+{
+    public string Kind => "ReportingViews";
+
+    public string Name => "views";
+
+    // Right: the constant. Wrong: p.Kind == "EntityFramework", a copy that nothing checks.
+    public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
+        provisioners.Where(static p =>
+            string.Equals(p.Kind, HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind, StringComparison.Ordinal)
+        );
+
+    public Task ProvisionAsync(CancellationToken cancellationToken) { /* CREATE OR REPLACE VIEW ... */ return Task.CompletedTask; }
+
+    public Task VerifyAsync(CancellationToken cancellationToken) { /* one cheap read */ return Task.CompletedTask; }
+
+    public bool CanPurge => false;
+
+    public bool CanDelete => false;
+
+    public Task PurgeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task DeleteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<KeyValuePair<string, string>>>([]);
+}
+
+builder.Services.AddDbContextMigrations<AppDbContext>();
+builder.Services.AddResourceProvisioner(_ => new ReportingViewsProvisioner());
+```
+
+**Verify:** `dotnet MyApp.dll resources provision` prints the `EntityFramework` line before the `ReportingViews` line, whatever the registration order.
 - Keep `Name` free of host names, connection strings, and credentials: deploy logs print it.
 
 ### Database seeders

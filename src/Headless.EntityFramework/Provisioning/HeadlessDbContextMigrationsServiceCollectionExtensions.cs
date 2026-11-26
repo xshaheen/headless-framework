@@ -12,6 +12,13 @@ namespace Headless.EntityFramework;
 public static class HeadlessDbContextMigrationsServiceCollectionExtensions
 {
     /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of every context's migrations that <see cref="AddDbContextMigrations{TContext}" />
+    /// registers. A provisioner that must run after the application's migrations, such as a seed step, selects it in its
+    /// <c>DependsOn</c>.
+    /// </summary>
+    public const string MigrationsResourceKind = "EntityFramework";
+
+    /// <summary>
     /// Registers the migrations of <typeparamref name="TContext"/> as a resource provisioner of kind
     /// <c>EntityFramework</c>, named after the context: the deployment's <c>resources provision</c> (or
     /// <c>AddDeployStepsOnStartup</c> in development) applies them, and a host start fails while one is pending.

@@ -508,7 +508,7 @@ app.MapHeadlessTus("/files").RequireAuthorization();
 app.Run();
 ```
 
-Create the container as a deploy step: `dotnet MyApp.dll resources provision -k AzureBlob`.
+Create the container as a deploy step: `dotnet MyApp.dll resources provision -k AzureBlob`. The kind's constant is `SetupTusAzure.ContainerResourceKind`.
 
 `UseAzure` takes an `IConfiguration` section, an `Action<TusAzureStoreOptions>`, or an `Action<TusAzureStoreOptions, IServiceProvider>`. It needs a `BlobServiceClient` in DI, uses an `ITusAzureBlobHttpHeadersProvider` or `ITusFileIdProvider` the application registered, adds `IHttpContextAccessor`, and registers the `AzureBlob` provisioner named after `ContainerName`.
 
@@ -692,7 +692,7 @@ builder.Services.AddHeadlessTus(tus =>
 }
 ```
 
-Create the bucket as a deploy step: `dotnet MyApp.dll resources provision -k S3Bucket`.
+Create the bucket as a deploy step: `dotnet MyApp.dll resources provision -k S3Bucket`. The kind's constant is `SetupTusS3.BucketResourceKind`.
 
 `UseS3` takes an `IConfiguration` section, an `Action<TusS3StoreOptions>`, or an `Action<TusS3StoreOptions, IServiceProvider>`. It resolves `IAmazonS3` from DI and does not configure it, uses an `ITusS3ObjectHeadersProvider` or `ITusFileIdProvider` the application registered, adds `IHttpContextAccessor`, and registers the `S3Bucket` provisioner named after `Bucket`. A store you construct, `new TusS3Store(s3, options, objectHeadersProvider, fileIdProvider, loggerFactory, timeProvider, httpContextAccessor)`, goes through `UseStore` with no provisioner and no per-tenant layout. Every parameter after `options` is optional, and invalid options throw `ValidationException`.
 

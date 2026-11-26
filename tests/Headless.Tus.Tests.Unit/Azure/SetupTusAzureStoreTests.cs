@@ -202,7 +202,8 @@ public sealed class SetupTusAzureStoreTests : TestBase
 
         // then
         provisioners.Should().ContainSingle();
-        provisioners[0].Kind.Should().Be("AzureBlob");
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        provisioners[0].Kind.Should().Be(SetupTusAzure.ContainerResourceKind).And.Be("AzureBlob");
         provisioners[0].Name.Should().Be("my-uploads");
         provisioners[0].StartupCheck.Should().Be(ResourceStartupCheck.GateReadiness);
     }

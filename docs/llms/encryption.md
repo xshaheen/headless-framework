@@ -302,7 +302,7 @@ public sealed class BeneficiaryKeyRotationJob(
 | --- | --- | --- |
 | The KEK | the operator or infrastructure-as-code. Headless never creates one | does nothing |
 | The key tables | `resources provision` (kind `Schema`) | fails the start when they are missing, naming `resources provision` |
-| The host-scope keys | `resources provision -k EncryptionKeys` | makes one read. Until it passes, readiness reports the resource missing |
+| The host-scope keys | `resources provision -k EncryptionKeys` (kind `SetupEncryption.KeysResourceKind`) | makes one read. Until it passes, readiness reports the resource missing |
 | Tenant keys | `EnsureAsync` during onboarding, or the first encryption | does nothing |
 | KEK reachability | — | the `KeyEncryptionKey` warm-up unwraps the host Data key once after start. The `warmup` readiness check stays `Unhealthy` until it succeeds. The start never waits on the key service |
 

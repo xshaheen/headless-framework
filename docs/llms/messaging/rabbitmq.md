@@ -29,7 +29,7 @@ setup.UseRabbitMq(options =>
 setup.Tune("orders.projection", consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)));
 ```
 
-Then create the topology as a deploy step, before the new release serves traffic:
+Then create the topology as a deploy step, before the new release serves traffic. Its kind is `RabbitMQ` (`SetupMessagingRabbitMq.TopologyResourceKind`):
 
 ```bash
 dotnet MyApp.dll resources provision -k RabbitMQ

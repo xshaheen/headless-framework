@@ -13,6 +13,12 @@ namespace Headless.Encryption;
 [PublicAPI]
 public static class SetupEncryption
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the host-scope data keys, which
+    /// <c>resources provision -k</c> selects and a provisioner that encrypts while it seeds selects in its <c>DependsOn</c>.
+    /// </summary>
+    public const string KeysResourceKind = "EncryptionKeys";
+
     extension(IServiceCollection services)
     {
         /// <summary>
