@@ -189,7 +189,9 @@ public sealed class BootstrapperTests : TestBase
         // when
         await hostedService.StartAsync(AbortToken);
         var executeTask = ((BackgroundService)bootstrapper).ExecuteTask!;
-        await executeTask.WaitAsync(AbortToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        await executeTask
+            .WaitAsync(AbortToken)
+            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
 
         // then: a faulted ExecuteTask would make the host rethrow it from StopAsync
         executeTask.IsCompletedSuccessfully.Should().BeTrue(executeTask.Exception?.ToString());
