@@ -32,7 +32,7 @@ public sealed class IndexPageExtensionsTests : TestBase
     {
         // given
         await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
-        var request = new TestIndexPageRequest { Index = 0, Size = 3 };
+        var request = new IndexPageRequest { Index = 0, Size = 3 };
 
         // when
         var page = await fixture.Context.Rows.ToIndexPageAsync(
@@ -69,7 +69,7 @@ public sealed class IndexPageExtensionsTests : TestBase
     {
         // given
         await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
-        var request = new TestIndexPageRequest { Index = 1, Size = 4 };
+        var request = new IndexPageRequest { Index = 1, Size = 4 };
 
         // when
         var page = await fixture.Context.Rows.ToIndexPageAsync(
@@ -265,8 +265,6 @@ public sealed class IndexPageExtensionsTests : TestBase
             await _connection.DisposeAsync();
         }
     }
-
-    private sealed class TestIndexPageRequest : IndexPageRequest;
 
     private sealed class PageDbContext(DbContextOptions<PageDbContext> options) : DbContext(options)
     {
