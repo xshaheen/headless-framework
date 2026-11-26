@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Primitives;
 
 namespace Headless;
@@ -8,8 +9,14 @@ namespace Headless;
 /// An exception that signals a business conflict (for example a uniqueness or invariant violation), carrying one
 /// or more <see cref="ErrorDescriptor"/> entries that describe the conflicting conditions.
 /// </summary>
+/// <remarks>
+/// Derive from this class to give a business conflict its own type that application code can catch by name. The API
+/// exception handler maps every derived type to the same 409 body as <see cref="ConflictException"/>, with
+/// <see cref="Errors"/> in <c>errors</c>, so the derived type needs no exception handler of its own. Pass the
+/// descriptors and your own message through the protected constructor.
+/// </remarks>
 [PublicAPI]
-public sealed class ConflictException : Exception
+public class ConflictException : Exception
 {
     /// <summary>The error code applied to conflict errors that are created without an explicit code.</summary>
     public const string DefaultErrorCode = ApiResultErrorCodes.Default;
@@ -45,6 +52,19 @@ public sealed class ConflictException : Exception
     public ConflictException(IReadOnlyList<ErrorDescriptor> errors)
         : base(_BuildErrorMessage(errors))
     {
+        Errors = errors;
+    }
+
+    /// <summary>Initializes a derived conflict exception with its own message.</summary>
+    /// <param name="message">The exception message, for logs; it never reaches the response.</param>
+    /// <param name="errors">The descriptors of all conflicting conditions, written to the response's <c>errors</c>.</param>
+    /// <param name="innerException">The exception that triggered this conflict, if any.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> or <paramref name="errors"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="errors"/> is empty.</exception>
+    protected ConflictException(string message, IReadOnlyList<ErrorDescriptor> errors, Exception? innerException = null)
+        : base(Argument.IsNotNull(message), innerException)
+    {
+        Argument.IsNotNullOrEmpty(errors);
         Errors = errors;
     }
 
