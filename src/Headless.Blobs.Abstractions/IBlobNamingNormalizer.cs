@@ -62,8 +62,5 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
     }
 }
 
-/// <summary>Exposes a provider's configured normalizer to a decorator that inserts a key segment.</summary>
-internal interface IBlobNamingNormalizerSource
-{
-    IBlobNamingNormalizer? NamingNormalizer { get; }
-}
+/// <summary>Keeps the provider's normalizer available by store name when decorators hide the underlying storage.</summary>
+internal sealed record BlobNamingNormalizerRegistration(IBlobNamingNormalizer Normalizer);

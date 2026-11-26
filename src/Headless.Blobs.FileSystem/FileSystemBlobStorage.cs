@@ -30,7 +30,7 @@ namespace Headless.Blobs.FileSystem;
 /// creates the intermediate path directories inherent to writing a blob.
 /// </para>
 /// </remarks>
-internal sealed class FileSystemBlobStorage : IBlobStorage, IBlobNamingNormalizerSource
+internal sealed class FileSystemBlobStorage : IBlobStorage
 {
     private readonly string _basePath;
     private readonly IJsonSerializer _serializer;
@@ -56,8 +56,6 @@ internal sealed class FileSystemBlobStorage : IBlobStorage, IBlobNamingNormalize
 
     // UploadAsync refuses a missing container directory (only intermediate path directories are created on write).
     public bool RequiresContainerProvisioning => true;
-
-    IBlobNamingNormalizer IBlobNamingNormalizerSource.NamingNormalizer => _normalizer;
 
     #region Upload
 
