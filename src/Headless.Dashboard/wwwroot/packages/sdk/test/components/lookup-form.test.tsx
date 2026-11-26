@@ -44,11 +44,15 @@ describe('LookupForm', () => {
     const onSubmit = vi.fn()
     const { rerender } = render(<KeyLookup onSubmit={onSubmit} />)
 
-    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    const button = screen.getByRole('button', { name: 'Look up' })
+    expect(button.getAttribute('aria-disabled')).toBeNull()
+    await user.click(button)
     expect(onSubmit).toHaveBeenCalledTimes(1)
 
     rerender(<KeyLookup isPending onSubmit={onSubmit} />)
-    await user.click(screen.getByRole('button', { name: /Look up/ }))
+    // The pending button says so to assistive technology, not only by its look.
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    await user.click(button)
     await user.type(screen.getByRole('textbox', { name: 'Key' }), 'x{Enter}')
 
     expect(onSubmit).toHaveBeenCalledTimes(1)
