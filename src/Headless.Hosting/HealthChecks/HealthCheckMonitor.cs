@@ -9,7 +9,7 @@ namespace Headless.Hosting;
 /// <summary>Runs health checks on demand and keeps a bounded history of their results.</summary>
 /// <param name="healthCheckService">Runs the checks.</param>
 /// <param name="options">The registrations, read on every call so a removed check disappears.</param>
-/// <param name="timeProvider">Stamps each run's start and each result's completion.</param>
+/// <param name="timeProvider">Stamps each result's completion.</param>
 /// <param name="aliveTag">The tag that marks a liveness check.</param>
 internal sealed class HealthCheckMonitor(
     HealthCheckService healthCheckService,
@@ -27,6 +27,7 @@ internal sealed class HealthCheckMonitor(
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Dictionary<string, CheckHistory> _history = new(_NameComparer);
     private SharedRun? _inFlight;
+    private long _lastRunNumber;
     private bool _disposed;
 
     public IReadOnlyList<HealthCheckDescriptor> GetChecks()
@@ -45,7 +46,10 @@ internal sealed class HealthCheckMonitor(
 
             started = _inFlight is null;
 #pragma warning disable CA2000 // False positive: the run owns the linked source and disposes it when the run ends.
-            run = _inFlight ??= new SharedRun(CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token));
+            run = _inFlight ??= new SharedRun(
+                CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token),
+                ++_lastRunNumber
+            );
 #pragma warning restore CA2000
             run.Waiters++;
         }
@@ -72,11 +76,13 @@ internal sealed class HealthCheckMonitor(
         Argument.IsNotNullOrWhiteSpace(name);
 
         CancellationToken lifetime;
+        long runNumber;
 
         lock (_gate)
         {
             Ensure.NotDisposed(_disposed, this);
             lifetime = _lifetime.Token;
+            runNumber = ++_lastRunNumber;
         }
 
         if (!options.Value.Registrations.Any(registration => _NameComparer.Equals(registration.Name, name)))
@@ -85,14 +91,13 @@ internal sealed class HealthCheckMonitor(
         }
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime);
-        var startedAt = timeProvider.GetUtcNow();
         var report = await healthCheckService
             .CheckHealthAsync(registration => _NameComparer.Equals(registration.Name, name), linked.Token)
             .ConfigureAwait(false);
 
         if (!linked.IsCancellationRequested)
         {
-            _Record(report, startedAt);
+            _Record(report, runNumber, sharedRun: null);
         }
 
         return report;
@@ -142,8 +147,6 @@ internal sealed class HealthCheckMonitor(
 
     private async Task _RunSharedAsync(SharedRun run)
     {
-        var startedAt = timeProvider.GetUtcNow();
-
         try
         {
             // Forced yielding keeps the run's continuation off the thread that cancels it, so a cancel never runs
@@ -152,14 +155,13 @@ internal sealed class HealthCheckMonitor(
                 .CheckHealthAsync(run.Cancellation.Token)
                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
-            if (run.Cancellation.IsCancellationRequested)
+            if (!_Record(report, run.Number, run))
             {
                 run.Completion.TrySetCanceled(run.Cancellation.Token);
 
                 return;
             }
 
-            _Record(report, startedAt);
             run.Completion.TrySetResult(report);
         }
         catch (OperationCanceledException exception)
@@ -198,22 +200,41 @@ internal sealed class HealthCheckMonitor(
             }
 
             // Nobody waits any more: a registration timeout defaults to infinite, so a hung check would otherwise hold
-            // the shared run, and every later caller, forever.
+            // the shared run, and every later caller, forever. Abandoning under the lock makes _Record's decision
+            // atomic with this one, whenever the cancellation below lands.
+            run.Abandoned = true;
+
             if (ReferenceEquals(_inFlight, run))
             {
                 _inFlight = null;
             }
+        }
 
+        // Outside the lock: Cancel runs every check's cancellation callbacks synchronously, and none of them may hold
+        // the monitor gate that GetSnapshot and every other probe take.
+        try
+        {
             run.Cancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The run finished and disposed its source between the decision above and this call: nothing to cancel.
         }
     }
 
-    private void _Record(HealthReport report, DateTimeOffset startedAt)
+    /// <summary>Records a run's results unless the shared run was abandoned or cancelled.</summary>
+    /// <returns><see langword="false"/> when <paramref name="sharedRun"/> was abandoned or cancelled.</returns>
+    private bool _Record(HealthReport report, long runNumber, SharedRun? sharedRun)
     {
         var completedAt = timeProvider.GetUtcNow();
 
         lock (_gate)
         {
+            if (sharedRun is { Abandoned: true } || sharedRun?.Cancellation.IsCancellationRequested == true)
+            {
+                return false;
+            }
+
             foreach (var (name, entry) in report.Entries)
             {
                 if (!_history.TryGetValue(name, out var history))
@@ -221,8 +242,10 @@ internal sealed class HealthCheckMonitor(
                     _history[name] = history = new CheckHistory();
                 }
 
-                // A run that started before the latest recorded one finished after it: its result is older news.
-                if (history.LatestStartedAt is { } latest && startedAt < latest)
+                // A run that started before the latest recorded one finished after it: its result is older news. Run
+                // numbers, not clock readings, order the runs, because two runs can start at one instant or across a
+                // clock step.
+                if (runNumber < history.LatestRunNumber)
                 {
                     continue;
                 }
@@ -239,9 +262,11 @@ internal sealed class HealthCheckMonitor(
                 history.Results.Enqueue(
                     new HealthCheckProbeResult(entry.Status, entry.Duration, description, completedAt)
                 );
-                history.LatestStartedAt = startedAt;
+                history.LatestRunNumber = runNumber;
             }
         }
+
+        return true;
     }
 
     private HealthCheckDescriptor _Describe(HealthCheckRegistration registration)
@@ -259,12 +284,16 @@ internal sealed class HealthCheckMonitor(
     {
         public Queue<HealthCheckProbeResult> Results { get; } = new(_HistoryDepth);
 
-        public DateTimeOffset? LatestStartedAt { get; set; }
+        public long LatestRunNumber { get; set; }
     }
 
-    private sealed class SharedRun(CancellationTokenSource cancellation)
+    private sealed class SharedRun(CancellationTokenSource cancellation, long number)
     {
         public CancellationTokenSource Cancellation { get; } = cancellation;
+
+        public long Number { get; } = number;
+
+        public bool Abandoned { get; set; }
 
         public TaskCompletionSource<HealthReport> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -3,6 +3,7 @@
 using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -403,6 +404,49 @@ public sealed class HealthCheckMonitorTests : TestBase
     }
 
     [Fact]
+    public async Task should_drop_a_slow_bulk_result_when_a_newer_single_probe_started_at_the_same_instant()
+    {
+        // given: the clock never moves, so only the start order tells the runs apart
+        var gate = new GatedCheck { FirstRunStatus = HealthStatus.Unhealthy };
+        var sut = _Create(checks => checks.AddCheck("a", gate));
+        var bulk = sut.ProbeAllAsync(AbortToken);
+        await gate.Entered.Task.WaitAsync(AbortToken);
+        await sut.ProbeAsync("a", AbortToken);
+
+        // when
+        gate.Release.SetResult();
+        await bulk;
+
+        // then
+        _History(sut.GetSnapshot(), "a")
+            .Results.Should()
+            .ContainSingle()
+            .Which.Status.Should()
+            .Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task should_start_a_new_run_after_the_health_check_service_failed()
+    {
+        // given: a health check service whose first run throws
+        var service = new FailingOnceHealthCheckService();
+        var sut = _Create(
+            static checks => checks.AddCheck("a", static () => HealthCheckResult.Healthy()),
+            configure: services => services.Replace(ServiceDescriptor.Singleton<HealthCheckService>(service))
+        );
+        var failed = async () => await sut.ProbeAllAsync(AbortToken);
+        await failed.Should().ThrowAsync<InvalidOperationException>();
+
+        // when
+        var report = await sut.ProbeAllAsync(AbortToken);
+
+        // then
+        report.Status.Should().Be(HealthStatus.Healthy);
+        service.Runs.Should().Be(2);
+        _History(sut.GetSnapshot(), "a").Results.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_not_record_a_single_probe_whose_caller_cancelled()
     {
         // given
@@ -422,7 +466,7 @@ public sealed class HealthCheckMonitorTests : TestBase
     }
 
     [Fact]
-    public async Task should_drop_history_of_a_registration_that_no_longer_exists()
+    public async Task should_omit_a_registration_that_no_longer_exists_from_the_snapshot()
     {
         // given: a removal that a test flips after the first probe
         var removeB = false;
@@ -570,6 +614,31 @@ public sealed class HealthCheckMonitorTests : TestBase
             }
 
             return new HealthCheckResult(FirstRunStatus);
+        }
+    }
+
+    private sealed class FailingOnceHealthCheckService : HealthCheckService
+    {
+        private int _runs;
+
+        public int Runs => Volatile.Read(ref _runs);
+
+        public override Task<HealthReport> CheckHealthAsync(
+            Func<HealthCheckRegistration, bool>? predicate,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Interlocked.Increment(ref _runs) == 1)
+            {
+                throw new InvalidOperationException("The health check service failed.");
+            }
+
+            var entries = new Dictionary<string, HealthReportEntry>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["a"] = new(HealthStatus.Healthy, description: null, TimeSpan.Zero, exception: null, data: null),
+            };
+
+            return Task.FromResult(new HealthReport(entries, TimeSpan.Zero));
         }
     }
 
