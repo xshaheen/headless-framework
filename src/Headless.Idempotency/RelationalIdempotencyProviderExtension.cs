@@ -83,6 +83,7 @@ internal sealed class RelationalIdempotencyProviderExtension<TOptions, TOptionsV
                 options.CommandTimeoutSeconds,
                 new IdempotencyTable(provider.Dialect, schema),
                 provider.BeginOwnedUnit,
+                provider.ByteLengthFunction,
                 provider.EnlistedAdmissionRefusal
             );
         });
@@ -108,6 +109,10 @@ internal sealed class RelationalIdempotencyProviderExtension<TOptions, TOptionsV
 /// <param name="SchemaContribution">
 /// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
 /// </param>
+/// <param name="ByteLengthFunction">
+/// The engine's function that measures a binary column in bytes, so inspection reports a stored result's size without
+/// reading it.
+/// </param>
 /// <param name="EnlistedAdmissionRefusal">
 /// Why the provider refuses an admission inside a caller's unit, or <see langword="null" /> when it accepts one.
 /// </param>
@@ -117,5 +122,6 @@ internal sealed record RelationalIdempotencyProvider(
     Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
     Action<IServiceCollection> AddUnitOfWork,
     Func<RelationalIdempotencyOptions, IdempotencyStorageOptions, SchemaContribution> SchemaContribution,
+    string ByteLengthFunction,
     string? EnlistedAdmissionRefusal = null
 );

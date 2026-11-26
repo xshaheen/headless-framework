@@ -329,6 +329,63 @@ internal sealed class InMemoryIdempotencyRecordStore(
         return ValueTask.FromResult(result);
     }
 
+    public IdempotencyStoreInfo Info { get; } =
+        new("Headless.Idempotency.InMemory", Location: null, PurgeDeletesRecords: true);
+
+    public ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The same lock-free committed snapshot PeekAsync reads, judged on one clock reading.
+        var now = timeProvider.GetUtcNow();
+
+        if (Table.Read(key) is not { } record)
+        {
+            return ValueTask.FromResult<IdempotencyRecordSnapshot?>(null);
+        }
+
+        var lease = record.Lease;
+        var isActive = lease.State == RowLeaseState.Active;
+        var isLive = _IsLive(lease, now);
+
+        // A live attempt keeps its record past retention (the purge skips it, and it may still complete).
+        if (record.RetentionUntil <= now && !isLive)
+        {
+            return ValueTask.FromResult<IdempotencyRecordSnapshot?>(null);
+        }
+
+        var status = lease.State switch
+        {
+            RowLeaseState.Settled => IdempotencyPeekStatus.Completed,
+            _ when isLive => IdempotencyPeekStatus.Pending,
+            _ => IdempotencyPeekStatus.Released,
+        };
+
+        // Generation 0 is a fresh lease's default, which no admission ever draws: the key was never admitted.
+        var snapshot = new IdempotencyRecordSnapshot
+        {
+            Key = key.ToKey(),
+            Status = status,
+            Generation = lease.Generation == 0 ? null : lease.Generation,
+            TakeoverCount = lease.TakeoverCount,
+            Fingerprint = record.Fingerprint,
+            LeaseExpiresAt = isActive ? lease.ExpiresAt : null,
+            IsLeaseExpired = isActive && !isLive,
+            RetentionUntil = record.RetentionUntil,
+            ObservedAt = now,
+            ResultContract = record.Result?.Contract,
+            ResultSizeBytes = record.Result?.Payload.Length,
+            RecoveryPoint = record.RecoveryPoint?.Name,
+            RecoveryContract = record.RecoveryPoint?.Contract,
+            RecoveryStateSizeBytes = record.RecoveryPoint?.State.Length,
+        };
+
+        return ValueTask.FromResult<IdempotencyRecordSnapshot?>(snapshot);
+    }
+
     #endregion
 
     #region Purge

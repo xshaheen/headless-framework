@@ -15,6 +15,10 @@ namespace Headless.Idempotency;
 /// <param name="BeginOwnedUnit">
 /// Begins an owned unit of work on a new connection at READ COMMITTED, through the provider's typed unit-of-work entry.
 /// </param>
+/// <param name="ByteLengthFunction">
+/// The engine's function that measures a binary column in bytes: <c>octet_length</c>, <c>DATALENGTH</c>, or
+/// <c>length</c> on a SQLite <c>BLOB</c>.
+/// </param>
 /// <param name="EnlistedAdmissionRefusal">
 /// Why an admission inside a caller's unit is refused, or <see langword="null" /> when it is accepted.
 /// </param>
@@ -25,6 +29,7 @@ internal sealed record RelationalIdempotencyStorage(
     int CommandTimeoutSeconds,
     IdempotencyTable Table,
     Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
+    string ByteLengthFunction,
     string? EnlistedAdmissionRefusal = null
 )
 {

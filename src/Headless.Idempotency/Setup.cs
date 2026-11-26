@@ -60,6 +60,7 @@ public static class SetupHeadlessIdempotency
             services.TryAddSingleton<IdempotencyRequestResolver>();
             services.TryAddSingleton<IUnitOfWorkIdempotency, UnitOfWorkIdempotencyFeature>();
             services.TryAddSingleton<IIdempotentOperations, IdempotentOperations>();
+            services.TryAddSingleton<IIdempotencyInspector, IdempotencyInspector>();
 
             // Always registered; the service itself stays idle on a fixed re-check cadence when PurgeInterval is
             // null, so the switch stays an option that configuration can flip without re-registering services.
