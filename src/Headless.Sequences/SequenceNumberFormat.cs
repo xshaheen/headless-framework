@@ -127,6 +127,63 @@ internal sealed class SequenceNumberFormat
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, policy.TimeZone).DateTime);
     }
 
+    /// <summary>The first instant after <paramref name="now" /> in the policy's next reset period, in UTC.</summary>
+    public static DateTimeOffset? NextResetAt(SequencePolicy policy, DateTimeOffset now)
+    {
+        var issuedOn = IssuedOn(policy, now);
+
+        DateOnly? next = policy.Reset switch
+        {
+            SequenceReset.Never => null,
+            SequenceReset.Day => issuedOn.AddDays(1),
+            SequenceReset.Month => new DateOnly(issuedOn.Year, issuedOn.Month, 1).AddMonths(1),
+            SequenceReset.Year => new DateOnly(issuedOn.Year + 1, 1, 1),
+            SequenceReset.FiscalYear => new DateOnly(FiscalYear(policy, issuedOn) + 1, policy.FiscalYearStartMonth, 1),
+            _ => throw new InvalidOperationException($"Unknown sequence reset '{policy.Reset}'."),
+        };
+
+        return next is { } date ? _StartOf(date, policy.TimeZone) : null;
+    }
+
+    /// <summary>The first instant whose date in <paramref name="zone" /> is <paramref name="date" /> or later, in UTC.</summary>
+    private static DateTimeOffset _StartOf(DateOnly date, TimeZoneInfo zone)
+    {
+        // Unspecified kind: the zone APIs then read the value as local time in the zone, never the machine's zone.
+        var midnight = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+
+        if (zone.IsAmbiguousTime(midnight))
+        {
+            // The larger offset is the first pass through the repeated hour.
+            return new DateTimeOffset(midnight, zone.GetAmbiguousTimeOffsets(midnight).Max()).ToUniversalTime();
+        }
+
+        if (!zone.IsInvalidTime(midnight))
+        {
+            return new DateTimeOffset(midnight, zone.GetUtcOffset(midnight)).ToUniversalTime();
+        }
+
+        // A daylight-saving jump skips midnight: find the transition instant, the first one whose local date is the
+        // new date. Every offset lies within ±14 hours, so local midnight's instant lies inside this window.
+        var low = new DateTimeOffset(midnight.AddHours(-15).Ticks, TimeSpan.Zero);
+        var high = new DateTimeOffset(midnight.AddHours(15).Ticks, TimeSpan.Zero);
+
+        while (high.Ticks - low.Ticks > 1)
+        {
+            var middle = new DateTimeOffset(low.Ticks + ((high.Ticks - low.Ticks) / 2), TimeSpan.Zero);
+
+            if (DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(middle, zone).DateTime) >= date)
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle;
+            }
+        }
+
+        return high;
+    }
+
     public string Format(SequencePolicy policy, long value, DateOnly issuedOn)
     {
         var builder = new StringBuilder();
