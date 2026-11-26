@@ -120,8 +120,9 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
     [Fact]
     public async Task should_yield_when_the_backstop_timer_wakes_less_than_a_millisecond_early()
     {
-        var clock = new EarlyWakeTimeProvider();
-        var entry = new FakeEntry(TimeSpan.FromMinutes(1));
+        // A 2 ms backstop with ±10% jitter is due at 1.8–2.2 ms, so this wake leaves 0.3–0.7 ms.
+        var clock = new EarlyWakeTimeProvider(TimeSpan.FromMicroseconds(1_500));
+        var entry = new FakeEntry(TimeSpan.FromMilliseconds(2));
         using var sut = new SettingsSnapshotHostedService(
             [entry],
             clock,
@@ -223,7 +224,7 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
-    private sealed class EarlyWakeTimeProvider : FakeTimeProvider
+    private sealed class EarlyWakeTimeProvider(TimeSpan firstWake) : FakeTimeProvider
     {
         private readonly Channel<TimeSpan> _timers = Channel.CreateUnbounded<TimeSpan>();
         private int _clockReads;
@@ -246,8 +247,7 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
-            // Wake before the jittered due instant without depending on how much jitter was chosen.
-            var delay = _firstTimer ? dueTime - TimeSpan.FromMicroseconds(500) : dueTime;
+            var delay = _firstTimer ? firstWake : dueTime;
             _firstTimer = false;
 
             var timer = base.CreateTimer(callback, state, delay, period);
