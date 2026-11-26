@@ -405,7 +405,7 @@ internal sealed partial class UnitOfWorkFactory(
     [LoggerMessage(
         EventId = 8,
         Level = LogLevel.Error,
-        Message = "Releasing a unit of work's resource after its commit failed. The commit is durable and completion callbacks still run."
+        Message = "The unit of work committed successfully, but releasing its resource failed. Completion callbacks still run."
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogCommitCleanupFaulted(ILogger logger, Exception exception);
