@@ -283,6 +283,9 @@ public sealed class PublishedPortProbesTests : TestBase
             using var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port, AbortToken);
             var answer = await probe(container ?? _Container(), _ContainerPort, client.GetStream(), AbortToken);
+
+            // Hang up before waiting on the server, which drains until the probe's side closes.
+            client.Close();
             await server;
 
             return answer;
@@ -299,6 +302,14 @@ public sealed class PublishedPortProbesTests : TestBase
 
         if (reply is null)
         {
+            // Close gracefully: send FIN, then drain until the probe hangs up. Closing with the probe's request still
+            // unread makes the OS send a reset, so the probe would read IOException instead of end-of-stream.
+            var unanswered = client.GetStream();
+            client.Client.Shutdown(SocketShutdown.Send);
+            var drain = new byte[256];
+
+            while (await unanswered.ReadAsync(drain, AbortToken) > 0) { }
+
             return;
         }
 
