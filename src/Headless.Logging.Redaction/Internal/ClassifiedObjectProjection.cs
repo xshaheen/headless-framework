@@ -33,8 +33,15 @@ namespace Headless.Logging.Internal;
 /// </para>
 /// <para>
 /// The walk stops below a fixed depth and fails closed there: a value it does not reach is printed as its type name,
-/// unless its type alone shows it is safe. A sequence is read once per log call, so a lazy query runs once and a
-/// one-shot sequence is not enumerated twice.
+/// unless its type alone shows it is safe.
+/// </para>
+/// <para>
+/// Only a materialized collection is read. A sequence that is not one (a LINQ query, an iterator, an EF Core
+/// <c>DbSet</c> or any other <see cref="IQueryable"/>) is never enumerated: enumerating it inside a log call could run a
+/// database query or throw, so it prints as its type name. An exception prints as the provider prints it, through its
+/// own <c>ToString()</c>, and is never walked: its <c>Data</c>, <c>TargetSite</c>, and members such as an EF Core
+/// <c>DbUpdateException</c>'s entries lead into graphs a provider never prints. A getter or an enumerator that throws
+/// prints a message naming the exception type and never fails the log call.
 /// </para>
 /// </remarks>
 internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvider)
@@ -94,14 +101,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         try
         {
-            // A sequence that is not a collection was enumerated by the check: the provider printing it again would
-            // run a lazy query twice, and a one-shot sequence would give it nothing or throw. Print the elements
-            // already read.
-            if (
-                !expand
-                && !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads)
-                && (shape.Kind != ShapeKind.Sequence || value is ICollection)
-            )
+            if (!expand && !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads))
             {
                 return false;
             }
@@ -150,7 +150,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         {
             case ShapeKind.Safe:
                 return false;
-            case ShapeKind.TypeClassified:
+            // A sequence the walk does not read may hold a classified element, so it fails closed.
+            case ShapeKind.TypeClassified or ShapeKind.Opaque:
                 return true;
         }
 
@@ -172,7 +173,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         if (shape.Kind == ShapeKind.Sequence)
         {
-            var items = reads.Read((IEnumerable)value);
+            // An enumerator that threw left elements unread, which may hold a classified member.
+            if (reads.Read((IEnumerable)value) is not { } items)
+            {
+                return true;
+            }
 
             // Elements past the cap are not read, so they may hold a classified member: project and truncate.
             if (items.Count > _MaxElements)
@@ -222,6 +227,13 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return;
         }
 
+        if (shape.Kind == ShapeKind.Opaque)
+        {
+            walk.Builder.Append(value.GetType().ToString());
+
+            return;
+        }
+
         walk.Projecting.Add(value);
 
         try
@@ -240,7 +252,13 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         if (shape.Kind == ShapeKind.Sequence)
         {
-            var items = walk.Reads.Read((IEnumerable)value);
+            if (walk.Reads.Read((IEnumerable)value) is not { } items)
+            {
+                builder.Append(_EnumeratorThrew(walk.Reads, value));
+
+                return;
+            }
+
             var count = Math.Min(items.Count, _MaxElements);
 
             for (var i = 0; i < count; i++)
@@ -369,14 +387,21 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         var redactor = redactorProvider.GetRedactor(classifications);
         var builder = walk.Builder;
 
-        if (value is not IEnumerable sequence || _IsSingleValue(value))
+        // A sequence the walk does not read is redacted as one value, from the text its type prints.
+        if (value is not IEnumerable sequence || _IsSingleValue(value) || !_IsMaterialized(value.GetType()))
         {
             builder.Append(_RedactScalar(redactor, value));
 
             return;
         }
 
-        var items = walk.Reads.Read(sequence);
+        if (walk.Reads.Read(sequence) is not { } items)
+        {
+            builder.Append(_EnumeratorThrew(walk.Reads, value));
+
+            return;
+        }
+
         var count = Math.Min(items.Count, _MaxElements);
         builder.Append('[');
 
@@ -414,6 +439,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             // Invariant culture keeps a pseudonym the same on every host.
             _ => redactor.Redact(value, format: null, CultureInfo.InvariantCulture),
         };
+
+    private static string _EnumeratorThrew(SequenceReads reads, object sequence) =>
+        "The enumerator threw an exception: " + reads.Failure(sequence);
 
     // A throwing getter becomes a value naming the exception type, so one bad member does not fail the log call.
     private static bool _TryGet(MemberInfo member, object instance, out object? value)
@@ -476,14 +504,29 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
     private static TypeShape _CreateComposite(Type type, HashSet<Type> inProgress)
     {
+        // A provider prints an exception through its ToString: message, stack, and inner exceptions, never its members.
+        if (typeof(Exception).IsAssignableFrom(type))
+        {
+            return TypeShape.Safe;
+        }
+
         if (typeof(IEnumerable).IsAssignableFrom(type))
         {
             var element = _ElementType(type);
 
-            // A sequence of statically safe elements is safe; otherwise each element is checked by its value.
-            return element is not null && _IsStaticallySafeDeclared(element, inProgress)
-                ? TypeShape.Safe
-                : new TypeShape(ShapeKind.Sequence, TypeClassifications: null, [], IsRecord: false);
+            // A sequence of statically safe elements is safe; otherwise each element of a collection is checked by its
+            // value, and any other sequence is not read at all.
+            if (element is not null && _IsStaticallySafeDeclared(element, inProgress))
+            {
+                return TypeShape.Safe;
+            }
+
+            return new TypeShape(
+                _IsMaterialized(type) ? ShapeKind.Sequence : ShapeKind.Opaque,
+                TypeClassifications: null,
+                [],
+                IsRecord: false
+            );
         }
 
         var members = new List<MemberShape>();
@@ -613,6 +656,41 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         || typeof(Assembly).IsAssignableFrom(type)
         || typeof(Module).IsAssignableFrom(type);
 
+    /// <summary>
+    /// Whether enumerating a value of <paramref name="type"/> only reads elements it already holds. A query, an iterator,
+    /// or an EF Core <c>DbSet</c> computes them on enumeration, which can run a database query or throw.
+    /// </summary>
+    private static bool _IsMaterialized(Type type) => _Materialized.GetOrAdd(type, static t => _ComputeMaterialized(t));
+
+    private static readonly ConcurrentDictionary<Type, bool> _Materialized = new();
+
+    private static bool _ComputeMaterialized(Type type)
+    {
+        if (typeof(IQueryable).IsAssignableFrom(type))
+        {
+            return false;
+        }
+
+        if (type.IsArray || typeof(ICollection).IsAssignableFrom(type))
+        {
+            return true;
+        }
+
+        foreach (var contract in type.GetInterfaces())
+        {
+            if (
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition() is var definition
+                && (definition == typeof(ICollection<>) || definition == typeof(IReadOnlyCollection<>))
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static Type? _ElementType(Type type)
     {
         if (type.IsArray)
@@ -728,7 +806,12 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     {
         Safe,
         TypeClassified,
+
+        /// <summary>A materialized collection, read once per log call.</summary>
         Sequence,
+
+        /// <summary>A sequence that is not a collection; it is never enumerated and prints as its type name.</summary>
+        Opaque,
         Members,
     }
 
@@ -748,41 +831,63 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         public bool ExpandsWhenCaptured { get; init; }
     }
 
+    // The elements a collection gave, or the name of the exception its enumerator threw.
+    private readonly record struct SequenceRead(List<object?>? Items, string? Failure);
+
     // A public property or a public instance field.
     private sealed record MemberShape(MemberInfo Member, DataClassificationSet? Classifications, bool StaticallySafe);
 
-    // The elements each sequence gave during one log call, so detection and rendering read the same elements and a
-    // lazy query or a one-shot sequence is enumerated once. A logged sequence whose element type is safe is passed
-    // through without being read.
+    // The elements each collection gave during one log call, so detection and rendering see the same elements even
+    // when another thread changes the collection between them, and each collection is enumerated once. A logged
+    // sequence whose element type is safe is passed through without being read.
     private sealed class SequenceReads
     {
-        private Dictionary<object, List<object?>>? _reads;
+        private Dictionary<object, SequenceRead>? _reads;
 
-        public List<object?> Read(IEnumerable sequence)
+        /// <summary>The elements read, or <see langword="null"/> when the enumerator threw.</summary>
+        public List<object?>? Read(IEnumerable sequence)
         {
-            _reads ??= new Dictionary<object, List<object?>>(ReferenceEqualityComparer.Instance);
+            _reads ??= new Dictionary<object, SequenceRead>(ReferenceEqualityComparer.Instance);
 
-            if (_reads.TryGetValue(sequence, out var items))
+            if (_reads.TryGetValue(sequence, out var read))
             {
-                return items;
+                return read.Items;
             }
 
-            items = [];
+            read = _ReadOnce(sequence);
+            _reads[sequence] = read;
 
-            foreach (var item in sequence)
+            return read.Items;
+        }
+
+        public string? Failure(object sequence) =>
+            _reads is not null && _reads.TryGetValue(sequence, out var read) ? read.Failure : null;
+
+        private static SequenceRead _ReadOnce(IEnumerable sequence)
+        {
+            List<object?> items = [];
+
+            try
             {
-                items.Add(item);
-
-                // One element past the cap is enough to know the sequence was cut.
-                if (items.Count > _MaxElements)
+                foreach (var item in sequence)
                 {
-                    break;
+                    items.Add(item);
+
+                    // One element past the cap is enough to know the sequence was cut.
+                    if (items.Count > _MaxElements)
+                    {
+                        break;
+                    }
                 }
             }
+#pragma warning disable CA1031 // A log call is the boundary: whatever a collection's enumerator throws, the entry still logs with a placeholder.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                return new SequenceRead(Items: null, ex.GetType().Name);
+            }
 
-            _reads[sequence] = items;
-
-            return items;
+            return new SequenceRead(items, Failure: null);
         }
 
         public int Capacity => _reads?.EnsureCapacity(0) ?? 0;

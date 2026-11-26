@@ -365,61 +365,99 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
-    public void should_redact_a_one_shot_sequence_without_enumerating_it_twice()
+    public void should_print_a_one_shot_sequence_as_its_type_name_without_enumerating_it()
     {
-        // given
+        // given: a sequence that gives its elements once, so reading it would leave the provider nothing
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
-        List<Customer> list = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = list.AsEnumerableOnce();
+        var customers = new CountingSequence<Customer>([new(_Email, "gold"), new("bob@example.test", "silver")]);
 
         // when
         _Logger(provider).LogInformation("Batch {Customers}", customers);
 
         // then
-        var entry = sink.Entries.Should().ContainSingle().Subject;
-        entry
-            .Text.Should()
-            .Be("Batch Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
+        customers.Enumerations.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch " + typeof(CountingSequence<Customer>));
     }
 
     [Fact]
-    public void should_print_a_one_shot_sequence_of_unclassified_values_from_one_read()
-    {
-        // given: elements typed as object must be read to prove them safe, and the sequence gives them only once
-        using var sink = new CapturingProvider();
-        using var provider = _Build(sink);
-        List<object> values = [42, "gold"];
-        var once = values.AsEnumerableOnce();
-
-        // when
-        _Logger(provider).LogInformation("Batch {Values}", once);
-
-        // then
-        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 42, gold");
-    }
-
-    [Fact]
-    public void should_run_a_lazy_query_of_unclassified_values_once()
+    public void should_not_run_a_logged_lazy_query()
     {
         // given
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var evaluations = 0;
-        object[] source = [1, "two"];
-        var values = source.Select(value =>
+        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
+        var customers = source.Select(customer =>
         {
             evaluations++;
 
-            return value;
+            return customer;
         });
 
         // when
-        _Logger(provider).LogInformation("Batch {Values}", values);
+        _Logger(provider).LogInformation("Batch {Customers}", customers);
 
         // then
-        evaluations.Should().Be(source.Length);
-        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 1, two");
+        evaluations.Should().Be(0);
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Batch " + customers.GetType());
+        entry.Properties["Customers"].Should().Be(customers.GetType().ToString());
+    }
+
+    [Fact]
+    public void should_not_enumerate_a_lazy_sequence_reached_through_an_object_graph()
+    {
+        // given: shaped like a DbContext whose DbSet property would run a query when enumerated
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var rows = new CountingSequence<Customer>([new(_Email, "gold")]);
+        var store = new Store(rows);
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Store}", store);
+
+        // then
+        rows.Enumerations.Should().Be(0);
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw Store {{ Rows = {typeof(CountingSequence<Customer>)} }}");
+    }
+
+    [Fact]
+    public void should_print_an_exception_argument_as_the_provider_would_without_walking_its_members()
+    {
+        // given: an exception whose members reach a sequence that throws when enumerated, as an EF Core
+        // DbUpdateException reaches a DbSet whose entity the model excludes
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var error = new PayloadException(new Store(new ThrowingSequence()));
+
+        // when
+        _Logger(provider).LogError("Save failed.{NewLine}{Error}", Environment.NewLine, error);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Save failed." + Environment.NewLine + error);
+        entry.Properties["Error"].Should().BeSameAs(error);
+    }
+
+    [Fact]
+    public void should_print_a_placeholder_when_a_collection_enumerator_throws_without_failing_the_call()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Batch}", new Batch(new ThrowingCollection()));
+
+        // then
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be("Saw Batch { Rows = The enumerator threw an exception: InvalidOperationException }");
     }
 
     [Fact]
@@ -438,43 +476,13 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
-    public void should_run_a_logged_lazy_query_once()
-    {
-        // given
-        using var sink = new CapturingProvider();
-        using var provider = _Build(sink);
-        var evaluations = 0;
-        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = source.Select(customer =>
-        {
-            evaluations++;
-
-            return customer;
-        });
-
-        // when
-        _Logger(provider).LogInformation("Batch {Customers}", customers);
-
-        // then
-        evaluations.Should().Be(source.Length);
-        sink.Entries.Should().ContainSingle().Which.Text.Should().NotContain("example.test");
-    }
-
-    [Fact]
-    public void should_read_a_sequence_once_for_both_detection_and_projection()
+    public void should_read_a_collection_once_for_both_detection_and_projection()
     {
         // given
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var projection = new ClassifiedObjectProjection(provider.GetRequiredService<IRedactorProvider>());
-        var evaluations = 0;
-        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = source.Select(customer =>
-        {
-            evaluations++;
-
-            return customer;
-        });
+        var customers = new CountingCollection<Customer>([new(_Email, "gold"), new("bob@example.test", "silver")]);
 
         // when
         var projected = projection.TryProject(customers, captured: false, out var text);
@@ -482,7 +490,7 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         // then
         projected.Should().BeTrue();
         text.Should().Be("Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
-        evaluations.Should().Be(source.Length);
+        customers.Enumerations.Should().Be(1);
     }
 
     [Fact]
@@ -765,6 +773,65 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         public required string Email { get; init; }
 
         public string Broken => throw new InvalidOperationException("boom");
+    }
+
+    public sealed record Store(IEnumerable<Customer> Rows);
+
+    public sealed record Batch(IReadOnlyCollection<object> Rows);
+
+    public sealed class PayloadException(Store payload) : InvalidOperationException("The save failed.")
+    {
+        public Store Payload { get; } = payload;
+    }
+
+    // A sequence that computes its elements on enumeration, the way a query does, and counts how often it ran.
+    public sealed class CountingSequence<T>(IEnumerable<T> source) : IEnumerable<T>
+    {
+        public int Enumerations { get; private set; }
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            Enumerations++;
+
+            return source.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed class CountingCollection<T>(IReadOnlyCollection<T> source) : IReadOnlyCollection<T>
+    {
+        public int Enumerations { get; private set; }
+
+        public int Count => source.Count;
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            Enumerations++;
+
+            return source.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    // Throws the way an EF Core DbSet does for an entity type the model excludes.
+    public sealed class ThrowingSequence : IEnumerable<Customer>
+    {
+        public IEnumerator<Customer> GetEnumerator() =>
+            throw new InvalidOperationException("Cannot create a DbSet for 'Customer'.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed class ThrowingCollection : IReadOnlyCollection<object>
+    {
+        public int Count => 1;
+
+        public IEnumerator<object> GetEnumerator() =>
+            throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed record Positional([PrivateData] string Email, string Tier);
