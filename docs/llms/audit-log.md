@@ -181,7 +181,8 @@ do
 - The registration decorates `IPolicyEvaluator`, so your own `IAuthorizationMiddlewareResultHandler` works in any registration order. An `IPolicyEvaluator` you register after it replaces it and stops the audit.
 - Every denial returned by `IPolicyEvaluator.AuthorizeAsync` is audited, including a call your own code makes. To check a policy without recording a denial, call `IAuthorizationService.AuthorizeAsync`.
 - Every audited denial costs one insert and commit, including anonymous traffic. Put rate limiting ahead of authorization on endpoints that attract scanners or credential stuffing.
-- A denial raised outside the authorization middleware, such as a `Results.Forbid()` returned by an endpoint, is not audited.
+- A denial from MVC's `AuthorizeFilter`, such as one added with `options.Filters.Add(new AuthorizeFilter(policy))`, is audited, because the filter evaluates through `IPolicyEvaluator` too.
+- A denial that never goes through `IPolicyEvaluator` is not audited: a `Results.Forbid()` or `Forbid()` returned by an endpoint, or a failed `IAuthorizationService.AuthorizeAsync` call your code makes.
 
 Query denials with `new AuditLogQuery { TenantId = tenantId, Action = "authorization.forbidden" }`, or both kinds with `ActionPrefix = "authorization."`.
 
