@@ -185,4 +185,46 @@ public sealed class PostgreSqlSequencesConformanceTests(PostgreSqlSequencesFixtu
     {
         return base.should_refuse_each_counter_through_the_entry_points_of_other_modes();
     }
+
+    [Fact]
+    public override Task should_leave_every_counter_unchanged_when_inspecting()
+    {
+        return base.should_leave_every_counter_unchanged_when_inspecting();
+    }
+
+    [Fact]
+    public override Task should_page_counters_in_key_order_with_no_duplicate_and_no_gap()
+    {
+        return base.should_page_counters_in_key_order_with_no_duplicate_and_no_gap();
+    }
+
+    [Fact]
+    public override Task should_filter_counters_by_tenant_name_search_and_mode()
+    {
+        return base.should_filter_counters_by_tenant_name_search_and_mode();
+    }
+
+    [Fact]
+    public override Task should_keep_only_current_partitions_of_resetting_policies_and_every_partition_of_the_others()
+    {
+        return base.should_keep_only_current_partitions_of_resetting_policies_and_every_partition_of_the_others();
+    }
+
+    [Fact]
+    public override Task should_list_partitions_newest_first_marking_the_current_one()
+    {
+        return base.should_list_partitions_newest_first_marking_the_current_one();
+    }
+
+    [Fact]
+    public override Task should_count_counters_by_mode_and_report_the_next_reset()
+    {
+        return base.should_count_counters_by_mode_and_report_the_next_reset();
+    }
+
+    [Fact]
+    public override Task should_show_the_last_formatted_number_and_when_the_counter_changed()
+    {
+        return base.should_show_the_last_formatted_number_and_when_the_counter_changed();
+    }
 }

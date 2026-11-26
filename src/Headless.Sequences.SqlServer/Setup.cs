@@ -160,6 +160,11 @@ public static class SetupSequencesSqlServer
                 sp.GetRequiredService<TimeProvider>(),
                 autocommitIncrement: SqlServerSequenceIncrement.Autocommit
             ));
+            services.TryAddSingleton<ISequenceCounterReader>(sp => new RelationalSequenceCounterReader(
+                SqlServerDialect.Instance,
+                sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value,
+                sp.GetRequiredService<TimeProvider>()
+            ));
         }
     }
 }
