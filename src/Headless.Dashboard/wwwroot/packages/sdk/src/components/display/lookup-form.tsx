@@ -5,7 +5,7 @@
 import type { FormEvent, ReactNode } from 'react'
 import type { IconComponent } from '../../icons/index.ts'
 import { Button } from '../button.tsx'
-import { cardHeading, headingRow } from './card.tsx'
+import { cardHeading, cardSurface, headingRow } from './card.tsx'
 
 export interface LookupFormProps {
   /** The card's heading, which also names its region and its search form: `Check a key`. */
@@ -57,7 +57,7 @@ export function LookupForm({
   }
 
   return (
-    <section className="flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground" aria-label={title}>
+    <section className={cardSurface} aria-label={title}>
       <header className={headingRow}>
         <h2 className={cardHeading}>
           {Icon ? <Icon /> : null}

@@ -52,7 +52,7 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
   // full card. Two columns of `Cards` need 2 × 22rem and the gap.
   return (
     <section
-      className={`flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
+      className={`${cardSurface}${wide ? ' @min-[44.75rem]:col-span-2' : ''}`}
       aria-label={title}
       aria-busy={state?.status === 'loading' || undefined}
     >
@@ -101,7 +101,8 @@ function CardStateBody({ state }: { state: CardState }) {
 
 const row = 'flex min-h-(--card-row-height) flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-1.5 ps-3.5 pe-3'
 
-/** A card surface's heading row and its heading, shared by every SDK block drawn as a card. */
+/** A card's surface, its heading row, and its heading, shared by every SDK block drawn as a card. */
+export const cardSurface = 'flex min-w-0 flex-col rounded-lg border border-border bg-card text-card-foreground'
 export const headingRow = `${row} type-nav`
 export const cardHeading = 'flex items-center gap-2 type-nav-strong'
 
