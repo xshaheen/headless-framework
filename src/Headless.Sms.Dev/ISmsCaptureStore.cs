@@ -31,10 +31,11 @@ public interface ISmsCaptureStore
     long Version { get; }
 
     /// <summary>Lists the captured messages that match <paramref name="query"/>, newest first.</summary>
-    /// <param name="query">The filters to apply, or <see langword="null"/> to list every message.</param>
+    /// <param name="query">The filters to apply. Pass <c>new()</c> to list every item.</param>
     /// <returns>A snapshot of the matching messages.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="SmsCaptureQuery.Limit"/> is zero or negative.</exception>
-    IReadOnlyList<CapturedSms> Query(SmsCaptureQuery? query = null);
+    IReadOnlyList<CapturedSms> Query(SmsCaptureQuery query);
 
     /// <summary>Gets the captured message with the given <see cref="CapturedSms.Id"/>.</summary>
     /// <param name="id">The capture identifier.</param>

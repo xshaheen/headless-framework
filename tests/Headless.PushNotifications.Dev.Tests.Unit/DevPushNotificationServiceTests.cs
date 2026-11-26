@@ -35,7 +35,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
         var response = await service.SendToDeviceAsync("device-1", request, AbortToken);
 
         // then
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         response.IsSucceeded().Should().BeTrue();
         response.ClientIdentifier.Should().Be("device-1");
         response.MessageId.Should().Be(captured.Id.ToString());
@@ -81,7 +81,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
         response.SuccessCount.Should().Be(2);
         response.FailureCount.Should().Be(0);
         response.Responses.Select(r => r.ClientIdentifier).Should().Equal("a", "b");
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         captured.IsMulticast.Should().BeTrue();
         captured.IsDataOnly.Should().BeTrue();
         captured.ClientIdentifiers.Should().Equal("a", "b");
@@ -99,7 +99,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
 
         // then
         response.SuccessCount.Should().Be(2);
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.ExceedsPayloadLimit.Should().BeTrue();
         captured.PayloadSizeBytes.Should().BeGreaterThan(CapturedPushNotification.MaxPayloadBytes);
         captured.Succeeded.Should().BeTrue();
@@ -125,7 +125,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
         await service.SendToDeviceAsync("a", new PushNotificationRequest { Title = "ط", Body = "ب" }, AbortToken);
 
         // {"notification":{"title":"ط","body":"ب"}} is 39 ASCII bytes plus two 2-byte letters.
-        _store.Query().Single().PayloadSizeBytes.Should().Be(43);
+        _store.Query(new()).Single().PayloadSizeBytes.Should().Be(43);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ArgumentException>();
-        _store.Query().Should().ContainSingle().Which.Succeeded.Should().BeFalse();
+        _store.Query(new()).Should().ContainSingle().Which.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
         ids.Add("device-2");
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.Data.Should().ContainSingle();
         captured.ClientIdentifiers.Should().ContainSingle();
     }
@@ -191,7 +191,7 @@ public sealed class DevPushNotificationServiceTests : TestBase
         await service.SendToDeviceAsync("a", new PushNotificationRequest { Title = "t", Body = "b" }, AbortToken);
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.TraceId.Should().Be(activity.TraceId.ToString());
         captured.CorrelationId.Should().Be("corr-1");
     }

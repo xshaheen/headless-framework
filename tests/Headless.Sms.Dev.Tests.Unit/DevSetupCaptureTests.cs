@@ -32,7 +32,7 @@ public sealed class DevSetupCaptureTests : TestBase
         // then
         var store = provider.GetRequiredService<ISmsCaptureStore>();
         store
-            .Query()
+            .Query(new())
             .Select(x => (x.SenderName, x.Text, x.IsBulk))
             .Should()
             .Equal(("otp", "named", true), ("", "default", false));

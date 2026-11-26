@@ -43,7 +43,7 @@ builder.Services.AddHeadlessEmails(setup =>
 - Give each named sender a non-empty name that is unique in the call, and exactly one provider. A blank name throws `ArgumentException`. A duplicate name, or zero or several providers in one named instance, throws `InvalidOperationException`.
 - Resolve a named sender with `IEmailSenderProvider.GetSender(name)`, which throws `InvalidOperationException` for an unregistered name, or `GetSenderOrNull(name)`, which returns `null`. To validate a name from outside input, check `IEmailSenderProvider.RegisteredNames` first. `IEmailSenderProvider` never returns the default sender, and `RegisteredNames` does not list it.
 - Use `UseDevelopment` or `UseNoop` in development and in tests, gated on `builder.Environment.IsDevelopment()`, so no real email leaves the machine.
-- Read what a development sender captured through `IEmailCaptureStore` (`Query`, `Get`, `ToEml()`), not by parsing its file. Follow new emails with `WaitForChangeAsync`, not by polling `Query`.
+- Read what a development sender captured through `IEmailCaptureStore` (`Query`, `Get`, `WriteEmlAsync`), not by parsing its file. Follow new emails with `WaitForChangeAsync`, not by polling `Query`.
 - Set both `From` and `Destination` on `SendSingleEmailRequest`; they are `required`. Set `MessageHtml`, `MessageText`, or both. A request with neither body throws `InvalidOperationException` from every sender except `UseNoop`, which discards everything without validation.
 - Check `response.Success` after every `SendAsync`. A provider or transport failure returns a failed `SendSingleEmailResponse` with a non-null `FailureError`. Only cancellation by your token and argument validation throw.
 - Keep an attachment's `File` memory unchanged until `SendAsync` returns. The providers read it during the send, without a copy.
@@ -137,7 +137,7 @@ public sealed class NotificationService(IEmailSender emailSender, ILogger<Notifi
 }
 ```
 
-**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `IEmailCaptureStore.Query()` returns an email with the subject.
+**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `IEmailCaptureStore.Query(new())` returns an email with the subject.
 
 ### Design and runtime behavior
 
@@ -371,7 +371,7 @@ Hello World!
 --------------------
 ```
 
-**Verify:** resolve `IEmailCaptureStore`, send one email, and assert that `store.Query()` returns it with your subject. With a `FilePath`, the file ends with the message and a `--------------------` separator.
+**Verify:** resolve `IEmailCaptureStore`, send one email, and assert that `store.Query(new())` returns it with your subject. With a `FilePath`, the file ends with the message and a `--------------------` separator.
 
 ### Configuration
 
@@ -379,7 +379,7 @@ Hello World!
 | --- | --- | --- |
 | `FilePath` | `null` | File to append a plain-text copy to. `null` writes no file. Must not be empty. |
 | `CaptureCapacity` | `500` | Emails the store keeps before it drops the oldest. Greater than 0. All development senders share one store, which takes the largest value any of them sets. |
-| `MaxCapturedAttachmentBytes` | `0` | Largest attachment whose content the store keeps. `0` keeps only the name, content type, and size. Kept content stays in memory, so this times `CaptureCapacity` bounds the memory used. |
+| `MaxCapturedAttachmentBytes` | `0` | Largest attachment whose content the store keeps. `0` keeps only the name, content type, and size. The limit applies to each attachment, and kept content stays in memory: with limit L and at most K attachments per email, it can reach `CaptureCapacity` × K × L bytes. |
 
 An invalid value fails the start with `OptionsValidationException`.
 
@@ -392,15 +392,15 @@ var store = app.Services.GetRequiredService<IEmailCaptureStore>();
 
 var latest = store.Query(new EmailCaptureQuery { SenderName = "audit", Search = "invoice", Limit = 50 });
 var email = store.Get(latest[0].Id);
-var eml = email!.ToEml(); // RFC 5322 text for a "Download .eml" link
+await email!.WriteEmlAsync(response.Body, cancellationToken); // a "Download .eml" response
 store.Delete(email.Id);
 store.Clear();
 ```
 
-- `Query` returns a snapshot, newest first. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches, ignoring case, the subject, both bodies, and every address and display name. `Limit` must be positive.
+- `Query` takes a query (`new()` lists everything) and returns a snapshot, newest first. `Sequence` is the order: it increases strictly with each capture, and `CapturedAt` never runs backwards against it. `Id` is unique, not ordered. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches, ignoring case, the subject, both bodies, and every address and display name. `Limit` must be positive.
 - Each `CapturedEmail` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `From`, `To`, `Cc`, `Bcc`, `Subject`, `HtmlBody`, `TextBody`, `Attachments` (`FileName`, `ContentType`, `SizeBytes`, and `Content` when kept), `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
 - The capture copies the request's recipient lists and attachment bytes, so changing the request after the send does not change it.
-- `ToEml()` writes a MIME message with CRLF line endings: base64 UTF-8 bodies, RFC 2047 encoded non-ASCII headers, and a `Bcc` header. A kept attachment becomes a part. An attachment whose content was not kept is listed in an `X-Headless-Attachment-Omitted` header. The sender, trace id, correlation id, and failure go in `X-Headless-*` headers.
+- `WriteEmlAsync(stream)` writes the message the SMTP and SES providers would send, with CRLF line endings and a `Bcc` header. A kept attachment becomes a part. An attachment whose content was not kept is listed in an `X-Headless-Attachment-Omitted` header. The sender, trace id, correlation id, and failure go in `X-Headless-*` headers.
 
 To follow new emails live, for example from a server-sent events endpoint, wait on the version instead of polling the list:
 
@@ -414,6 +414,44 @@ while (!cancellationToken.IsCancellationRequested)
     version = next;
 }
 ```
+
+### Assert on captured emails in tests
+
+`AddHeadlessEmails` accepts one call per service collection, so a test host cannot add a second registration over the app's. Choose the development provider by environment in `Program.cs`, then run the test host in that environment:
+
+```csharp no-compile
+// Program.cs
+builder.Services.AddHeadlessEmails(setup =>
+{
+    if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+    {
+        setup.UseDevelopment(); // capture only, no file
+    }
+    else
+    {
+        setup.UseMailkit(builder.Configuration.GetSection("Smtp"));
+    }
+});
+
+// Test
+public sealed class SignupTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task sends_the_welcome_email()
+    {
+        var app = factory.WithWebHostBuilder(b => b.UseEnvironment("Testing"));
+        var store = app.Services.GetRequiredService<IEmailCaptureStore>();
+        store.Clear(); // the store is a process-wide singleton; clear it so earlier tests do not leak in
+
+        await app.CreateClient().PostAsJsonAsync("/signup", new { email = "lina@example.com" });
+
+        var email = store.Query(new EmailCaptureQuery { Search = "lina@example.com" }).Should().ContainSingle().Subject;
+        email.Subject.Should().Be("Welcome");
+    }
+}
+```
+
+The store is shared by every test that uses the same host, so run such tests in one xUnit collection, or filter `Query` by a value unique to the test (a recipient or `SenderName`).
 
 ### Design and runtime behavior
 

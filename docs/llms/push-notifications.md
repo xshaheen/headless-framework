@@ -257,7 +257,7 @@ else
 
 `UseDevelopment` has the usual overloads: `()`, `(IConfiguration)`, `(Action<DevPushNotificationOptions>)`, and `(Action<DevPushNotificationOptions, IServiceProvider>)`. Each one is on the setup builder and on a named instance.
 
-**Verify:** resolve `IPushNotificationCaptureStore`, call `SendToDeviceAsync`, and assert that it returns `IsSucceeded()` and `store.Query()` returns the notification. With `UseNoop`, `SendToDeviceAsync` returns `IsSucceeded()` with a GUID `MessageId`.
+**Verify:** resolve `IPushNotificationCaptureStore`, call `SendToDeviceAsync`, and assert that it returns `IsSucceeded()` and `store.Query(new())` returns the notification. With `UseNoop`, `SendToDeviceAsync` returns `IsSucceeded()` with a GUID `MessageId`.
 
 ### Configuration
 
@@ -278,12 +278,50 @@ var rejected = store.Query(new PushNotificationCaptureQuery { SenderName = "ios"
 store.Clear();
 ```
 
-- `Query` returns a snapshot, newest first. `SenderName` matches exactly; the default service's name is the empty string. `Search` matches, ignoring case, the title, the body, every client identifier, and every data key and value. `Limit` must be positive.
+- `Query` takes a query (`new()` lists everything) and returns a snapshot, newest first. `Sequence` is the order: it increases strictly with each capture, and `CapturedAt` never runs backwards against it. `Id` is unique, not ordered. `SenderName` matches exactly; the default service's name is the empty string. `Search` matches, ignoring case, the title, the body, every client identifier, and every data key and value. `Limit` must be positive.
 - Each `CapturedPushNotification` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `ClientIdentifiers`, `IsMulticast`, `Title`, `Body`, `IsDataOnly`, a copy of `Data`, the delivery options (`CollapseKey`, `Badge`, `Sound`, `Priority`, `TimeToLive`), `PayloadSizeBytes`, `ExceedsPayloadLimit`, `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
 - A multicast is captured once, with every identifier in `ClientIdentifiers`.
 - `PayloadSizeBytes` is the UTF-8 size of a provider-neutral JSON payload of the title, body, sound, badge, and data. It approximates the wire size; Firebase and APNs each add their own envelope. `CapturedPushNotification.MaxPayloadBytes` is 4096.
 
 To follow new notifications live, call `store.WaitForChangeAsync(version, cancellationToken)`, then `store.Query(new PushNotificationCaptureQuery { AfterSequence = version })`, and keep the returned version. A delete or clear also bumps the version and adds nothing.
+
+### Assert on captured push notifications in tests
+
+`AddHeadlessPushNotifications` accepts one call per service collection, so a test host cannot add a second registration over the app's. Choose the development provider by environment in `Program.cs`, then run the test host in that environment:
+
+```csharp no-compile
+// Program.cs
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+    {
+        setup.UseDevelopment();
+    }
+    else
+    {
+        setup.UseFirebase(builder.Configuration.GetSection("Firebase"));
+    }
+});
+
+// Test
+public sealed class SignupTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task notifies_the_customer()
+    {
+        var app = factory.WithWebHostBuilder(b => b.UseEnvironment("Testing"));
+        var store = app.Services.GetRequiredService<IPushNotificationCaptureStore>();
+        store.Clear(); // the store is a process-wide singleton; clear it so earlier tests do not leak in
+
+        await app.CreateClient().PostAsync("/orders/42/ship", content: null);
+
+        var push = store.Query(new PushNotificationCaptureQuery { Search = "order" }).Should().ContainSingle().Subject;
+        push.ExceedsPayloadLimit.Should().BeFalse();
+    }
+}
+```
+
+The store is shared by every test that uses the same host, so run such tests in one xUnit collection, or filter `Query` by a value unique to the test (a recipient or `SenderName`).
 
 ### Design and runtime behavior
 

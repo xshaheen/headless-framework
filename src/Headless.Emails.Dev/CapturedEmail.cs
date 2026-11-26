@@ -12,16 +12,16 @@ namespace Headless.Emails;
 [PublicAPI]
 public sealed record CapturedEmail
 {
-    /// <summary>Gets the capture identifier, unique within the process and ordered by capture time.</summary>
+    /// <summary>Gets the capture identifier, unique within the process. Order captures by <see cref="Sequence"/>, not by this value.</summary>
     public Guid Id { get; init; }
 
     /// <summary>
-    /// Gets the store <see cref="IEmailCaptureStore.Version"/> at which this email was captured. Pass it as
+    /// Gets the store <see cref="IEmailCaptureStore.Version"/> at which this email was captured. Sequences increase strictly in capture order, so this is the ordering key. Pass it as
     /// <see cref="EmailCaptureQuery.AfterSequence"/> to read only the emails captured after it.
     /// </summary>
     public long Sequence { get; init; }
 
-    /// <summary>Gets the time the send ran, read from the registered <see cref="TimeProvider"/>.</summary>
+    /// <summary>Gets the time the send was captured, read from the registered <see cref="TimeProvider"/>. Never earlier than the capture before it.</summary>
     public DateTimeOffset CapturedAt { get; init; }
 
     /// <summary>
@@ -77,17 +77,22 @@ public sealed record CapturedEmail
     public string? CorrelationId { get; init; }
 
     /// <summary>
-    /// Serializes the email as an RFC 5322 MIME message, the content of an <c>.eml</c> file that mail clients open.
+    /// Writes the email as an RFC 5322 MIME message, the content of an <c>.eml</c> file that mail clients open.
     /// </summary>
-    /// <returns>The message text, with CRLF line endings.</returns>
+    /// <param name="destination">The stream to write the message to. It stays open.</param>
+    /// <param name="cancellationToken">A token to cancel the write.</param>
+    /// <returns>A task that completes when the message is written.</returns>
     /// <remarks>
-    /// Bodies and kept attachments are base64-encoded UTF-8. The <c>Bcc</c> header is written, so the file shows
-    /// every recipient. An attachment whose content was not kept is listed in an
-    /// <c>X-Headless-Attachment-Omitted</c> header instead of an empty part.
+    /// The message is built by the same converter the SMTP and SES providers send with. The <c>Bcc</c> header is
+    /// written, so the file shows every recipient. An attachment whose content was not kept is listed in an
+    /// <c>X-Headless-Attachment-Omitted</c> header instead of an empty part. The sender, trace id, correlation id, and
+    /// failure go in <c>X-Headless-*</c> headers.
     /// </remarks>
-    public string ToEml()
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">The write was canceled.</exception>
+    public Task WriteEmlAsync(Stream destination, CancellationToken cancellationToken = default)
     {
-        return EmlWriter.Write(this);
+        return Dev.CapturedEmailMime.WriteAsync(this, destination, cancellationToken);
     }
 }
 

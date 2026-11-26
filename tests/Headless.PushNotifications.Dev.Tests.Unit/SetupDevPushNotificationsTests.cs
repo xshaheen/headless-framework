@@ -36,7 +36,7 @@ public sealed class SetupDevPushNotificationsTests : TestBase
         provider.GetRequiredService<IPushNotificationService>().Should().BeOfType<DevPushNotificationService>();
         var store = provider.GetRequiredService<IPushNotificationCaptureStore>();
         store.Capacity.Should().Be(500);
-        store.Query().Select(x => x.SenderName).Should().Equal("ios", "");
+        store.Query(new()).Select(x => x.SenderName).Should().Equal("ios", "");
     }
 
     [Fact]

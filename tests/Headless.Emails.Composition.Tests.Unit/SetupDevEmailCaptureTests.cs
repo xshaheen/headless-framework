@@ -30,7 +30,7 @@ public sealed class SetupDevEmailCaptureTests : TestBase
         // then
         var store = provider.GetRequiredService<IEmailCaptureStore>();
         store.Should().BeSameAs(provider.GetRequiredService<IEmailCaptureStore>());
-        store.Query().Select(x => (x.SenderName, x.Subject)).Should().Equal(("audit", "named"), ("", "default"));
+        store.Query(new()).Select(x => (x.SenderName, x.Subject)).Should().Equal(("audit", "named"), ("", "default"));
     }
 
     [Fact]

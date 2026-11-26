@@ -38,7 +38,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
         var response = await sender.SendAsync(request, AbortToken);
 
         // then
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         response.Success.Should().BeTrue();
         response.ProviderMessageId.Should().Be(captured.Id.ToString());
         captured.SenderName.Should().Be("audit");
@@ -73,7 +73,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
         bytes[0] = (byte)'z';
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.To.Should().ContainSingle();
         captured.Attachments.Single().Content!.Value.ToArray().Should().Equal("abc"u8.ToArray());
     }
@@ -106,7 +106,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
         await sender.SendAsync(request, AbortToken);
 
         // then
-        var attachments = _store.Query().Single().Attachments;
+        var attachments = _store.Query(new()).Single().Attachments;
         attachments[0]
             .Should()
             .BeEquivalentTo(
@@ -142,7 +142,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
 
         await sender.SendAsync(request, AbortToken);
 
-        _store.Query().Single().Attachments.Single().Content.HasValue.Should().BeFalse();
+        _store.Query(new()).Single().Attachments.Single().Content.HasValue.Should().BeFalse();
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         captured.Succeeded.Should().BeFalse();
         captured.FailureError.Should().Contain("MessageHtml or MessageText");
     }
@@ -174,7 +174,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
 
         // then
         await act.Should().ThrowAsync<DirectoryNotFoundException>();
-        _store.Query().Should().ContainSingle().Which.Succeeded.Should().BeFalse();
+        _store.Query(new()).Should().ContainSingle().Which.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
         await sender.SendAsync(_Request(), AbortToken);
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.TraceId.Should().Be(activity.TraceId.ToString());
         captured.CorrelationId.Should().Be("corr-1");
     }
@@ -212,7 +212,7 @@ public sealed class DevEmailSenderCaptureTests : TestBase
             Activity.Current = previous;
         }
 
-        _store.Query().Single().TraceId.Should().BeNull();
+        _store.Query(new()).Single().TraceId.Should().BeNull();
     }
 
     private static SendSingleEmailRequest _Request()

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Collections;
 
 namespace Headless.PushNotifications.Dev;
 
@@ -10,181 +11,59 @@ namespace Headless.PushNotifications.Dev;
 internal sealed class PushNotificationCaptureStore(int capacity, TimeProvider timeProvider)
     : IPushNotificationCaptureStore
 {
-    private readonly Lock _lock = new();
+    private readonly VersionedRingBuffer<CapturedPushNotification> _buffer = new(capacity);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
-    // Oldest first; capacity is small enough that RemoveAt(0) and linear lookups cost less than an index would.
-    private readonly List<CapturedPushNotification> _items = [];
-    private long _version;
-    private TaskCompletionSource<long> _changed = _NewSignal();
+    public int Capacity => _buffer.Capacity;
 
-    public int Capacity { get; } = Argument.IsPositive(capacity);
+    public int Count => _buffer.Count;
 
-    public int Count
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _items.Count;
-            }
-        }
-    }
-
-    public long Version
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _version;
-            }
-        }
-    }
+    public long Version => _buffer.Version;
 
     /// <summary>Stamps <paramref name="draft"/> with its id, sequence, and capture time, and stores it.</summary>
+    /// <param name="draft">The captured values, without an id, sequence, or capture time.</param>
+    /// <returns>The stored item.</returns>
     public CapturedPushNotification Add(CapturedPushNotification draft)
     {
-        var now = _timeProvider.GetUtcNow();
-        CapturedPushNotification item;
-        TaskCompletionSource<long> signal;
-
-        lock (_lock)
+        // The clock is read under the buffer's lock, so capture times never run backwards against the sequence.
+        return _buffer.Add(sequence =>
         {
-            item = draft with { Id = Guid.CreateVersion7(now), Sequence = ++_version, CapturedAt = now };
-            _items.Add(item);
+            var now = _timeProvider.GetUtcNow();
 
-            if (_items.Count > Capacity)
+            return draft with
             {
-                _items.RemoveAt(0);
-            }
-
-            signal = _SwapSignal();
-        }
-
-        signal.TrySetResult(item.Sequence);
-
-        return item;
+                Id = Guid.CreateVersion7(now),
+                Sequence = sequence,
+                CapturedAt = now,
+            };
+        });
     }
 
-    public IReadOnlyList<CapturedPushNotification> Query(PushNotificationCaptureQuery? query = null)
+    public IReadOnlyList<CapturedPushNotification> Query(PushNotificationCaptureQuery query)
     {
-        if (query?.Limit is { } limit)
-        {
-            Argument.IsPositive(limit);
-        }
+        Argument.IsNotNull(query);
 
-        var result = new List<CapturedPushNotification>();
-
-        lock (_lock)
-        {
-            for (var i = _items.Count - 1; i >= 0; i--)
-            {
-                var item = _items[i];
-
-                if (query is not null && !_Matches(item, query))
-                {
-                    continue;
-                }
-
-                result.Add(item);
-
-                if (result.Count == query?.Limit)
-                {
-                    break;
-                }
-            }
-        }
-
-        return result;
+        return _buffer.ToListNewestFirst(item => _Matches(item, query), query.Limit);
     }
 
     public CapturedPushNotification? Get(Guid id)
     {
-        lock (_lock)
-        {
-            return _items.Find(x => x.Id == id);
-        }
+        return _buffer.Find(item => item.Id == id);
     }
 
     public bool Delete(Guid id)
     {
-        TaskCompletionSource<long> signal;
-        long version;
-
-        lock (_lock)
-        {
-            var index = _items.FindIndex(x => x.Id == id);
-
-            if (index < 0)
-            {
-                return false;
-            }
-
-            _items.RemoveAt(index);
-            version = ++_version;
-            signal = _SwapSignal();
-        }
-
-        signal.TrySetResult(version);
-
-        return true;
+        return _buffer.Remove(item => item.Id == id);
     }
 
     public int Clear()
     {
-        TaskCompletionSource<long> signal;
-        long version;
-        int removed;
-
-        lock (_lock)
-        {
-            removed = _items.Count;
-
-            if (removed == 0)
-            {
-                return 0;
-            }
-
-            _items.Clear();
-            version = ++_version;
-            signal = _SwapSignal();
-        }
-
-        signal.TrySetResult(version);
-
-        return removed;
+        return _buffer.Clear();
     }
 
-    public async ValueTask<long> WaitForChangeAsync(long knownVersion, CancellationToken cancellationToken = default)
+    public ValueTask<long> WaitForChangeAsync(long knownVersion, CancellationToken cancellationToken = default)
     {
-        Task<long> changed;
-
-        lock (_lock)
-        {
-            if (_version != knownVersion)
-            {
-                return _version;
-            }
-
-            changed = _changed.Task;
-        }
-
-        return await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private TaskCompletionSource<long> _SwapSignal()
-    {
-        var previous = _changed;
-        _changed = _NewSignal();
-
-        return previous;
-    }
-
-    private static TaskCompletionSource<long> _NewSignal()
-    {
-        // Waiters resume off the thread that completes the signal, so a capture never runs a dashboard's continuation.
-        return new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        return _buffer.WaitForChangeAsync(knownVersion, cancellationToken);
     }
 
     private static bool _Matches(CapturedPushNotification item, PushNotificationCaptureQuery query)

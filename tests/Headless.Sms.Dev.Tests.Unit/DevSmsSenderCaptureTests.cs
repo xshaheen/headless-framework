@@ -31,7 +31,7 @@ public sealed class DevSmsSenderCaptureTests : TestBase
         var response = await sender.SendAsync(request, AbortToken);
 
         // then
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         response.Success.Should().BeTrue();
         response.ProviderMessageId.Should().Be(captured.Id.ToString());
         captured.SenderName.Should().Be("otp");
@@ -65,7 +65,7 @@ public sealed class DevSmsSenderCaptureTests : TestBase
 
         // then
         response.Results.Should().HaveCount(3);
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         captured.IsBulk.Should().BeTrue();
         captured.Destinations.Should().HaveCount(3);
         captured.Segmentation.Encoding.Should().Be(SmsEncoding.Ucs2);
@@ -93,7 +93,7 @@ public sealed class DevSmsSenderCaptureTests : TestBase
         destinations.Add(new SmsRequestDestination(20, "2"));
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.Properties.Should().ContainSingle();
         captured.Destinations.Should().ContainSingle();
     }
@@ -110,7 +110,7 @@ public sealed class DevSmsSenderCaptureTests : TestBase
 
         // then
         response.Success.Should().BeFalse();
-        var captured = _store.Query().Should().ContainSingle().Subject;
+        var captured = _store.Query(new()).Should().ContainSingle().Subject;
         captured.Succeeded.Should().BeFalse();
         captured.FailureError.Should().Be(response.FailureError);
     }
@@ -129,7 +129,7 @@ public sealed class DevSmsSenderCaptureTests : TestBase
         await sender.SendAsync(SmsRequests.Single(), AbortToken);
 
         // then
-        var captured = _store.Query().Single();
+        var captured = _store.Query(new()).Single();
         captured.TraceId.Should().Be(activity.TraceId.ToString());
         captured.CorrelationId.Should().Be("corr-1");
     }

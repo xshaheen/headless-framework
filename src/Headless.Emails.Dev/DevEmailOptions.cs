@@ -33,8 +33,9 @@ public sealed class DevEmailOptions
     /// only each attachment's name, content type, and size.
     /// </summary>
     /// <remarks>
-    /// Kept content makes the <c>.eml</c> export carry the attachment. Every kept attachment stays in memory until the
-    /// store drops or deletes its email, so a high limit times <see cref="CaptureCapacity"/> bounds the memory used.
+    /// Kept content makes the <c>.eml</c> export carry the attachment. The limit applies to each attachment, and every
+    /// kept attachment stays in memory until the store drops or deletes its email. With a limit of L bytes and at most K
+    /// attachments per email, kept content can reach <see cref="CaptureCapacity"/> × K × L bytes.
     /// </remarks>
     public int MaxCapturedAttachmentBytes { get; set; }
 }

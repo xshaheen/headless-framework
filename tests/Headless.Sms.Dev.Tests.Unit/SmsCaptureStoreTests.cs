@@ -43,7 +43,7 @@ public sealed class SmsCaptureStoreTests : TestBase
         store.Add(_Draft("c"));
 
         // when
-        var result = store.Query();
+        var result = store.Query(new());
 
         // then
         result.Select(x => x.Text).Should().Equal("c", "b", "a");
@@ -63,7 +63,7 @@ public sealed class SmsCaptureStoreTests : TestBase
         // then
         store.Capacity.Should().Be(2);
         store.Count.Should().Be(2);
-        store.Query().Select(x => x.Text).Should().Equal("c", "b");
+        store.Query(new()).Select(x => x.Text).Should().Equal("c", "b");
     }
 
     [Fact]

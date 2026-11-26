@@ -19,17 +19,17 @@ public sealed record CapturedPushNotification
     /// </summary>
     public const int MaxPayloadBytes = 4096;
 
-    /// <summary>Gets the capture identifier, unique within the process and ordered by capture time.</summary>
+    /// <summary>Gets the capture identifier, unique within the process. Order captures by <see cref="Sequence"/>, not by this value.</summary>
     public Guid Id { get; init; }
 
     /// <summary>
-    /// Gets the store <see cref="IPushNotificationCaptureStore.Version"/> at which this notification was captured.
+    /// Gets the store <see cref="IPushNotificationCaptureStore.Version"/> at which this notification was captured. Sequences increase strictly in capture order, so this is the ordering key.
     /// Pass it as <see cref="PushNotificationCaptureQuery.AfterSequence"/> to read only the notifications captured
     /// after it.
     /// </summary>
     public long Sequence { get; init; }
 
-    /// <summary>Gets the time the send ran, read from the registered <see cref="TimeProvider"/>.</summary>
+    /// <summary>Gets the time the send was captured, read from the registered <see cref="TimeProvider"/>. Never earlier than the capture before it.</summary>
     public DateTimeOffset CapturedAt { get; init; }
 
     /// <summary>

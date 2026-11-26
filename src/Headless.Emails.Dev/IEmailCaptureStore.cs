@@ -31,10 +31,11 @@ public interface IEmailCaptureStore
     long Version { get; }
 
     /// <summary>Lists the captured emails that match <paramref name="query"/>, newest first.</summary>
-    /// <param name="query">The filters to apply, or <see langword="null"/> to list every email.</param>
+    /// <param name="query">The filters to apply. Pass <c>new()</c> to list every item.</param>
     /// <returns>A snapshot of the matching emails.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="EmailCaptureQuery.Limit"/> is zero or negative.</exception>
-    IReadOnlyList<CapturedEmail> Query(EmailCaptureQuery? query = null);
+    IReadOnlyList<CapturedEmail> Query(EmailCaptureQuery query);
 
     /// <summary>Gets the captured email with the given <see cref="CapturedEmail.Id"/>.</summary>
     /// <param name="id">The capture identifier.</param>

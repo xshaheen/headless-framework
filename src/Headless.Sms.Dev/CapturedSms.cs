@@ -13,16 +13,16 @@ namespace Headless.Sms;
 [PublicAPI]
 public sealed record CapturedSms
 {
-    /// <summary>Gets the capture identifier, unique within the process and ordered by capture time.</summary>
+    /// <summary>Gets the capture identifier, unique within the process. Order captures by <see cref="Sequence"/>, not by this value.</summary>
     public Guid Id { get; init; }
 
     /// <summary>
-    /// Gets the store <see cref="ISmsCaptureStore.Version"/> at which this message was captured. Pass it as
+    /// Gets the store <see cref="ISmsCaptureStore.Version"/> at which this message was captured. Sequences increase strictly in capture order, so this is the ordering key. Pass it as
     /// <see cref="SmsCaptureQuery.AfterSequence"/> to read only the messages captured after it.
     /// </summary>
     public long Sequence { get; init; }
 
-    /// <summary>Gets the time the send ran, read from the registered <see cref="TimeProvider"/>.</summary>
+    /// <summary>Gets the time the send was captured, read from the registered <see cref="TimeProvider"/>. Never earlier than the capture before it.</summary>
     public DateTimeOffset CapturedAt { get; init; }
 
     /// <summary>

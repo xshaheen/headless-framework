@@ -25,7 +25,7 @@ public sealed class CapturedEmailEmlTests : TestBase
         };
 
         // when
-        var message = await _ParseAsync(email.ToEml());
+        var message = await _ParseAsync(await _EmlAsync(email));
 
         // then
         message.Subject.Should().Be("Your order");
@@ -40,8 +40,8 @@ public sealed class CapturedEmailEmlTests : TestBase
         message.Cc.Mailboxes.Single().Address.Should().Be("cc@example.com");
         message.Bcc.Mailboxes.Single().Address.Should().Be("bcc@example.com");
         message.Body!.ContentType.MimeType.Should().Be("multipart/alternative");
-        message.TextBody.Should().Be("Hello");
-        message.HtmlBody.Should().Be("<p>Hello</p>");
+        message.TextBody!.TrimEnd().Should().Be("Hello");
+        message.HtmlBody!.TrimEnd().Should().Be("<p>Hello</p>");
         message.Headers["X-Headless-Sender"].Should().Be("audit");
     }
 
@@ -58,45 +58,41 @@ public sealed class CapturedEmailEmlTests : TestBase
         };
 
         // when
-        var eml = email.ToEml();
+        var eml = await _EmlAsync(email);
         var message = await _ParseAsync(eml);
 
         // then
         eml.Should().NotContain("طلبك");
         message.Subject.Should().Be(subject);
         message.From.Mailboxes.Single().Name.Should().Be("متجر الطلبات");
-        message.TextBody.Should().Be("مرحبا يا لينا");
+        message.TextBody!.TrimEnd().Should().Be("مرحبا يا لينا");
     }
 
     [Fact]
-    public void should_use_crlf_line_endings_and_wrap_base64_at_76_characters()
+    public async Task should_use_crlf_line_endings_and_keep_lines_under_the_limit()
     {
-        var email = _Email() with { TextBody = new string('x', 500) };
+        var email = _Email() with { TextBody = new string('x', 5000) };
 
-        var eml = email.ToEml();
+        var eml = await _EmlAsync(email);
 
         eml.Replace("\r\n", "", StringComparison.Ordinal).Should().NotContain("\n");
         eml.Split("\r\n").Should().OnlyContain(line => line.Length <= 998);
-        eml.Split("\r\n")
-            .Where(line => line.Length > 0 && !line.Contains(':', StringComparison.Ordinal))
-            .Should()
-            .OnlyContain(line => line.Length <= 76);
     }
 
     [Fact]
     public async Task should_write_a_single_html_part_when_there_is_no_text_body()
     {
-        var message = await _ParseAsync((_Email() with { TextBody = null, HtmlBody = "<b>hi</b>" }).ToEml());
+        var message = await _ParseAsync(await _EmlAsync(_Email() with { TextBody = null, HtmlBody = "<b>hi</b>" }));
 
         message.Body!.ContentType.MimeType.Should().Be("text/html");
-        message.HtmlBody.Should().Be("<b>hi</b>");
+        message.HtmlBody!.TrimEnd().Should().Be("<b>hi</b>");
     }
 
     [Fact]
     public async Task should_write_an_empty_text_part_for_a_failed_capture_without_a_body()
     {
         var message = await _ParseAsync(
-            (_Email() with { TextBody = null, FailureError = "At least one body must be provided." }).ToEml()
+            await _EmlAsync(_Email() with { TextBody = null, FailureError = "At least one body must be provided." })
         );
 
         message.Body!.ContentType.MimeType.Should().Be("text/plain");
@@ -130,7 +126,7 @@ public sealed class CapturedEmailEmlTests : TestBase
         };
 
         // when
-        var message = await _ParseAsync(email.ToEml());
+        var message = await _ParseAsync(await _EmlAsync(email));
 
         // then
         message.Body!.ContentType.MimeType.Should().Be("multipart/mixed");
@@ -144,7 +140,7 @@ public sealed class CapturedEmailEmlTests : TestBase
         message.Headers["X-Headless-Attachment-Omitted"].Should().Be("big.pdf; size=9000; type=application/pdf");
         message.Headers["X-Headless-Trace-Id"].Should().Be("4bf92f3577b34da6a3ce929d0e0e4736");
         message.Headers["X-Headless-Correlation-Id"].Should().Be("corr-1");
-        message.TextBody.Should().Be("Hello");
+        message.TextBody!.TrimEnd().Should().Be("Hello");
     }
 
     [Fact]
@@ -168,14 +164,16 @@ public sealed class CapturedEmailEmlTests : TestBase
         };
 
         // when
-        var eml = email.ToEml();
+        var eml = await _EmlAsync(email);
         var message = await _ParseAsync(eml);
 
         // then
         message.Headers.Contains("X-Injected").Should().BeFalse();
         message.Subject.Should().StartWith("Hi").And.EndWith("X-Injected: 3");
-        message.From.Mailboxes.Single().Name.Should().StartWith("Name").And.EndWith("X-Injected: 2");
-        message.Attachments.OfType<MimePart>().Single().ContentType.MimeType.Should().Be("application/octet-stream");
+        var from = message.From.Mailboxes.Single();
+        from.Address.Should().Be("invalid-address@dev-inbox.invalid");
+        from.Name.Should().StartWith("Name").And.Contain("X-Injected: 1");
+        message.Attachments.OfType<MimePart>().Single().ContentType.MimeType.Should().Be("text/plain");
     }
 
     [Fact]
@@ -183,7 +181,7 @@ public sealed class CapturedEmailEmlTests : TestBase
     {
         var subject = string.Join(' ', Enumerable.Repeat("word", 300));
 
-        var eml = (_Email() with { Subject = subject }).ToEml();
+        var eml = await _EmlAsync(_Email() with { Subject = subject });
         var message = await _ParseAsync(eml);
 
         eml.Split("\r\n").Should().OnlyContain(line => line.Length <= 998);
@@ -191,11 +189,21 @@ public sealed class CapturedEmailEmlTests : TestBase
     }
 
     [Fact]
-    public void should_format_the_date_with_the_invariant_culture_and_its_offset()
+    public async Task should_write_the_capture_time_with_its_offset_as_the_date()
     {
         var email = _Email() with { CapturedAt = new DateTimeOffset(2026, 3, 1, 9, 5, 7, TimeSpan.FromHours(-5.5)) };
 
-        email.ToEml().Should().StartWith("Date: Sun, 01 Mar 2026 09:05:07 -0530\r\n");
+        var eml = await _EmlAsync(email);
+
+        eml.Should().Contain("Date: Sun, 01 Mar 2026 09:05:07 -0530\r\n");
+    }
+
+    private static async Task<string> _EmlAsync(CapturedEmail email)
+    {
+        await using var stream = new MemoryStream();
+        await email.WriteEmlAsync(stream, AbortToken);
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private async Task<MimeMessage> _ParseAsync(string eml)

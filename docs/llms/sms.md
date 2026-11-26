@@ -155,7 +155,7 @@ public sealed class OtpService(ISmsSender smsSender)
 }
 ```
 
-**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `ISmsCaptureStore.Query()` returns a message with the text.
+**Verify:** in a test, register `UseDevelopment()`, call your code, and assert that `response.Success` is `true` and `ISmsCaptureStore.Query(new())` returns a message with the text.
 
 ### Design and runtime behavior
 
@@ -390,7 +390,7 @@ if (builder.Environment.IsDevelopment())
 
 `UseDevelopment` has the usual overloads: `()`, `(string filePath)`, `(IConfiguration)`, `(Action<DevSmsOptions>)`, and `(Action<DevSmsOptions, IServiceProvider>)`. Each one is on the setup builder and on a named instance, and registers the sender as both `ISmsSender` and `IBulkSmsSender`.
 
-**Verify:** resolve `ISmsCaptureStore`, send one message, and assert that `store.Query()` returns it with your text. With a file path, the file contains the destination and the text.
+**Verify:** resolve `ISmsCaptureStore`, send one message, and assert that `store.Query(new())` returns it with your text. With a file path, the file contains the destination and the text.
 
 ### Configuration
 
@@ -414,12 +414,50 @@ store.Delete(otp[0].Id);
 store.Clear();
 ```
 
-- `Query` returns a snapshot, newest first. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches the text and message id ignoring case, and the `+`-prefixed recipient numbers. `Limit` must be positive.
+- `Query` takes a query (`new()` lists everything) and returns a snapshot, newest first. `Sequence` is the order: it increases strictly with each capture, and `CapturedAt` never runs backwards against it. `Id` is unique, not ordered. `SenderName` matches exactly; the default sender's name is the empty string. `Search` matches the text and message id ignoring case, and the `+`-prefixed recipient numbers. `Limit` must be positive.
 - Each `CapturedSms` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `Destinations`, `IsBulk`, `Text`, `Segmentation`, `MessageId`, a copy of `Properties`, `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
 - A bulk send is captured once, with every recipient in `Destinations` and `IsBulk` set.
 - `Segmentation` is `SmsSegmentation.Measure(text)`: `Gsm7` when every character is in the GSM 03.38 alphabet (160 characters in one part, 153 per part when split, `€ [ ] { } ^ ~ | \` and form feed counting as two), else `Ucs2` (70 in one part, 67 per part). You can call `SmsSegmentation.Measure` in application code too, for example to warn before a send that costs several parts.
 
 To follow new messages live, wait on the version instead of polling the list: call `store.WaitForChangeAsync(version, cancellationToken)`, then `store.Query(new SmsCaptureQuery { AfterSequence = version })`, and keep the returned version. A delete or clear also bumps the version and adds nothing.
+
+### Assert on captured SMS messages in tests
+
+`AddHeadlessSms` accepts one call per service collection, so a test host cannot add a second registration over the app's. Choose the development provider by environment in `Program.cs`, then run the test host in that environment:
+
+```csharp no-compile
+// Program.cs
+builder.Services.AddHeadlessSms(setup =>
+{
+    if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+    {
+        setup.UseDevelopment(); // ISmsSender and IBulkSmsSender, capture only
+    }
+    else
+    {
+        setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio"));
+    }
+});
+
+// Test
+public sealed class SignupTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task sends_the_otp()
+    {
+        var app = factory.WithWebHostBuilder(b => b.UseEnvironment("Testing"));
+        var store = app.Services.GetRequiredService<ISmsCaptureStore>();
+        store.Clear(); // the store is a process-wide singleton; clear it so earlier tests do not leak in
+
+        await app.CreateClient().PostAsJsonAsync("/otp", new { phone = "+201001234567" });
+
+        var sms = store.Query(new SmsCaptureQuery { Search = "+201001234567" }).Should().ContainSingle().Subject;
+        sms.Text.Should().Contain("code");
+    }
+}
+```
+
+The store is shared by every test that uses the same host, so run such tests in one xUnit collection, or filter `Query` by a value unique to the test (a recipient or `SenderName`).
 
 ### Design and runtime behavior
 
