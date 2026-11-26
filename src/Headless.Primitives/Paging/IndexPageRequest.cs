@@ -2,9 +2,12 @@
 
 namespace Headless.Primitives;
 
-/// <summary>Base class for zero-based offset (index/size) page requests.</summary>
+/// <summary>
+/// A zero-based offset (index/size) page request. The type is concrete so a JSON body or a query string binds it
+/// directly, for example <c>{"page":{"index":1,"size":5}}</c> or <c>?page.index=1&amp;page.size=5</c>.
+/// </summary>
 [PublicAPI]
-public abstract class IndexPageRequest : IIndexPageRequest
+public sealed class IndexPageRequest : IIndexPageRequest
 {
     /// <inheritdoc/>
     public required int Index { get; init; }
