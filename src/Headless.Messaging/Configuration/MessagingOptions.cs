@@ -499,6 +499,13 @@ public sealed class MessagingOptions
             target.Converters.Add(converter);
         }
 
+        target.TypeClassifiers.Clear();
+
+        foreach (var classifier in source.TypeClassifiers)
+        {
+            target.TypeClassifiers.Add(classifier);
+        }
+
         foreach (var modifier in source.TypeInfoResolverChain)
         {
             if (!ReferenceEquals(modifier, source.TypeInfoResolver))
