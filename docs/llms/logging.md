@@ -133,7 +133,7 @@ Fields on every entry:
 | `MachineName`, `ProcessName`, `CommitHash` | The host, and the entry assembly's commit |
 | `TraceId`, `SpanId` | The current `Activity`, as a scope |
 
-Every entry written while a tenant is ambient gets `TenantId` once, on every provider, also when its template already has a `{TenantId}` hole. A message consumer and a job attempt run under their tenant, so their entries carry it on a console-only host. `TenantTelemetryOptions` renames it or turns it off. The tenant adds no allocation to a `[LoggerMessage]`, `LoggerMessage.Define`, or message-template call site, and a disabled level skips it. See [multi-tenancy observability](multi-tenancy/observability.md#observability).
+Every entry written while a tenant is ambient gets `TenantId` once, on every provider, also when its template already has a `{TenantId}` hole. A message consumer and a job attempt run under their tenant, so their entries carry it on a console-only host. `TenantTelemetryOptions` renames it or turns it off. The tenant adds no allocation to a `[LoggerMessage]`, `LoggerMessage.Define`, or message-template call site. An entry a log buffer holds (`AddGlobalBuffer`) is enriched when it is buffered and keeps one `TenantId` when the buffer flushes. See [multi-tenancy observability](multi-tenancy/observability.md#observability).
 
 An API host under `AddHeadless()` also gets `UserId`, `AccountId`, `CorrelationId`, `ClientIp`, `UserAgent`, `XClientVersion`, and `ApiVersion` on every entry written during a request. See [api.md](api.md#headlessapiservicedefaults).
 
