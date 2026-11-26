@@ -45,12 +45,16 @@ internal sealed class TenantLogEnricher(IServiceProvider services, IOptions<Tena
 
     private ICurrentTenant? _CurrentTenant()
     {
-        if (!_resolved)
+        // Read with acquire semantics, so a thread that sees the flag also sees the tenant written before it.
+        if (Volatile.Read(ref _resolved))
         {
-            // A host with no tenancy registers no ICurrentTenant; its entries get no tenant.
-            _currentTenant = services.GetService<ICurrentTenant>();
-            Volatile.Write(ref _resolved, true);
+            return _currentTenant;
         }
+
+        // A host with no tenancy registers no ICurrentTenant; its entries get no tenant. Two threads may both resolve
+        // it on first use; the container returns the same singleton to each.
+        _currentTenant = services.GetService<ICurrentTenant>();
+        Volatile.Write(ref _resolved, true);
 
         return _currentTenant;
     }

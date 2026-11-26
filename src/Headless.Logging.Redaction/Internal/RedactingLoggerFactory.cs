@@ -141,6 +141,12 @@ internal sealed class RedactingLoggerFactory(
             Func<TState, Exception?, string> formatter
         )
         {
+            // A level nobody listens to costs nothing: no copy, no redactor call, no entry for the enrichers.
+            if (!inner.IsEnabled(logLevel))
+            {
+                return;
+            }
+
             // Enrichers run inside the inner call and see only a collector; this lets one skip a key the entry has.
             using var entry = LoggedEntry.Enter(state);
             _Log(logLevel, eventId, state, exception, formatter);
@@ -154,12 +160,10 @@ internal sealed class RedactingLoggerFactory(
             Func<TState, Exception?, string> formatter
         )
         {
-            // A level nobody listens to costs nothing: no copy, no redactor call.
             if (
                 redactorProvider is not null
                 && state is LoggerMessageState { ClassifiedTagsCount: > 0 } classified
                 && classified.RedactedTagArray.Length >= classified.ClassifiedTagsCount
-                && inner.IsEnabled(logLevel)
             )
             {
                 _LogClassified(logLevel, eventId, classified, exception, formatter, redactorProvider);
@@ -171,7 +175,6 @@ internal sealed class RedactingLoggerFactory(
                 (propertyRedactors.Count > 0 || (projection is not null && LogStateShape<TState>.MayCarryObjects))
                 && state is IReadOnlyList<KeyValuePair<string, object?>> values
                 && _MayNeedNamedPass(values)
-                && inner.IsEnabled(logLevel)
                 && _TryRedactNames(values, out var named)
             )
             {
