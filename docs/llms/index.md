@@ -74,7 +74,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Define a failure policy: immediate and delayed retries, backoff, and exceptions that end a failure at once | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
-| Track node identity, liveness, and membership | [Coordination](coordination.md) |
+| Track node identity, liveness, and membership, or show a node's membership history and cluster settings | [Coordination](coordination.md) |
 | Dispatch in-process requests and notifications | [Mediator](mediator.md) |
 
 ### Integration services
@@ -103,7 +103,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Configure host logging: console format, enrichment on every entry, levels, a startup crash logger | [Logging](logging.md#headlesslogging) |
 | Keep secrets and personal data out of logs (data classification, redactors) | [Logging](logging.md) |
 | Keep credential paths out of HTTP logging and spans, classify HTTP logging fields | [Logging](logging.md#headlessloggingredactionaspnetcore) |
-| Use hosting helpers, validators, health checks, the host manifest (`describe` command), the pre-start health check (`check` command), background warm-up behind readiness, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
+| Use hosting helpers, validators, health checks, the on-demand health check monitor and its probe history, the host manifest (`describe` command), the pre-start health check (`check` command), background warm-up behind readiness, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
 
 ## Choosing a coordination primitive

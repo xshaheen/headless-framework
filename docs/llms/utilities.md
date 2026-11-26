@@ -469,6 +469,37 @@ builder.Services.AddHeadlessHealthCheck(
 
 **Choose a community check instead** (the Xabaril `AspNetCore.HealthChecks.*` packages) when you need health decided from a query's result (for example replication lag), a dependency no Headless provider owns, or a connection string the application does not otherwise use. Register it under another name next to the contributed checks, or drop the contributed one with `RemoveHealthChecks`.
 
+### Health check monitor
+
+`AddHeadlessHealthCheckMonitor()` registers `IHealthCheckMonitor`, which lists the host's health checks, runs them when a caller asks, and keeps each check's last 30 results in memory. Use it to back an operator view of check history. It is opt-in.
+
+```csharp
+builder.Services.AddHeadlessHealthCheckMonitor(); // aliveTag defaults to "live", the tag /alive filters on
+```
+
+If your `/alive` endpoint filters on another tag, pass that tag (`AddHeadlessHealthCheckMonitor("liveness")`), so `HealthCheckDescriptor.IsLiveness` matches what `/alive` runs. A second call adds nothing and keeps the first call's tag.
+
+| Member | Cost | Use it for |
+| --- | --- | --- |
+| `GetChecks()` | Memory read | Each current registration: `Name`, `Tags`, `FailureStatus`, `Timeout` (`null` when the registration has none), and `IsLiveness`. |
+| `GetSnapshot()` | Memory read | Each current registration with its `Results` (newest last, at most 30), and the overall `Status`. |
+| `ProbeAllAsync(ct)` | Runs every check against its dependency | An operator's "run all checks now" action. Returns the run's `HealthReport`. |
+| `ProbeAsync(name, ct)` | Runs one check against its dependency | An operator's "run this check" action. Matches the name case-insensitively and returns `null` for a name no registration has. |
+
+Display code reads `GetSnapshot()`. Do not call a probe method on every page refresh: each probe reaches the real dependency, and some checks write to their store, such as the opt-in data-protection key-ring check (`AddDataProtectionKeyRing()`), which uploads and deletes a sentinel blob.
+
+Observed behavior:
+
+- The monitor runs no check on its own. It adds no publisher, no startup probe, and no hosted service. History fills only from `ProbeAllAsync` and `ProbeAsync`, so its spacing follows when callers probe, and a node nobody probes has none.
+- A request to `/health` or `/alive`, or the [`check` verb](#health-check-command), runs the checks without feeding the history.
+- `Status` is the worst latest status among the registrations with at least one result, and `null` before any probe. A registration never probed does not count.
+- A check removed with `RemoveHealthChecks` or turned off in configuration is neither listed nor probed, and its earlier history is not returned.
+- Each result keeps `Status`, `Duration`, `Description`, and `CompletedAt` (from the registered `TimeProvider`). It keeps no exception and no data. A check that throws is stored with the description `The '{name}' health check failed.`, so a driver message never reaches the history.
+- Concurrent `ProbeAllAsync` calls share one run. A caller that cancels stops only its own wait. When every caller has cancelled, the run is cancelled and records nothing, so a hung check does not block later probes.
+- A run that started before the latest recorded result of a check does not overwrite it: a slow bulk run that finishes after a newer single-check probe keeps the newer result.
+
+**Verify:** call `ProbeAllAsync`, then assert `GetSnapshot().Checks[n].Results` holds one result per check.
+
 ### Health check command
 
 `dotnet MyApp.dll check` runs the host's health checks once, prints one line per check, and exits non-zero when any check is `Unhealthy`. It does not start the host. Run it as a deploy step or an init container to stop a rollout whose database, Redis, or broker the new configuration cannot reach.
