@@ -365,61 +365,254 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
-    public void should_redact_a_one_shot_sequence_without_enumerating_it_twice()
+    public void should_print_a_one_shot_sequence_as_its_type_name_without_enumerating_it()
     {
-        // given
+        // given: a sequence that gives its elements once, so reading it would leave the provider nothing
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
-        List<Customer> list = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = list.AsEnumerableOnce();
+        var customers = new CountingSequence<Customer>([new(_Email, "gold"), new("bob@example.test", "silver")]);
 
         // when
         _Logger(provider).LogInformation("Batch {Customers}", customers);
 
         // then
-        var entry = sink.Entries.Should().ContainSingle().Subject;
-        entry
-            .Text.Should()
-            .Be("Batch Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
+        customers.Enumerations.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch " + typeof(CountingSequence<Customer>));
     }
 
     [Fact]
-    public void should_print_a_one_shot_sequence_of_unclassified_values_from_one_read()
-    {
-        // given: elements typed as object must be read to prove them safe, and the sequence gives them only once
-        using var sink = new CapturingProvider();
-        using var provider = _Build(sink);
-        List<object> values = [42, "gold"];
-        var once = values.AsEnumerableOnce();
-
-        // when
-        _Logger(provider).LogInformation("Batch {Values}", once);
-
-        // then
-        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 42, gold");
-    }
-
-    [Fact]
-    public void should_run_a_lazy_query_of_unclassified_values_once()
+    public void should_not_run_a_logged_lazy_query()
     {
         // given
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var evaluations = 0;
-        object[] source = [1, "two"];
-        var values = source.Select(value =>
+        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
+        var customers = source.Select(customer =>
         {
             evaluations++;
 
-            return value;
+            return customer;
         });
 
         // when
-        _Logger(provider).LogInformation("Batch {Values}", values);
+        _Logger(provider).LogInformation("Batch {Customers}", customers);
 
         // then
-        evaluations.Should().Be(source.Length);
-        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Batch 1, two");
+        evaluations.Should().Be(0);
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Batch " + customers.GetType());
+        entry.Properties["Customers"].Should().Be(customers.GetType().ToString());
+    }
+
+    [Fact]
+    public void should_not_enumerate_a_lazy_sequence_reached_through_an_object_graph()
+    {
+        // given: shaped like a DbContext whose DbSet property would run a query when enumerated
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var rows = new CountingSequence<Customer>([new(_Email, "gold")]);
+        var store = new Store(rows);
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Store}", store);
+
+        // then
+        rows.Enumerations.Should().Be(0);
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw Store {{ Rows = {typeof(CountingSequence<Customer>)} }}");
+    }
+
+    [Fact]
+    public void should_print_an_exception_argument_as_the_provider_would_without_walking_its_members()
+    {
+        // given: an exception whose members reach a sequence that throws when enumerated, as an EF Core
+        // DbUpdateException reaches a DbSet whose entity the model excludes
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var error = new PayloadException(new Store(new ThrowingSequence()));
+
+        // when
+        _Logger(provider).LogError("Save failed.{NewLine}{Error}", Environment.NewLine, error);
+
+        // then
+        var entry = sink.Entries.Should().ContainSingle().Subject;
+        entry.Text.Should().Be("Save failed." + Environment.NewLine + error);
+        entry.Properties["Error"].Should().BeSameAs(error);
+    }
+
+    [Fact]
+    public void should_print_a_placeholder_when_a_collection_enumerator_throws_without_failing_the_call()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Batch}", new Batch(new ThrowingCollection()));
+
+        // then
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be("Saw Batch { Rows = The enumerator threw an exception: InvalidOperationException }");
+    }
+
+    [Fact]
+    public void should_print_a_placeholder_when_a_value_text_throws_inside_a_projection()
+    {
+        // given: a record with a classified member beside a value whose ToString throws
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Profile}", new Profile(_Email, new Exploding()));
+
+        // then: the whole value is withheld, and the entry is still logged
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw {typeof(Profile)} (redaction failed: InvalidOperationException)");
+    }
+
+    [Fact]
+    public void should_print_a_placeholder_when_a_classified_name_holds_a_sequence_that_throws()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup => setup.ClassifyProperty("Rows", HeadlessDataClassifications.Private)
+        );
+
+        // when
+        _Logger(provider).LogInformation("Saw {Rows}", new ThrowingSequence());
+
+        // then
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw {typeof(ThrowingSequence)} (redaction failed: InvalidOperationException)");
+    }
+
+    [Fact]
+    public void should_not_run_the_factory_of_a_lazy_value()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var created = 0;
+        var next = new Lazy<Customer>(() =>
+        {
+            created++;
+
+            return new Customer(_Email, "gold");
+        });
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Pending}", new Pending(next));
+
+        // then
+        created.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be($"Saw Pending {{ Next = {next.GetType()} }}");
+    }
+
+    [Fact]
+    public void should_not_read_the_navigations_of_an_entity_that_loads_them_lazily()
+    {
+        // given: an entity shaped the way EF Core injects its lazy loader, whose navigation getter runs a query
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var order = new LazyOrder();
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Order}", order);
+
+        // then
+        order.Loads.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Saw " + typeof(LazyOrder));
+    }
+
+    [Fact]
+    public void should_run_each_getter_once_per_log_call()
+    {
+        // given: a classified member two levels down, below a getter each level re-checks
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var tracker = new Tracker();
+
+        // when
+        _Logger(provider).LogInformation("Saw {Outer}", new Outer(new Inner(tracker, _Email)));
+
+        // then
+        tracker.Reads.Should().Be(1);
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw Outer {{ Inner = Inner {{ Tracker = {typeof(Tracker)}, Email = ***** }} }}");
+    }
+
+    [Fact]
+    public void should_stop_reading_values_past_the_budget_of_one_log_call()
+    {
+        // given: 100 branches of 100 values each, none classified, each value read through a getter
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var tally = new Tally();
+        List<object> branches = [];
+
+        for (var i = 0; i < 100; i++)
+        {
+            List<object> leaves = [];
+
+            for (var j = 0; j < 100; j++)
+            {
+                leaves.Add(new Counted(tally));
+            }
+
+            branches.Add(new Branch(leaves));
+        }
+
+        // when
+        _Logger(provider).LogInformation("Saw {Tree}", new Branch(branches));
+
+        // then: the walk gave up well before reading every value, and the unread part prints as type names
+        tally.Reads.Should().BeLessThan(5_000);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Contain(typeof(List<object>).ToString());
+    }
+
+    [Fact]
+    public void should_cut_the_text_of_one_projection_at_the_budget()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var body = new string('x', 40_000);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Note}", new Note(_Email, body));
+
+        // then
+        var text = sink.Entries.Should().ContainSingle().Subject.Properties["Note"].Should().BeOfType<string>().Subject;
+        text.Should().HaveLength((32 * 1024) + "...".Length);
+        text.Should().StartWith("Note { Email = *****, Body = xxx").And.EndWith("x...");
+    }
+
+    [Fact]
+    public void should_let_an_out_of_memory_failure_through()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = _Logger(provider);
+
+        // when
+        var log = () => logger.LogInformation("Saw {Batch}", new Batch(new StarvedCollection()));
+
+        // then
+        log.Should().Throw<OutOfMemoryException>();
     }
 
     [Fact]
@@ -438,43 +631,13 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
-    public void should_run_a_logged_lazy_query_once()
-    {
-        // given
-        using var sink = new CapturingProvider();
-        using var provider = _Build(sink);
-        var evaluations = 0;
-        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = source.Select(customer =>
-        {
-            evaluations++;
-
-            return customer;
-        });
-
-        // when
-        _Logger(provider).LogInformation("Batch {Customers}", customers);
-
-        // then
-        evaluations.Should().Be(source.Length);
-        sink.Entries.Should().ContainSingle().Which.Text.Should().NotContain("example.test");
-    }
-
-    [Fact]
-    public void should_read_a_sequence_once_for_both_detection_and_projection()
+    public void should_read_a_collection_once_for_both_detection_and_projection()
     {
         // given
         using var sink = new CapturingProvider();
         using var provider = _Build(sink);
         var projection = new ClassifiedObjectProjection(provider.GetRequiredService<IRedactorProvider>());
-        var evaluations = 0;
-        Customer[] source = [new(_Email, "gold"), new("bob@example.test", "silver")];
-        var customers = source.Select(customer =>
-        {
-            evaluations++;
-
-            return customer;
-        });
+        var customers = new CountingCollection<Customer>([new(_Email, "gold"), new("bob@example.test", "silver")]);
 
         // when
         var projected = projection.TryProject(customers, captured: false, out var text);
@@ -482,7 +645,7 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         // then
         projected.Should().BeTrue();
         text.Should().Be("Customer { Email = *****, Tier = gold }, Customer { Email = *****, Tier = silver }");
-        evaluations.Should().Be(source.Length);
+        customers.Enumerations.Should().Be(1);
     }
 
     [Fact]
@@ -681,15 +844,20 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     private static ILogger _Logger(IServiceProvider provider) =>
         provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
-    private static ServiceProvider _Build(CapturingProvider sink)
+    private static ServiceProvider _Build(
+        CapturingProvider sink,
+        Action<HeadlessRedactionSetupBuilder>? configure = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
         services.AddHeadlessRedaction(setup =>
+        {
             setup.ConfigureRedaction(static redaction =>
                 redaction.SetRedactor<StarRedactor>(new DataClassificationSet(HeadlessDataClassifications.Private))
-            )
-        );
+            );
+            configure?.Invoke(setup);
+        });
 
         return services.BuildServiceProvider();
     }
@@ -765,6 +933,148 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         public required string Email { get; init; }
 
         public string Broken => throw new InvalidOperationException("boom");
+    }
+
+    public sealed record Profile([property: PrivateData] string Email, Exploding Badge);
+
+    public sealed class Exploding
+    {
+#pragma warning disable CA1065 // The fixture is a broken type on purpose: the test proves its throwing ToString cannot fail a log call.
+        public override string ToString() => throw new InvalidOperationException("The badge cannot be printed.");
+#pragma warning restore CA1065
+    }
+
+    public sealed record Pending(Lazy<Customer> Next);
+
+    // Shaped like an EF Core entity that takes the lazy-loading delegate through its constructor.
+    public sealed class LazyOrder
+    {
+#pragma warning disable CA1823, RCS1213 // Never called: it marks the entity the way EF Core's constructor injection does.
+        private readonly Action<object, string> _lazyLoader = static (_, _) => { };
+#pragma warning restore CA1823, RCS1213
+
+        public int Loads { get; private set; }
+
+        public Customer Customer
+        {
+            get
+            {
+                Loads++;
+
+                return new Customer(_Email, "gold");
+            }
+        }
+    }
+
+    public sealed record Outer(Inner Inner);
+
+    public sealed record Inner(Tracker Tracker, [property: PrivateData] string Email);
+
+    public sealed class Tracker
+    {
+        public int Reads { get; private set; }
+
+        public object Value
+        {
+            get
+            {
+                Reads++;
+
+                return "tracked";
+            }
+        }
+    }
+
+    public sealed record Branch(List<object> Children);
+
+    public sealed class Tally
+    {
+        public int Reads { get; set; }
+    }
+
+    public sealed class Counted(Tally tally)
+    {
+        public object Value
+        {
+            get
+            {
+                tally.Reads++;
+
+                return "leaf";
+            }
+        }
+    }
+
+    public sealed record Note([property: PrivateData] string Email, string Body);
+
+    public sealed class StarvedCollection : IReadOnlyCollection<object>
+    {
+        public int Count => 1;
+
+#pragma warning disable MA0012 // The test proves an out-of-memory failure is never swallowed, so it must raise one.
+        public IEnumerator<object> GetEnumerator() => throw new OutOfMemoryException();
+#pragma warning restore MA0012
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed record Store(IEnumerable<Customer> Rows);
+
+    public sealed record Batch(IReadOnlyCollection<object> Rows);
+
+    public sealed class PayloadException(Store payload) : InvalidOperationException("The save failed.")
+    {
+        public Store Payload { get; } = payload;
+    }
+
+    // A sequence that computes its elements on enumeration, the way a query does, and counts how often it ran.
+    public sealed class CountingSequence<T>(IEnumerable<T> source) : IEnumerable<T>
+    {
+        public int Enumerations { get; private set; }
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            Enumerations++;
+
+            return source.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed class CountingCollection<T>(IReadOnlyCollection<T> source) : IReadOnlyCollection<T>
+    {
+        public int Enumerations { get; private set; }
+
+        public int Count => source.Count;
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            Enumerations++;
+
+            return source.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    // Throws the way an EF Core DbSet does for an entity type the model excludes.
+    public sealed class ThrowingSequence : IEnumerable<Customer>
+    {
+        public IEnumerator<Customer> GetEnumerator() =>
+            throw new InvalidOperationException("Cannot create a DbSet for 'Customer'.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed class ThrowingCollection : IReadOnlyCollection<object>
+    {
+        public int Count => 1;
+
+        public IEnumerator<object> GetEnumerator() =>
+            throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed record Positional([PrivateData] string Email, string Tier);

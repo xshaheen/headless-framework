@@ -9,9 +9,24 @@ internal static class ValueMasker
 {
     /// <summary>
     /// Returns <paramref name="value"/> itself when its text has no match; otherwise its masked text. A non-string value is
-    /// scanned in its invariant text form.
+    /// scanned in its invariant text form. A value whose text or mask throws becomes a placeholder naming the exception
+    /// type, so the unscanned value never reaches a provider.
     /// </summary>
     public static object? Mask<TState>(object? value, Func<string, TState, string> mask, TState state)
+    {
+        try
+        {
+            return _Mask(value, mask, state);
+        }
+#pragma warning disable CA1031 // A log call is the boundary: an exception's virtual ToString or a redactor can throw, and the entry still logs.
+        catch (Exception ex) when (RedactionFailure.IsContained(ex))
+#pragma warning restore CA1031
+        {
+            return value is null ? null : RedactionFailure.Text(value, ex);
+        }
+    }
+
+    private static object? _Mask<TState>(object? value, Func<string, TState, string> mask, TState state)
     {
         switch (value)
         {
