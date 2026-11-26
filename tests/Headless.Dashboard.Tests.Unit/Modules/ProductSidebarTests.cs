@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Headless.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,7 +53,25 @@ public sealed class ProductSidebarTests : TestBase
         state.Products.Should().BeEmpty();
     }
 
-    private static ServiceProvider _Build(Action<ContributionOverrides>? contributions)
+    [Fact]
+    public async Task should_mark_only_the_development_only_product_development_only_in_the_bootstrap_json()
+    {
+        await using var provider = _Build(contributions: null, withDevInbox: true);
+
+        var state = _State(provider, ("audit", _Viewer), ("devinbox", _Viewer));
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(state, ShellJson.BootstrapStateInfo));
+        var products = json.RootElement.GetProperty("products");
+        products
+            .EnumerateArray()
+            .Select(product => product.GetProperty("id").GetString())
+            .Should()
+            .Equal("platform", "dev-inbox");
+        products[0].TryGetProperty("developmentOnly", out _).Should().BeFalse();
+        products[1].GetProperty("developmentOnly").GetBoolean().Should().BeTrue();
+    }
+
+    private static ServiceProvider _Build(Action<ContributionOverrides>? contributions, bool withDevInbox = false)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -62,6 +81,11 @@ public sealed class ProductSidebarTests : TestBase
                 .WithNoAuth()
                 .AddModule<AuditModule, AuditModuleOptions>("audit")
                 .AddModule<DiagModule, DiagModuleOptions>("diag");
+
+            if (withDevInbox)
+            {
+                dashboard.AddModule<DevInboxModule, DevInboxModuleOptions>("devinbox");
+            }
 
             if (contributions is not null)
             {

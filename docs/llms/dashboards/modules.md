@@ -130,8 +130,40 @@ A `DashboardAttentionItem` can also say how to resolve it and whether it is stil
 - **`RecommendedCommandId` and `GroupFilter`.** The id of one of the module's commands, such as its Requeue, and the filter, in the module's own Operation filter shape, that selects every object of the item's group. The recommended command (`Requeue 23`) runs as an Operation over `GroupFilter` from the module's own filtered list, never from the Attention popover: the operator gives a reason, the server counts the scope, and nothing runs before the confirm. The shell offers the button only when both members are set, the module implements `IDashboardOperationRunner`, and the host has not disabled the command or hidden it from the UI. A user without the command's permission sees it disabled with `Needs operate permission`.
 - **`RecentCount`.** How many objects joined the item in the module's latest interval, such as the last hour. Above zero, the cause is still growing.
 - **`LastSeenAt`.** When the cause last occurred, beside `Since`, when it began.
+- **`Kind`.** `DashboardAttentionKind.Work`, the default, for work in the module, such as failed runs. Set `DashboardAttentionKind.HealthCheck` for a check of the host's health, such as a store that does not answer. The Attention popover lists health checks in one `Health checks` section after the product sections, each row led by its module's display name. A module whose items are all health checks gets no section of its own, unless it did not answer. Health checks still count toward the Attention total, the pill's dot, and their product tab's dot.
 
-`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, and `lastSeenAt`.
+`GET {base}/api/needs-you` returns these as `recommended` (`{ command, filter }`, where `command` is described for the signed-in user as `GET {base}/api/{module}/commands` describes it, or `null`), `recentCount`, `lastSeenAt`, and `kind` (`work` or `health-check`).
+
+### HTML previews
+
+To show captured HTML, such as an email a host sent in development, return it from a module endpoint with `DashboardResults.HtmlPreview(html)`. Never write the HTML with `Results.Content`: no policy covers a module's own response, so that document runs its scripts with the dashboard's origin whenever it is opened outside the frame. The result writes the HTML as `text/html; charset=utf-8` under its own policy: a CSP `sandbox` with `default-src 'none'`, inline styles, `data:` images and fonts, `base-uri 'none'`, `form-action 'none'`, and `frame-ancestors 'self'`, plus `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`. The document's `<style>` blocks and `style` attributes apply. Its scripts, forms, and remote images and fonts do not run or load, even when the operator opens the address in its own tab. Only a page of the host's own origin may frame it, so any page on that origin, not only the dashboard, can embed it for a signed-in operator; the endpoint's authorization decides who may read it.
+
+Inline each `cid:` part as a `data:` URI before you return the HTML. A `cid:` or remote image shows as missing. The module's view loads the endpoint in the SDK's sandboxed preview frame, which reads it like any module `GET`, with the session cookie and no `X-Requested-With`.
+
+```csharp
+public interface ICapturedEmails
+{
+    Task<string?> FindHtmlAsync(string id, CancellationToken cancellationToken);
+}
+
+public static class InboxEndpoints
+{
+    public static void MapEmailPreview(DashboardModuleEndpoints endpoints)
+    {
+        endpoints.Routes.MapGet(
+            "/emails/{id}/html",
+            async (string id, ICapturedEmails emails, CancellationToken cancellationToken) =>
+                await emails.FindHtmlAsync(id, cancellationToken) is { } html
+                    ? DashboardResults.HtmlPreview(html)
+                    : Results.NotFound()
+        );
+    }
+}
+```
+
+`HtmlPreview` throws `ArgumentNullException` for a `null` document; answer `404` for a message that does not exist, as the example does.
+
+**Verify:** `GET {base}/api/{module}/emails/{id}/html` answers `200` with `Content-Security-Policy` starting `sandbox; default-src 'none'`. Open the address in the browser: the email's styles show, and its scripts do not run.
 
 ### Validation refusals
 

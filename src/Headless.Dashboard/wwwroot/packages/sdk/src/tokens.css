@@ -85,6 +85,7 @@
   --text-stat: 600 20px/26px var(--mono);
   --text-tag: 400 11px/16px var(--sans);
   --text-axis: 400 10.5px/14px var(--mono);
+  --text-badge: 600 10px/14px var(--mono);
   --text-hero: 600 22px/28px var(--sans);
   --text-mono-small: 400 12px/18px var(--mono);
   --text-nav: 400 13px/20px var(--sans);
@@ -191,6 +192,8 @@
   --enq: oklch(0.54 0.13 245);
   /* Darker than the boards' value so an In-progress dot reaches 3:1 on every light surface. */
   --proc: oklch(0.57 0.14 75);
+  /* The light proc fill is darker, so the DEV badge's text goes to black to keep 4.5:1 (4.61:1 here). */
+  --on-proc: oklch(0 0 0);
   --ok: oklch(0.54 0.13 155);
   --fail: oklch(0.54 0.19 25);
   --syntax-key: oklch(0.48 0.08 205);

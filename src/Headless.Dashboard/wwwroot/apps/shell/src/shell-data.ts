@@ -25,6 +25,8 @@ export interface AttentionItem {
   groupKey: string
   title: string
   severity: 'critical' | 'warning'
+  /** `health-check` for a check of the host's health, listed in its own section; anything else is the module's work. */
+  kind: AttentionKind
   count: number
   /** The server stopped counting at its cap. */
   capped: boolean
@@ -37,6 +39,16 @@ export interface AttentionItem {
   recentCount?: number
   /** The command that resolves it, described for this user, and the filter that scopes its Operation to the group. */
   recommended?: { command: CommandDefinition; filter: unknown } | null
+}
+
+export type AttentionKind = 'work' | 'health-check'
+
+/** An item as the server sends it: a shell older or newer than the server may meet a missing or unknown kind. */
+type WireAttentionItem = Omit<AttentionItem, 'kind'> & { kind?: unknown }
+
+/** Reads an item's kind from the server's answer: only `health-check` marks a health check, and any other value is work. */
+function withKind(item: WireAttentionItem): AttentionItem {
+  return { ...item, kind: item.kind === 'health-check' ? 'health-check' : 'work' }
 }
 
 export interface ResolvedObject {
@@ -66,7 +78,9 @@ export function useAttention() {
   return useQuery({
     queryKey: attentionKey,
     queryFn: async () =>
-      (await api.request<{ modules: ModuleSection<AttentionItem>[] }>({ method: 'GET', path: 'needs-you' })).modules,
+      (
+        await api.request<{ modules: ModuleSection<WireAttentionItem>[] }>({ method: 'GET', path: 'needs-you' })
+      ).modules.map((section) => ({ ...section, items: section.items.map(withKind) })),
   })
 }
 

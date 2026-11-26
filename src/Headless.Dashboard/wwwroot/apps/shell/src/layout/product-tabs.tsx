@@ -2,6 +2,7 @@
 // sit near their size budget.
 'use no memo'
 
+import { Tag } from '@headless/dashboard-sdk/components'
 import { Link } from '@headless/dashboard-sdk/router'
 import type { BootstrapProduct } from '../bootstrap.ts'
 import { productHome } from '../route-handles.ts'
@@ -37,9 +38,15 @@ export function ProductTabs({ current, attention }: ProductTabsProps) {
             // The fill alone is too faint a cue, so the active tab also carries an accent bottom edge.
             className={`inline-flex h-(--field-height) flex-none items-center gap-2 rounded-md px-3.5 font-medium text-muted-foreground no-underline hover:text-foreground current:bg-muted current:text-foreground current:accent-bar-bottom hd-tone-${role}`}
             aria-current={product.id === current?.id ? 'page' : undefined}
+            title={product.developmentOnly ? 'Development only' : undefined}
           >
             <span className="hd-mark" aria-hidden="true" />
             <span aria-hidden="true">{product.label}</span>
+            {product.developmentOnly ? (
+              <span aria-hidden="true">
+                <Tag variant="dev">DEV</Tag>
+              </span>
+            ) : null}
             <span className="sr-only">{text}</span>
           </Link>
         )

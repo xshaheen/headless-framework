@@ -80,6 +80,41 @@ function twoProducts(): BootstrapState {
   }
 }
 
+/** Jobs, Cluster, and Platform as three products, one module each, for the Attention popover's sections. */
+function threeProducts(): BootstrapState {
+  const jobs = moduleManifest('jobs', { displayName: 'Jobs' })
+  const cluster = moduleManifest('cluster', { displayName: 'Cluster' })
+  const audit = moduleManifest('audit', { displayName: 'Audit' })
+
+  return {
+    ...shellState([jobs, cluster, audit]),
+    products: [
+      { id: 'jobs', label: 'Jobs', modules: ['jobs'], sections: [{ module: 'jobs', entries: [] }] },
+      { id: 'cluster', label: 'Cluster', modules: ['cluster'], sections: [{ module: 'cluster', entries: [] }] },
+      { id: 'platform', label: 'Platform', modules: ['audit'], sections: [{ module: 'audit', entries: [] }] },
+    ],
+  }
+}
+
+/** One attention item as the server sends it; `kind` is left out unless the test names one. */
+function attentionItem(id: string, title: string, overrides: Record<string, unknown> = {}) {
+  return { id, groupKey: id, title, severity: 'warning', count: 1, capped: false, ...overrides }
+}
+
+/** The names of the Attention popover's regions, in order. */
+async function attentionRegions(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Attention/ }))
+  const popover = await screen.findByRole('dialog', { name: 'Attention' })
+  await within(popover).findAllByRole('region')
+
+  return {
+    popover,
+    names: within(popover)
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-label')),
+  }
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -169,6 +204,93 @@ describe('shell layout', () => {
     )
     expect(tabs[1]!.getAttribute('aria-current')).toBe('page')
     expect(tabs[0]!.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('marks a development-only product’s tab with a DEV badge and says so in its name, and no other tab', async () => {
+    const state = twoProducts()
+    const inbox = moduleManifest('inbox', { displayName: 'Inbox' })
+    const withInbox: BootstrapState = {
+      ...state,
+      modules: [...state.modules, inbox],
+      products: [
+        ...state.products,
+        {
+          id: 'dev-inbox',
+          label: 'Dev inbox',
+          developmentOnly: true,
+          modules: ['inbox'],
+          sections: [{ module: 'inbox', entries: [] }],
+        },
+      ],
+    }
+    renderShell(withInbox, { path: '/jobs/runs', files: moduleFiles(withInbox.modules) })
+
+    const tab = await screen.findByRole('link', { name: 'Dev inbox, development only, nothing needs attention' })
+    expect(tab.getAttribute('title')).toBe('Development only')
+    const badge = within(tab).getByText('DEV')
+    expect(badge.closest('[aria-hidden="true"]')).toBeTruthy()
+    for (const name of ['Jobs, nothing needs attention', 'Platform, nothing needs attention']) {
+      const other = screen.getByRole('link', { name })
+      expect(within(other).queryByText('DEV')).toBeNull()
+      expect(other.getAttribute('title')).toBeNull()
+    }
+  })
+
+  it('says a development-only product is development only when its module did not answer', async () => {
+    const state = twoProducts()
+    const inbox = moduleManifest('inbox', { displayName: 'Inbox' })
+    const withInbox: BootstrapState = {
+      ...state,
+      modules: [...state.modules, inbox],
+      products: [
+        ...state.products,
+        {
+          id: 'dev-inbox',
+          label: 'Dev inbox',
+          developmentOnly: true,
+          modules: ['inbox'],
+          sections: [{ module: 'inbox', entries: [] }],
+        },
+      ],
+    }
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? { modules: [{ id: 'inbox', displayName: 'Inbox', stale: true, items: [] }] }
+        : emptyAggregates(request)
+    renderShell(withInbox, { path: '/jobs/runs', files: moduleFiles(withInbox.modules), api })
+
+    expect(await screen.findByRole('link', { name: 'Dev inbox, development only, did not answer' })).toBeTruthy()
+  })
+
+  it('draws an icon for every icon key a module may declare, and none for an unknown key', async () => {
+    const keys = [
+      'runs',
+      'lock',
+      'gauge',
+      'repeat',
+      'hash',
+      'mail',
+      'message',
+      'bell',
+      'activity',
+      'heart-pulse',
+      'nodes',
+    ]
+    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
+    const entries = [...keys, 'no-such-icon'].map((key) => ({
+      id: `diag.nav.${key}`,
+      label: key,
+      route: 'runs',
+      icon: key,
+    }))
+    renderShell(shellState(modules, {}, { diag: entries }), { path: '/diag/settings', files: moduleFiles(modules) })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    const drawn = (label: string) =>
+      within(sidebar).getByRole('link', { name: label }).querySelector('svg path')?.getAttribute('d') ?? ''
+    expect(keys.filter((key) => drawn(key) === '')).toEqual([])
+    expect(within(sidebar).getByRole('link', { name: 'no-such-icon' }).querySelector('svg')).toBeTruthy()
+    expect(drawn('no-such-icon')).toBe('')
   })
 
   it('marks a product tab by its worst attention, in words as well as the dot', async () => {
@@ -472,6 +594,112 @@ describe('shell layout', () => {
     expect(jobs.className).toContain('hd-tone-off')
     expect(screen.getByRole('button', { name: 'Attention' }).className).toContain('hd-tone-off')
     expect(screen.getByRole('link', { name: 'Platform, nothing needs attention' }).className).toContain('hd-tone-ok')
+  })
+
+  it('lists health checks after the products, each led by its module, and leaves out a module with only health checks', async () => {
+    const user = userEvent.setup()
+    const health = { kind: 'health-check' }
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? {
+            modules: [
+              {
+                id: 'jobs',
+                displayName: 'Jobs',
+                stale: false,
+                items: [attentionItem('j1', 'Runs failed', { kind: 'work' })],
+              },
+              {
+                id: 'cluster',
+                displayName: 'Cluster',
+                stale: false,
+                items: [
+                  attentionItem('c1', 'Node lost its lease'),
+                  attentionItem('c2', 'Store did not answer', { ...health, severity: 'critical' }),
+                ],
+              },
+              {
+                id: 'audit',
+                displayName: 'Audit',
+                stale: false,
+                items: [attentionItem('c1', 'Audit store slow', health)],
+              },
+            ],
+          }
+        : emptyAggregates(request)
+    renderShell(threeProducts(), { path: '/jobs/runs', files: moduleFiles(threeProducts().modules), api })
+
+    const { popover, names } = await attentionRegions(user)
+
+    expect(names).toEqual(['Jobs', 'Cluster', 'Health checks'])
+    const cluster = within(popover).getByRole('region', { name: 'Cluster' })
+    expect(
+      within(cluster)
+        .getAllByRole('listitem')
+        .map((row) => row.textContent),
+    ).toEqual(['Warning: Node lost its lease1 item'])
+    const checks = within(popover).getByRole('region', { name: 'Health checks' })
+    expect(
+      within(checks)
+        .getAllByRole('listitem')
+        .map((row) => row.textContent),
+    ).toEqual(['Critical: ClusterStore did not answer1 item', 'Warning: AuditAudit store slow1 item'])
+    // A health check counts toward the pill, its dot, and its product's tab as any item does.
+    const pill = screen.getByRole('button', { name: 'Attention 4' })
+    expect(pill.className).toContain('hd-tone-fail')
+    expect(screen.getByRole('link', { name: 'Cluster, 2 need attention' }).className).toContain('hd-tone-fail')
+    expect(screen.getByRole('link', { name: 'Platform, 1 need attention' })).toBeTruthy()
+  })
+
+  it('keeps a module that did not answer in its own region, and reads a missing or unknown kind as work', async () => {
+    const user = userEvent.setup()
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? {
+            modules: [
+              { id: 'jobs', displayName: 'Jobs', stale: true, items: [] },
+              {
+                id: 'cluster',
+                displayName: 'Cluster',
+                stale: false,
+                items: [attentionItem('c1', 'Node lost its lease'), attentionItem('c2', 'Disk full', { kind: 'disk' })],
+              },
+            ],
+          }
+        : emptyAggregates(request)
+    renderShell(threeProducts(), { path: '/jobs/runs', files: moduleFiles(threeProducts().modules), api })
+
+    const { popover, names } = await attentionRegions(user)
+
+    expect(names).toEqual(['Jobs', 'Cluster'])
+    const jobs = within(popover).getByRole('region', { name: 'Jobs' })
+    expect(within(jobs).getByText(/Jobs did not answer/)).toBeTruthy()
+    expect(within(jobs).getByRole('button', { name: 'Retry' })).toBeTruthy()
+    expect(within(within(popover).getByRole('region', { name: 'Cluster' })).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('keeps a stale module’s health checks out of the Health checks section', async () => {
+    const user = userEvent.setup()
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? {
+            modules: [
+              {
+                id: 'cluster',
+                displayName: 'Cluster',
+                stale: true,
+                items: [attentionItem('c1', 'Store did not answer', { kind: 'health-check' })],
+              },
+              { id: 'jobs', displayName: 'Jobs', stale: false, items: [attentionItem('j1', 'Runs failed')] },
+            ],
+          }
+        : emptyAggregates(request)
+    renderShell(threeProducts(), { path: '/jobs/runs', files: moduleFiles(threeProducts().modules), api })
+
+    const { popover, names } = await attentionRegions(user)
+
+    expect(names).toEqual(['Cluster', 'Jobs'])
+    expect(within(popover).queryByText('Store did not answer')).toBeNull()
   })
 
   it('keeps the clock out of any live region, and announces going stale once', async () => {

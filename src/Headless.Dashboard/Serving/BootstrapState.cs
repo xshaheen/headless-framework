@@ -108,6 +108,7 @@ internal sealed record BootstrapState
                 {
                     Id = product.Id,
                     Label = product.Label,
+                    DevelopmentOnly = product.IsDevelopmentOnly ? true : null,
                     Modules = [.. members.Select(static module => module.Id)],
                     Sections =
                     [
@@ -229,6 +230,12 @@ internal sealed record BootstrapProduct
     public required string Id { get; init; }
 
     public required string Label { get; init; }
+
+    /// <summary>
+    /// <see langword="true"/> for a product that serves development only; <see langword="null"/> otherwise, so the
+    /// bootstrap leaves the field out for every other product.
+    /// </summary>
+    public bool? DevelopmentOnly { get; init; }
 
     /// <summary>The ids of the product's modules the session may view, refused ones included, in registration order.</summary>
     public required IReadOnlyList<string> Modules { get; init; }

@@ -61,6 +61,7 @@
   --color-sched: var(--sched);
   --color-enq: var(--enq);
   --color-proc: var(--proc);
+  --color-on-proc: var(--on-proc);
   --color-ok: var(--ok);
   --color-off: var(--off);
   --color-avatar: var(--avatar);
@@ -178,6 +179,10 @@
 @utility type-label-mono {
   font: var(--text-label);
   font-family: var(--mono);
+}
+
+@utility type-badge {
+  font: var(--text-badge);
 }
 
 @utility type-axis {
@@ -396,6 +401,32 @@
   .hd-cell > span:only-child > bdi:only-child:empty::before {
     content: '\2013';
     color: var(--faint);
+  }
+
+  /* An explanation of several paragraphs: module prose carries no class, so the block spaces its children and draws
+     the list markers the base styles take away. */
+  .hd-callout {
+    @apply flex flex-col gap-2 rounded-lg border border-border bg-deep px-3.5 py-3 type-small text-muted-foreground;
+  }
+
+  .hd-callout :is(p, ul, ol, dl) {
+    @apply m-0;
+  }
+
+  .hd-callout :is(ul, ol) {
+    @apply flex flex-col gap-1 ps-5;
+  }
+
+  .hd-callout ul {
+    list-style: disc;
+  }
+
+  .hd-callout ol {
+    list-style: decimal;
+  }
+
+  .hd-callout dt {
+    @apply font-medium text-foreground;
   }
 
   .hd-banner[data-tone='warn'] {
