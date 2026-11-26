@@ -57,8 +57,8 @@ export function Card({ title, caption, action, icon: Icon, empty, emptyIcon, chi
       aria-busy={state?.status === 'loading' || undefined}
     >
       {/* The heading row is prose and controls in sans; its caption is a served count, so it stays mono. */}
-      <header className={`${row} type-nav [&>:not(h2,.hd-faint)]:ms-auto`}>
-        <h2 className="flex items-center gap-2 type-nav-strong">
+      <header className={`${headingRow} [&>:not(h2,.hd-faint)]:ms-auto`}>
+        <h2 className={cardHeading}>
           {Icon ? <Icon /> : null}
           {title}
         </h2>
@@ -100,6 +100,10 @@ function CardStateBody({ state }: { state: CardState }) {
 }
 
 const row = 'flex min-h-(--card-row-height) flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-1.5 ps-3.5 pe-3'
+
+/** A card surface's heading row and its heading, shared by every SDK block drawn as a card. */
+export const headingRow = `${row} type-nav`
+export const cardHeading = 'flex items-center gap-2 type-nav-strong'
 
 export interface CardRowProps {
   /** The state role whose dot leads the row. */
