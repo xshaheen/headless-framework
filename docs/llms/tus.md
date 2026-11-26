@@ -116,7 +116,7 @@ Both Headless stores reject writes from a stale request, report a completed uplo
 
 - **Answer existence through metadata.** `GetUploadMetadataAsync` returns `null`, or throws `TusStoreException`, for an id the store never issued. Any other exception counts as a store failure (`503`, or `423` to a status request), so the upload reads as unavailable instead of not found.
 - **Implement `ITusPipelineStore` if it hashes as it reads.** The endpoint reads the first bytes from the request pipe and hands a stream-only store the pipe wrapped as a stream, for which tusdotnet's `GetUploadChecksumInfo()` returns `null`.
-- **Expect cleanup unsynchronized with writes.** The cleanup calls `RemoveExpiredFilesAsync` with no file lock. tusdotnet's `TusDiskStore` lists expired uploads, then deletes the list, so a write that finishes an upload in between loses it. The Headless stores delete an upload only when it is unchanged since the pass found it.
+- **Make bulk cleanup safe against concurrent writes.** For a custom store, `RemoveExpiredFilesAsync` is responsible for deleting only expired incomplete uploads. The cleanup job handles `TusDiskStore` separately by taking the same upload lock as `MapHeadlessTus` before it rechecks and deletes a candidate.
 
 ### Concurrent PATCH Safety
 
@@ -439,6 +439,8 @@ A validator can answer any status from 400 to 599. A validator exception answers
 
 tusdotnet's `MapTus` works beside `MapHeadlessTus` for a `DefaultTusConfiguration` you build by hand. It gets none of the layer's checks: no owner or tenant check (anyone holding a file id can read, resume, or delete it), no validation or delete rule beyond what the configuration sets, and no lock provider or body limit unless the factory sets them (tusdotnet then locks within the process, and Kestrel's 30 MB limit applies). Concatenation stays available when configured. A `UseS3` store learns an upload's sliding window from the first refresh it sees, so give every raw endpoint over an S3 store one fixed expiration policy.
 
+For `TusDiskStore`, cleanup serializes with a raw endpoint only when both use the same upload lock. Set `FileLockProvider` to the registered `ITusFileLockProvider` when the host has one. If the host has no registered provider, both use tusdotnet's in-process lock by default.
+
 The two do not mix over one store. `MapHeadlessTus` and `ITusUploads` never find a raw upload, unless its client sent `headless-` entries of its own choosing, which a raw endpoint does not refuse. A raw endpoint serves a `MapHeadlessTus` upload to anyone who holds its id and echoes its stamp in HEAD. With tenant scoping on, a `UseS3` or `UseAzure` store still scopes a raw request by tenant and throws `MissingTenantContextException` with none.
 
 ```csharp
@@ -455,8 +457,9 @@ app.MapTus(
         Store = httpContext.RequestServices.GetRequiredService<ITusStore>(),
         MaxAllowedUploadSizeInBytesLong = 100L * 1024 * 1024,
         Expiration = new SlidingExpiration(TimeSpan.FromHours(1)),
-        // Registered by UseDistributedLocks; leave it unset on a single node.
-        FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>(),
+        // Match the provider used by Headless TUS cleanup.
+        FileLockProvider = httpContext.RequestServices.GetService<ITusFileLockProvider>()
+            ?? tusdotnet.FileLocks.InMemoryFileLockProvider.Instance,
     }));
 ```
 
@@ -466,8 +469,9 @@ tusdotnet only reports `Upload-Expires`. `AddHeadlessTus` registers a job, on by
 
 - **Incomplete uploads only.** A Headless store never reports a finished upload as expired.
 - **Schedule.** The first pass runs at host start, reclaiming uploads that expired while it was down, then one per `Interval`. A failed pass, for example before the bucket is provisioned, is logged and the next tick runs normally. A store without `ITusExpirationStore` gets no passes.
-- **Several nodes.** With `UseDistributedLocks`, a node runs a pass only when it takes the `{resourcePrefix}:expired-uploads-cleanup` lease, held for 90% of the interval, so the cluster sweeps about once per interval, and a crashed node delays cleanup by at most one interval. Without it, every node sweeps every tick: safe, since deletes are idempotent, but the scan load multiplies and counts are per node.
-- **Races.** The job holds no file lock. Each Headless store deletes an upload only when it is unchanged since the pass found it, so a resume that committed data or refreshed the expiration in between survives. A resume that has started but written nothing can still lose its upload. `UseDistributedLocks` closes that window.
+- **Several nodes.** With `UseDistributedLocks`, a node runs a pass only when it takes the `{resourcePrefix}:expired-uploads-cleanup` lease. The lease lasts for 90% of the interval, so the cluster sweeps about once per interval. Without it, each node runs its own pass. A shared disk store needs the same distributed upload lock on every node that writes or sweeps it.
+- **Disk store.** For each `TusDiskStore` candidate, cleanup tries the upload lock used by `MapHeadlessTus`. It skips a busy upload and checks again on a later pass. With the lock held, cleanup deletes the upload only if it still exists, is expired, and is incomplete.
+- **Azure and S3.** Azure conditions deletion on the blob ETag. S3 conditions deletion on the upload state object's ETag. A resume that changed the state after selection survives. A resume that has yet to change the state can still lose its expired upload.
 
 ---
 

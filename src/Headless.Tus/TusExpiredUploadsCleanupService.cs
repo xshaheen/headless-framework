@@ -4,14 +4,15 @@ using FluentValidation;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using tusdotnet.FileLocks;
 using tusdotnet.Interfaces;
+using tusdotnet.Stores;
 
 namespace Headless.Tus;
 
 /// <summary>
-/// Periodically removes expired <em>incomplete</em> uploads via
-/// <see cref="ITusExpirationStore.RemoveExpiredFilesAsync"/>. Completed uploads are never touched —
-/// conforming stores only reap unfinished uploads whose expiration has passed.
+/// Periodically removes expired <em>incomplete</em> uploads. Disk uploads are rechecked under the upload's
+/// file lock. Other stores own the safety of <see cref="ITusExpirationStore.RemoveExpiredFilesAsync"/>.
 /// </summary>
 /// <remarks>
 /// tusdotnet only sets the <c>Upload-Expires</c> header; nothing removes expired uploads unless
@@ -29,9 +30,12 @@ internal sealed partial class TusExpiredUploadsCleanupService(
     IOptions<TusExpiredUploadsCleanupOptions> options,
     TimeProvider timeProvider,
     ILogger<TusExpiredUploadsCleanupService> logger,
-    ITusExpiredUploadsCleanupGate? gate = null
+    ITusExpiredUploadsCleanupGate? gate = null,
+    ITusFileLockProvider? fileLockProvider = null
 ) : BackgroundService
 {
+    private readonly ITusFileLockProvider _fileLockProvider = fileLockProvider ?? InMemoryFileLockProvider.Instance;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.Enabled)
@@ -76,7 +80,9 @@ internal sealed partial class TusExpiredUploadsCleanupService(
                 return;
             }
 
-            var removed = await expirationStore.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
+            var removed = store is TusDiskStore diskStore
+                ? await _RemoveExpiredDiskUploadsAsync(diskStore, stoppingToken).ConfigureAwait(false)
+                : await expirationStore.RemoveExpiredFilesAsync(stoppingToken).ConfigureAwait(false);
 
             if (removed > 0)
             {
@@ -91,6 +97,60 @@ internal sealed partial class TusExpiredUploadsCleanupService(
         {
             LogCleanupFailed(logger, e);
         }
+    }
+
+    private async Task<int> _RemoveExpiredDiskUploadsAsync(TusDiskStore diskStore, CancellationToken cancellationToken)
+    {
+        var candidates = await diskStore.GetExpiredFilesAsync(cancellationToken).ConfigureAwait(false);
+        var removed = 0;
+
+        foreach (var fileId in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var fileLock = await _fileLockProvider.AquireLock(fileId).ConfigureAwait(false);
+
+            if (!await fileLock.Lock().ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (!await diskStore.FileExistAsync(fileId, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                // TusDiskStore selects candidates against the system clock, which also drives tusdotnet expiry.
+                var expiresAt = await diskStore.GetExpirationAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+                if (expiresAt is null || expiresAt >= TimeProvider.System.GetUtcNow())
+                {
+                    continue;
+                }
+
+                var length = await diskStore.GetUploadLengthAsync(fileId, cancellationToken).ConfigureAwait(false);
+
+                if (
+                    length is not null
+                    && length == await diskStore.GetUploadOffsetAsync(fileId, cancellationToken).ConfigureAwait(false)
+                )
+                {
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                await diskStore.DeleteFileAsync(fileId, cancellationToken).ConfigureAwait(false);
+                removed++;
+            }
+            finally
+            {
+                await fileLock.ReleaseIfHeld().ConfigureAwait(false);
+            }
+        }
+
+        return removed;
     }
 
     [LoggerMessage(
@@ -134,10 +194,8 @@ public sealed class TusExpiredUploadsCleanupOptions
 
     /// <summary>How often expired incomplete uploads are removed.</summary>
     /// <remarks>
-    /// Defaults to 5 minutes. Each pass calls
-    /// <see cref="ITusExpirationStore.RemoveExpiredFilesAsync"/>, which typically scans the
-    /// store's uploads (a prefix listing for the Azure store) — prefer a coarser interval on
-    /// containers with many uploads; the expiration window itself is the upload endpoint's
+    /// Defaults to 5 minutes. Each pass scans the store's uploads, so prefer a coarser interval
+    /// for stores with many uploads. The expiration window itself is the upload endpoint's
     /// <see cref="TusUploadEndpointOptions.Expiration"/>, or <c>DefaultTusConfiguration.Expiration</c>
     /// on an endpoint mapped with tusdotnet's <c>MapTus</c>. In multi-node deployments every node runs its
     /// own loop against the same store. With <c>UseDistributedLocks</c> selected,
