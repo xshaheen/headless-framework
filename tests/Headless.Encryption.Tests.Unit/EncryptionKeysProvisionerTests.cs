@@ -2,6 +2,7 @@
 
 using Headless.Encryption;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,6 +25,22 @@ public sealed class EncryptionKeysProvisionerTests : TestBase
         // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
         kinds.Should().ContainSingle(k => k == SetupEncryption.KeysResourceKind);
         SetupEncryption.KeysResourceKind.Should().Be("EncryptionKeys");
+    }
+
+    [Fact]
+    public void should_depend_only_on_the_schema_resources_that_create_the_key_tables()
+    {
+        // given
+        using var host = new EncryptionTestHost(_store);
+        var provisioner = _Provisioner(host);
+        var schema = _Provisioner(SchemaRunner.ResourceKind);
+        var migrations = _Provisioner("EntityFramework");
+
+        // when
+        var dependencies = provisioner.DependsOn([schema, migrations, provisioner]);
+
+        // then
+        dependencies.Should().Equal(schema);
     }
 
     [Fact]
@@ -86,6 +103,14 @@ public sealed class EncryptionKeysProvisionerTests : TestBase
 
         await FluentActions.Awaiting(() => warmup.WarmUpAsync(AbortToken)).Should().NotThrowAsync();
         warmup.GatesReadiness.Should().BeTrue();
+    }
+
+    private static IResourceProvisioner _Provisioner(string kind)
+    {
+        var provisioner = Substitute.For<IResourceProvisioner>();
+        provisioner.Kind.Returns(kind);
+
+        return provisioner;
     }
 
     private static IResourceProvisioner _Provisioner(EncryptionTestHost host) =>
