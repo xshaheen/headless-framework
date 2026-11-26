@@ -43,7 +43,7 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
     /// <exception cref="InvalidOperationException">Two or more registered providers share the same <see cref="ISettingValueReadProvider.Name"/>.</exception>
     private List<ISettingValueReadProvider> _GetProviders()
     {
-        // Registration lists providers lowest priority first (see Setup._AddCoreValueProvider); readers
+        // Registration lists providers lowest priority first (see SettingManagementProvidersOptions.ValueProviders); readers
         // expect the opposite, so the resolved list is reversed once here.
         var providers = _options
             .ValueProviders.Select(type => (ISettingValueReadProvider)_serviceProvider.GetRequiredService(type))

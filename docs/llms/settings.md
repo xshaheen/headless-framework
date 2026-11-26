@@ -72,7 +72,14 @@ The built-in providers, from lowest to highest priority:
 | `Tenant` | the stored value for the current tenant, or the tenant id you pass | yes |
 | `User` | the stored value for the current user, or the user id you pass | yes |
 
-`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A custom provider registered with `services.AddSettingValueProvider<T>()` is added after `User`, so it has the highest priority.
+`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A read that names a provider starts at that provider and falls back to every provider below it.
+
+Place a custom provider with one of two calls. Both work whether they run before or after `AddHeadlessSettings`:
+
+- `services.AddSettingValueProvider<T>()` adds `T` above `User`, so it has the highest priority.
+- `services.AddSettingValueProviderBelow<T, THigher>()` adds `T` directly below `THigher`. A read at `THigher` falls back to `T`, and a read at `T` falls back to the providers below it. For example, `AddSettingValueProviderBelow<AccountSettingValueProvider, UserSettingValueProvider>()` gives `User`, `Account`, `Tenant`, `Global`, `Configuration`, `DefaultValue`.
+
+Do not insert into `SettingManagementProvidersOptions.ValueProviders` from `PostConfigure` by hand. `AddSettingValueProviderBelow` does that, moves a provider already in the chain, and throws `InvalidOperationException` when the settings options are first resolved if `THigher` is not in the chain.
 
 The Tenant level always resolves from the ambient tenant. A read or write for a named user from host scope (no current tenant) therefore resolves the user's fallback against the host's chain, not the user's tenant. To see what a user sees, read inside the user's tenant (`currentTenant.Change(tenantId)`).
 
@@ -306,7 +313,7 @@ A host that never seeds still serves its static definitions from memory. But def
 
 ### Custom value providers
 
-Implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write), and register it with `services.AddSettingValueProvider<T>()`. Registration is idempotent by type, and the last registered provider has the highest priority. `ISettingManager` writes through `ISettingValueProvider.SetAllAsync`. Its default calls `SetAsync` or `ClearAsync` once per entry, so override it when your source can apply a batch atomically.
+Implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write), and register it with `services.AddSettingValueProvider<T>()` (highest priority) or `services.AddSettingValueProviderBelow<T, THigher>()` (directly below `THigher`), as [Resolution order](#resolution-order) describes. `AddSettingValueProvider<T>()` is idempotent by type, and among several such calls the last one has the highest priority. `ISettingManager` writes through `ISettingValueProvider.SetAllAsync`. Its default calls `SetAsync` or `ClearAsync` once per entry, so override it when your source can apply a batch atomically.
 
 ## Choosing a Provider
 

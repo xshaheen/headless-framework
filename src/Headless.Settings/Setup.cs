@@ -49,10 +49,15 @@ public static class SetupSettings
             return services;
         }
 
-        /// <summary>Registers <typeparamref name="T"/> as a setting value provider if it is not already registered, and appends it to the active value provider list.</summary>
+        /// <summary>Registers <typeparamref name="T"/> as a setting value provider at the top of the fallback chain, so it has the highest priority.</summary>
+        /// <remarks>
+        /// The built-in chain is always present, whether this runs before or after <c>AddHeadlessSettings</c>.
+        /// Calling this more than once for the same <typeparamref name="T"/> is a no-op. To place a provider lower
+        /// in the chain, call <see cref="AddSettingValueProviderBelow{T, THigher}"/>.
+        /// </remarks>
         /// <typeparam name="T">The concrete <see cref="ISettingValueReadProvider"/> implementation to register.</typeparam>
         /// <returns>The service collection for further registration.</returns>
-        public IServiceCollection AddSettingValueProvider<T>() // Transient
+        public IServiceCollection AddSettingValueProvider<T>()
             where T : class, ISettingValueReadProvider
         {
             services.AddSingleton<T>();
@@ -63,6 +68,62 @@ public static class SetupSettings
                 {
                     options.ValueProviders.Add<T>();
                 }
+            });
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers <typeparamref name="T"/> as a setting value provider directly below <typeparamref name="THigher"/>
+        /// in the fallback chain: a read at <typeparamref name="THigher"/> falls back to <typeparamref name="T"/>, and a
+        /// read at <typeparamref name="T"/> falls back to the providers below it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The position is resolved after every <c>Configure</c> callback has run, so it does not depend on whether
+        /// this runs before or after <c>AddHeadlessSettings</c> or the registration of <typeparamref name="THigher"/>.
+        /// A provider already in the chain moves to the new position.
+        /// </para>
+        /// <para>
+        /// For example, <c>AddSettingValueProviderBelow&lt;AccountSettingValueProvider, UserSettingValueProvider&gt;()</c>
+        /// gives the chain, highest priority first: User, Account, Tenant, Global, Configuration, DefaultValue.
+        /// </para>
+        /// </remarks>
+        /// <typeparam name="T">The concrete <see cref="ISettingValueReadProvider"/> implementation to register.</typeparam>
+        /// <typeparam name="THigher">The provider directly above <typeparamref name="T"/>.</typeparam>
+        /// <returns>The service collection for further registration.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <typeparamref name="T"/> and <typeparamref name="THigher"/> are the same type; or, when the settings options
+        /// are first resolved, <typeparamref name="THigher"/> is not in the value provider chain.
+        /// </exception>
+        public IServiceCollection AddSettingValueProviderBelow<T, THigher>()
+            where T : class, ISettingValueReadProvider
+            where THigher : class, ISettingValueReadProvider
+        {
+            if (typeof(T) == typeof(THigher))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot place setting value provider {typeof(T).FullName} below itself."
+                );
+            }
+
+            services.AddSingleton<T>();
+
+            services.PostConfigure<SettingManagementProvidersOptions>(options =>
+            {
+                var providers = options.ValueProviders;
+
+                if (!providers.Contains<THigher>())
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot place setting value provider {typeof(T).FullName} below {typeof(THigher).FullName}, "
+                            + "which is not in the setting value provider chain."
+                    );
+                }
+
+                // The list runs lowest priority first, so the provider's slot is the anchor's current index.
+                providers.Remove<T>();
+                providers.Insert(providers.IndexOf(typeof(THigher)), typeof(T));
             });
 
             return services;
@@ -132,19 +193,11 @@ public static class SetupSettings
             return services;
         }
 
-        /// <summary>Registers the built-in value providers in priority order (lowest priority first: default, configuration, global, tenant, user).</summary>
+        /// <summary>Registers the built-in value providers as services.</summary>
         private void _AddCoreValueProvider()
         {
-            services.Configure<SettingManagementProvidersOptions>(options =>
-            {
-                // Last added provider has the highest priority
-                options.ValueProviders.Add<DefaultValueSettingValueProvider>();
-                options.ValueProviders.Add<ConfigurationSettingValueProvider>();
-                options.ValueProviders.Add<GlobalSettingValueProvider>();
-                options.ValueProviders.Add<TenantSettingValueProvider>();
-                options.ValueProviders.Add<UserSettingValueProvider>();
-            });
-
+            // The chain itself is the initial value of SettingManagementProvidersOptions.ValueProviders, so a custom
+            // provider registered before AddHeadlessSettings still lands relative to it.
             services.AddSingleton<DefaultValueSettingValueProvider>();
             services.AddSingleton<ConfigurationSettingValueProvider>();
             services.AddSingleton<GlobalSettingValueProvider>();

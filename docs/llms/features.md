@@ -90,7 +90,10 @@ public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
 
 Three built-in providers resolve a value, from lowest to highest priority: `DefaultValue` (the definition's `DefaultValue`), `Edition`, and `Tenant`. With no provider named, `GetAsync` asks the highest-priority provider first and returns the first non-null value. The constants are on `FeatureValueProviderNames`.
 
-A custom provider added with `services.AddFeatureValueProvider<T>()` goes after `Tenant`, so it has the highest priority of all. The last provider registered wins.
+Place a custom provider with one of two calls. Both work whether they run before or after `AddHeadlessFeatures`:
+
+- `services.AddFeatureValueProvider<T>()` adds `T` above `Tenant`, so it has the highest priority of all. Among several such calls, the last one wins.
+- `services.AddFeatureValueProviderBelow<T, THigher>()` adds `T` directly below `THigher`. A read at `THigher` falls back to `T`, and a read at `T` falls back to the providers below it. For example, `AddFeatureValueProviderBelow<PlanFeatureValueProvider, TenantFeatureValueProvider>()` gives `Tenant`, `Plan`, `Edition`, `DefaultValue`. It moves a provider already in the chain, and throws `InvalidOperationException` when the feature options are first resolved if `THigher` is not in the chain.
 
 `Tenant` and `Edition` resolve their key as the explicit provider key when you pass one (`GetForTenantAsync(name, tenantId)`), else the ambient tenant or its edition. Reads and writes use the same rule, so a value written for one tenant reads back for that tenant only.
 
@@ -480,7 +483,7 @@ Widen the column before, or with, the code that writes longer values. Narrowing 
 
 ### Custom value providers
 
-Implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write) and register it with `services.AddFeatureValueProvider<T>()`. Registration is idempotent by type, and the provider takes the highest priority.
+Implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write) and register it with `services.AddFeatureValueProvider<T>()` (highest priority) or `services.AddFeatureValueProviderBelow<T, THigher>()` (directly below `THigher`), as [Resolution order](#resolution-order) describes. `AddFeatureValueProvider<T>()` is idempotent by type.
 
 - Implement `IFeatureValueReadProvider.GetAllAsync`. Every multi-name read (`GetAllAsync(featureNames)`, `GetAllAsync(providerName, …)`, multi-name `IsEnabledAsync` and `EnsureEnabledAsync`) asks each provider once with the whole batch through it. Without it, the provider's features disappear from bulk results.
 - `IFeatureValueProvider.SetAllAsync` defaults to one `SetAsync` or `ClearAsync` per entry. Override it when your source can apply a batch atomically.
