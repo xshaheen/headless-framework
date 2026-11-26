@@ -149,6 +149,7 @@ public static class SetupCoordinationCore
             services.TryAddSingleton<IMembershipEventSource>(static sp =>
                 sp.GetRequiredService<MembershipEventSource>()
             );
+            services.TryAddSingleton<IMembershipEventLog>(static sp => sp.GetRequiredService<MembershipEventSource>());
 
             services.TryAddSingleton<MembershipService>(sp => new MembershipService(
                 storeFactory(sp),
@@ -217,15 +218,35 @@ public static class SetupCoordinationCore
         }
 
         var extension = setup.Extensions.Single();
-        var extensionTypeName = extension.GetType().FullName ?? "unknown";
-        services.AddSingleton(new CoordinationProviderRegistration(extensionTypeName));
+        var providerName = extension.ProviderName;
+        var heartbeatEnabled = setup.RegisterMembershipHeartbeat;
+        services.AddSingleton(new CoordinationProviderRegistration(providerName));
 
         extension.AddServices(services);
 
-        if (setup.RegisterMembershipHeartbeat)
+        if (heartbeatEnabled)
         {
             services._AddMembershipHeartbeat();
         }
+
+        // Built from options on first resolve, so it reads the bound values and costs no store round trip.
+        services.AddSingleton(sp =>
+        {
+            var options = sp.GetRequiredService<CoordinationOptions>();
+
+            return new CoordinationClusterSummary
+            {
+                ClusterName = options.ClusterName,
+                ProviderName = providerName,
+                Role = options.Role,
+                HeartbeatInterval = options.HeartbeatInterval,
+                SuspicionThreshold = options.SuspicionThreshold,
+                DeadThreshold = options.DeadThreshold,
+                DeadRetentionWindow = options.DeadRetentionWindow,
+                SelfFenceMargin = SelfFenceMargin.Resolve(options),
+                MembershipHeartbeatEnabled = heartbeatEnabled,
+            };
+        });
 
         return services;
     }

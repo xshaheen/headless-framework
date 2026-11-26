@@ -13,6 +13,14 @@ namespace Tests;
 public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixture)
     : MembershipConformanceTests<RedisMembershipFixture>(fixture)
 {
+    protected override string ExpectedProviderName => "Redis";
+
+    [Fact]
+    public override void should_report_the_provider_name_in_the_cluster_summary()
+    {
+        base.should_report_the_provider_name_in_the_cluster_summary();
+    }
+
     private readonly RedisMembershipFixture _fixture = fixture;
 
     [Fact]

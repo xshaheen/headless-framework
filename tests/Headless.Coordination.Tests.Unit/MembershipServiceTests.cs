@@ -464,7 +464,7 @@ public sealed class MembershipServiceTests : TestBase
         // given
         var timeProvider = new FakeTimeProvider();
         var store = new FakeMembershipStore { BlockOnHeartbeat = true };
-        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider());
         using var sut = _CreateService(store, _FenceOptions(), timeProvider: timeProvider, source: source);
         sut.EnableSelfFence();
         await sut.RegisterAsync(AbortToken);
@@ -669,7 +669,7 @@ public sealed class MembershipServiceTests : TestBase
             store,
             new StaticNodeIdProvider(new NodeId(nodeId)),
             options ?? new CoordinationOptions(),
-            source ?? new MembershipEventSource(NullLogger<MembershipEventSource>.Instance),
+            source ?? new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider()),
             timeProvider ?? new FakeTimeProvider(),
             lifetime,
             NullLogger<MembershipService>.Instance

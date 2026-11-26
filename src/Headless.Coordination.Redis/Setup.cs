@@ -99,6 +99,8 @@ public static class SetupCoordinationRedis
                 services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
         }
 
+        public string ProviderName => "Redis";
+
         public void AddServices(IServiceCollection services)
         {
             _configure(services);

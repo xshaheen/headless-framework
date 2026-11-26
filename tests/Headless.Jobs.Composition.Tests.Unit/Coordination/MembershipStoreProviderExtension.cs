@@ -12,6 +12,8 @@ namespace Tests.Coordination;
 internal sealed class MembershipStoreProviderExtension<TStore> : ICoordinationProviderOptionsExtension
     where TStore : class, IMembershipStore
 {
+    public string ProviderName => "MembershipStore";
+
     public void AddServices(IServiceCollection services)
     {
         services.AddCoordinationCore<TStore>();

@@ -102,6 +102,7 @@ public static class SetupCoordinationPostgreSql
     }
 
     private static readonly RelationalCoordinationProvider<PostgreSqlCoordinationOptions> _Provider = new(
+        "PostgreSql",
         PostgreSqlDialect.Instance,
         static options => options.CreateConnection(),
         PostgreSqlMembershipSchemaContribution.Create

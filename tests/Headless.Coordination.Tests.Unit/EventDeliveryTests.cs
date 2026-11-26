@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using Headless.Coordination;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -14,7 +15,11 @@ public sealed class EventDeliveryTests : TestBase
     public async Task should_not_block_other_subscribers_when_one_subscriber_is_not_reading()
     {
         // given
-        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, capacity: 1);
+        var source = new MembershipEventSource(
+            NullLogger<MembershipEventSource>.Instance,
+            new FakeTimeProvider(),
+            capacity: 1
+        );
         await using var slow = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
         await using var fast = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
@@ -45,7 +50,7 @@ public sealed class EventDeliveryTests : TestBase
     public async Task should_fan_out_events_to_multiple_subscribers()
     {
         // given
-        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider());
         await using var first = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
         await using var second = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
@@ -66,7 +71,7 @@ public sealed class EventDeliveryTests : TestBase
     public void should_prune_completed_subscribers_seen_during_publish()
     {
         // given
-        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider());
         var channel = Channel.CreateBounded<NodeMembershipEvent>(1);
         channel.Writer.TryComplete();
         var field = typeof(MembershipEventSource).GetField(
