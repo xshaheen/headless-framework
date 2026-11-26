@@ -10,23 +10,31 @@ namespace Tests;
 public sealed class IndexPageExtensionsTests : TestBase
 {
     [Fact]
-    public async Task should_return_the_full_result_when_optional_paging_is_incomplete()
+    public async Task should_return_only_the_requested_page_and_the_total_when_index_and_size_are_given()
     {
+        // given
         await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
 
-        var page = await fixture.Context.Rows.ToIndexPageAsync(index: 1, size: null, cancellationToken: AbortToken);
+        // when
+        var page = await fixture
+            .Context.Rows.OrderBy(static row => row.Position)
+            .ToIndexPageAsync(index: 1, size: 4, cancellationToken: AbortToken);
 
-        page.Index.Should().Be(0);
+        // then
+        page.Index.Should().Be(1);
+        page.Size.Should().Be(4);
         page.TotalItems.Should().Be(9);
-        page.Items.Select(static row => row.Position).Should().BeEquivalentTo([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        page.Items.Select(static row => row.Position).Should().Equal(5, 6, 7, 8);
     }
 
     [Fact]
-    public async Task should_return_the_full_ordered_projection_when_request_is_null()
+    public async Task should_return_only_the_requested_ordered_projected_page_when_a_request_is_given()
     {
+        // given
         await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
-        IIndexPageRequest? request = null;
+        var request = new TestIndexPageRequest { Index = 0, Size = 3 };
 
+        // when
         var page = await fixture.Context.Rows.ToIndexPageAsync(
             static row => row.Position,
             ascending: false,
@@ -35,8 +43,67 @@ public sealed class IndexPageExtensionsTests : TestBase
             AbortToken
         );
 
+        // then
+        page.Index.Should().Be(0);
+        page.Size.Should().Be(3);
         page.TotalItems.Should().Be(9);
-        page.Items.Should().Equal("row-9", "row-8", "row-7", "row-6", "row-5", "row-4", "row-3", "row-2", "row-1");
+        page.Items.Should().Equal("row-9", "row-8", "row-7");
+    }
+
+    [Fact]
+    public async Task should_throw_instead_of_reading_every_row_when_the_request_is_null()
+    {
+        // given
+        await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
+        IIndexPageRequest request = null!;
+
+        // when
+        Func<Task> action = async () => await fixture.Context.Rows.ToIndexPageAsync(request, AbortToken);
+
+        // then
+        await action.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task should_return_only_the_requested_ordered_page_and_the_total_when_a_request_is_given()
+    {
+        // given
+        await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
+        var request = new TestIndexPageRequest { Index = 1, Size = 4 };
+
+        // when
+        var page = await fixture.Context.Rows.ToIndexPageAsync(
+            static row => row.Position,
+            ascending: false,
+            request,
+            AbortToken
+        );
+
+        // then
+        page.Index.Should().Be(1);
+        page.Size.Should().Be(4);
+        page.TotalItems.Should().Be(9);
+        page.Items.Select(static row => row.Position).Should().Equal(5, 4, 3, 2);
+    }
+
+    [Fact]
+    public async Task should_throw_instead_of_reading_every_ordered_row_when_the_request_is_null()
+    {
+        // given
+        await using var fixture = await SqlitePageFixture.CreateAsync(AbortToken);
+        IIndexPageRequest request = null!;
+
+        // when
+        Func<Task> action = async () =>
+            await fixture.Context.Rows.ToIndexPageAsync(
+                static row => row.Position,
+                ascending: true,
+                request,
+                AbortToken
+            );
+
+        // then
+        await action.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Theory]
@@ -198,6 +265,8 @@ public sealed class IndexPageExtensionsTests : TestBase
             await _connection.DisposeAsync();
         }
     }
+
+    private sealed class TestIndexPageRequest : IndexPageRequest;
 
     private sealed class PageDbContext(DbContextOptions<PageDbContext> options) : DbContext(options)
     {
