@@ -1,5 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { defineModule } from '../../src/define-module.ts'
 import { SandboxedHtmlFrame, type PreviewWidth } from '../../src/preview/index.ts'
@@ -40,6 +41,33 @@ describe('SandboxedHtmlFrame', () => {
 
     expect(screen.queryByRole('status', { name: 'Loading Reset your password' })).toBeNull()
     expect(screen.getByTitle('Reset your password')).toBe(frame)
+  })
+
+  it('starts a new address behind the skeleton again', async () => {
+    function Switcher() {
+      const [id, setId] = useState('42')
+      return (
+        <>
+          <button type="button" onClick={() => setId('43')}>
+            Next email
+          </button>
+          <SandboxedHtmlFrame path={`inbox/emails/${id}/html`} title="Email" />
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    renderModule(
+      defineModule({ id: 'inbox', product: 'dev-inbox', routes: [{ path: 'emails', lazy: async () => ({ default: Switcher }) }] }),
+      { path: 'emails' },
+    )
+
+    fireEvent.load(await screen.findByTitle('Email'))
+    expect(screen.queryByRole('status', { name: 'Loading Email' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Next email' }))
+
+    expect(screen.getByTitle('Email').getAttribute('src')).toContain('/emails/43/html')
+    expect(screen.getByRole('status', { name: 'Loading Email' })).toBeTruthy()
   })
 
   it('opens at Desktop, narrows to a phone on Phone, and can open at Phone', async () => {

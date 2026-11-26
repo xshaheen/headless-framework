@@ -11,7 +11,8 @@ public static class DashboardResults
 {
     // The CSP sandbox keeps the document in an opaque origin even when it is opened outside the frame, so its scripts,
     // forms, and same-origin reads never run; only inline styles and data: images and fonts load, so a captured email
-    // never calls a tracker or a CDN from the operator's browser, and only the dashboard may embed it.
+    // never calls a tracker or a CDN from the operator's browser. Only a page of the host's own origin may frame it, and
+    // the module endpoint's authorization decides who may read it.
     private const string _PreviewPolicy =
         "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; "
         + "base-uri 'none'; form-action 'none'; frame-ancestors 'self'";

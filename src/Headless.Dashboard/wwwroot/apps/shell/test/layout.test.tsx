@@ -236,6 +236,32 @@ describe('shell layout', () => {
     }
   })
 
+  it('says a development-only product is development only when its module did not answer', async () => {
+    const state = twoProducts()
+    const inbox = moduleManifest('inbox', { displayName: 'Inbox' })
+    const withInbox: BootstrapState = {
+      ...state,
+      modules: [...state.modules, inbox],
+      products: [
+        ...state.products,
+        {
+          id: 'dev-inbox',
+          label: 'Dev inbox',
+          developmentOnly: true,
+          modules: ['inbox'],
+          sections: [{ module: 'inbox', entries: [] }],
+        },
+      ],
+    }
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? { modules: [{ id: 'inbox', displayName: 'Inbox', stale: true, items: [] }] }
+        : emptyAggregates(request)
+    renderShell(withInbox, { path: '/jobs/runs', files: moduleFiles(withInbox.modules), api })
+
+    expect(await screen.findByRole('link', { name: 'Dev inbox, development only, did not answer' })).toBeTruthy()
+  })
+
   it('draws an icon for every icon key a module may declare, and none for an unknown key', async () => {
     const keys = [
       'runs',
@@ -650,6 +676,30 @@ describe('shell layout', () => {
     expect(within(jobs).getByText(/Jobs did not answer/)).toBeTruthy()
     expect(within(jobs).getByRole('button', { name: 'Retry' })).toBeTruthy()
     expect(within(within(popover).getByRole('region', { name: 'Cluster' })).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('keeps a stale module’s health checks out of the Health checks section', async () => {
+    const user = userEvent.setup()
+    const api: ApiHandler = (request) =>
+      request.path === 'needs-you'
+        ? {
+            modules: [
+              {
+                id: 'cluster',
+                displayName: 'Cluster',
+                stale: true,
+                items: [attentionItem('c1', 'Store did not answer', { kind: 'health-check' })],
+              },
+              { id: 'jobs', displayName: 'Jobs', stale: false, items: [attentionItem('j1', 'Runs failed')] },
+            ],
+          }
+        : emptyAggregates(request)
+    renderShell(threeProducts(), { path: '/jobs/runs', files: moduleFiles(threeProducts().modules), api })
+
+    const { popover, names } = await attentionRegions(user)
+
+    expect(names).toEqual(['Cluster', 'Jobs'])
+    expect(within(popover).queryByText('Store did not answer')).toBeNull()
   })
 
   it('keeps the clock out of any live region, and announces going stale once', async () => {

@@ -51,10 +51,11 @@ function Frame({ src, title, width }: { src: string; title: string; width: Previ
   const [isLoaded, setIsLoaded] = useState(false)
 
   return (
+    // The edge is a ring, not a border, so it takes no width and the phone document measures the full 375 px.
     // No fill of its own: the browser paints a document with no colour scheme on an opaque white canvas under the
     // dark theme, and the light card shows through under the light one, so captured text reads in both.
     <div
-      className={`relative h-128 max-w-full overflow-hidden rounded-lg border border-border ${width === 'phone' ? 'w-[375px]' : 'w-full'}`}
+      className={`relative h-128 max-w-full overflow-hidden rounded-lg ring-1 ring-border ${width === 'phone' ? 'w-[375px]' : 'w-full'}`}
     >
       {isLoaded ? null : (
         <div className="absolute inset-0 bg-card p-3.5">
