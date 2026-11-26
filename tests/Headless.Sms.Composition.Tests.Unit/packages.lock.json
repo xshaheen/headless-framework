@@ -1332,7 +1332,9 @@
       "headless.sms.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sms": "[1.0.0, )"
         }
       },

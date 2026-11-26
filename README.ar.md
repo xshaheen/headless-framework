@@ -189,7 +189,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`، `UseS3`، `UseStore` (لأي `ITusStore` تاني) |
 | Emails | `AddHeadlessEmails` | `UseAwsSes`، `UseAzure`، `UseMailkit`، `UseDevelopment`، `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`، `UseAwsSns`، `UseInfobip`، `UseCequens`، `UseConnekio`، `UseVictoryLink`، `UseVodafone`، `UseDevelopment` |
-| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseNoop` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseApns`، `UseDevelopment`، `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`، `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`، `UseSqlServer` |

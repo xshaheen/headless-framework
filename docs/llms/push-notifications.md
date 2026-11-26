@@ -15,7 +15,7 @@ Install one provider package. Each brings `Headless.PushNotifications` (registra
 | --- | --- | --- | --- |
 | Firebase Cloud Messaging | `Headless.PushNotifications.Firebase` | `UseFirebase` | Android, Web, and iOS through Firebase's APNs bridge |
 | APNs, direct | `Headless.PushNotifications.Apns` | `UseApns` | iOS without a Firebase project, and APNs-only pushes: VoIP, Live Activities, widgets, and more |
-| No-op | `Headless.PushNotifications.Dev` | `UseNoop` | Development, tests, and CI |
+| Development | `Headless.PushNotifications.Dev` | `UseDevelopment` captures to an in-memory inbox; `UseNoop` discards | Development, tests, and CI |
 
 ```csharp
 // Firebase as the default, APNs direct for iOS as a named service:
@@ -42,7 +42,7 @@ Each resolves wherever its provider's `IPushNotificationService` resolves.
 - Check `PushNotificationResponse.Status` after every send. An unregistered token returns `false` from both `IsSucceeded()` and `IsFailed()`, so call `IsUnregistered()` and delete that token from your store.
 - Depend on `IPushNotificationService`, not a provider type. Take `IFcmPushNotificationService` or `IApnsPushNotificationService` only for what the shared request cannot express, and keep plain alerts and data-only messages on the shared interface so the provider stays swappable.
 - Never call the Firebase Admin SDK (`FirebaseAdmin`, `FirebaseMessaging`) directly. Route every send through these interfaces.
-- Use `UseNoop()` in development and tests, switched on `builder.Environment.IsDevelopment()`, so no real notification goes out.
+- Use `UseDevelopment()` (captures, validates like the real providers) or `UseNoop()` (discards, validates nothing) in development and tests, switched on `builder.Environment.IsDevelopment()`, so no real notification goes out. Read captured notifications through `IPushNotificationCaptureStore`.
 - Never rely on a data-only message arriving. It is a background push, and iOS throttles and may drop background pushes.
 - Load `FirebaseOptions.Json`, `ApnsOptions.PrivateKey`, `Certificate`, and `CertificatePassword` from a secret store or an environment variable, never from committed configuration. `ToString()` redacts them and they are excluded from JSON serialization, but do not log them.
 - Retry a failure from `IsRetryable` and `RetryAfter` on `FcmSendResult` or `ApnsSendResult`, not from the error text. A Firebase failure that needs a later retry, and every APNs 5xx, belong in your own queue or job.
@@ -77,7 +77,7 @@ A `PushNotificationRequest` is one of two kinds:
 | Notification | Both non-blank | Optional | Optional | Shows the notification |
 | Data-only | Both `null` | At least one entry | Not allowed | Wakes the app in the background and shows nothing |
 
-Setting only one of `Title` and `Body` makes the request a notification, so the other must be non-blank too. Firebase and APNs throw `ArgumentException` before any network call for any other combination, a negative `Badge` or `TimeToLive`, a `TimeToLive` over 28 days (`ArgumentOutOfRangeException`), a blank `Sound`, or an undefined `Priority`. `UseNoop()` validates nothing.
+Setting only one of `Title` and `Body` makes the request a notification, so the other must be non-blank too. Firebase and APNs throw `ArgumentException` before any network call for any other combination, a negative `Badge` or `TimeToLive`, a `TimeToLive` over 28 days (`ArgumentOutOfRangeException`), a blank `Sound`, or an undefined `Priority`. `UseDevelopment()` applies the same rules. `UseNoop()` validates nothing.
 
 ```csharp
 // Silent sync signal: no title, no body, data only.
@@ -130,13 +130,13 @@ Firebase reports `Unregistered` for an FCM `Unregistered` error. APNs reports it
 
 ## Choosing a Provider
 
-| | Firebase | APNs | No-op |
+| | Firebase | APNs | Dev (`UseDevelopment`, `UseNoop`) |
 | --- | --- | --- | --- |
 | **Use when** | Production apps on Android, iOS (through the APNs bridge), or Web | Production iOS apps that should not depend on a Firebase project, or need VoIP, Live Activity, or other APNs-only pushes | Local development, tests, CI |
 | **Avoid when** | Local development (real credentials, real sends) | Android or Web clients; local development | Any production environment |
 | **Credentials** | Firebase service account JSON (`FirebaseOptions.Json`) | A `.p8` signing key with key id and team id, or a `.p12` provider certificate; plus the bundle id | None |
 | **Retry** | The SDK retries 503 and network errors; the provider adds `Internal` and `QuotaExceeded` retries with Google's delays | At most 2 retries of connection failures before a request is sent; a 5xx is a `Failure` for you to retry after about 15 minutes | None |
-| **Trade-off** | Needs a Firebase project and a service account | iOS only; one request per token; key rotation needs a restart | Always succeeds |
+| **Trade-off** | Needs a Firebase project and a service account | iOS only; one request per token; key rotation needs a restart | `UseDevelopment` validates and captures; `UseNoop` always succeeds |
 
 ---
 
@@ -231,7 +231,7 @@ None. Each provider binds its own options in its `Use…` call.
 
 ## Headless.PushNotifications.Dev
 
-A no-op `IPushNotificationService` for development and tests.
+Development services that deliver nothing. `UseDevelopment` captures every notification in an in-memory inbox, `IPushNotificationCaptureStore`, so a dev inbox page or a test can read it. `UseNoop` discards every notification.
 
 ### Setup
 
@@ -242,7 +242,12 @@ dotnet add package Headless.PushNotifications.Dev
 ```csharp
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
+    builder.Services.AddHeadlessPushNotifications(setup =>
+    {
+        setup.UseDevelopment();
+        setup.AddNamed("ios", i => i.UseDevelopment());
+    });
+    // Or discard: setup.UseNoop()
 }
 else
 {
@@ -250,13 +255,83 @@ else
 }
 ```
 
-**Verify:** in a test, `SendToDeviceAsync` returns `IsSucceeded()` with a GUID `MessageId`.
+`UseDevelopment` has the usual overloads: `()`, `(IConfiguration)`, `(Action<DevPushNotificationOptions>)`, and `(Action<DevPushNotificationOptions, IServiceProvider>)`. Each one is on the setup builder and on a named instance.
+
+**Verify:** resolve `IPushNotificationCaptureStore`, call `SendToDeviceAsync`, and assert that it returns `IsSucceeded()` and `store.Query(new())` returns the notification. With `UseNoop`, `SendToDeviceAsync` returns `IsSucceeded()` with a GUID `MessageId`.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `CaptureCapacity` | `500` | Notifications the store keeps before it drops the oldest. Greater than 0. All development services share one store, which takes the largest value any of them sets. |
+
+`UseNoop` takes no options. An invalid value fails the start with `OptionsValidationException`.
+
+### Read the captured notifications
+
+Resolve `IPushNotificationCaptureStore` from the container. It is registered only when a `UseDevelopment` service is, so `GetService<IPushNotificationCaptureStore>()` returning `null` means no development service is in use.
+
+```csharp
+var store = app.Services.GetRequiredService<IPushNotificationCaptureStore>();
+
+var rejected = store.Query(new PushNotificationCaptureQuery { SenderName = "ios" }).Where(x => x.ExceedsPayloadLimit);
+store.Clear();
+```
+
+- `Query` takes a query (`new()` lists everything) and returns a snapshot, newest first. `Sequence` is the order: it increases strictly with each capture, and `CapturedAt` never runs backwards against it. `Id` is unique, not ordered. `SenderName` matches exactly; the default service's name is the empty string. `Search` matches, ignoring case, the title, the body, every client identifier, and every data key and value. `Limit` must be positive.
+- Each `CapturedPushNotification` carries `Id`, `Sequence`, `CapturedAt` (from the registered `TimeProvider`), `SenderName`, `ClientIdentifiers`, `IsMulticast`, `Title`, `Body`, `IsDataOnly`, a copy of `Data`, the delivery options (`CollapseKey`, `Badge`, `Sound`, `Priority`, `TimeToLive`), `PayloadSizeBytes`, `ExceedsPayloadLimit`, `FailureError`, `TraceId` (the current `Activity`), and `CorrelationId` (from a registered `ICorrelationIdProvider`).
+- A multicast is captured once, with every identifier in `ClientIdentifiers`.
+- `PayloadSizeBytes` is the UTF-8 size of a provider-neutral JSON payload of the title, body, sound, badge, and data. It approximates the wire size; Firebase and APNs each add their own envelope. `CapturedPushNotification.MaxPayloadBytes` is 4096.
+
+To follow new notifications live, call `store.WaitForChangeAsync(version, cancellationToken)`, then `store.Query(new PushNotificationCaptureQuery { AfterSequence = version })`, and keep the returned version. A delete or clear also bumps the version and adds nothing.
+
+### Assert on captured push notifications in tests
+
+`AddHeadlessPushNotifications` accepts one call per service collection, so a test host cannot add a second registration over the app's. Choose the development provider by environment in `Program.cs`, then run the test host in that environment:
+
+```csharp no-compile
+// Program.cs
+builder.Services.AddHeadlessPushNotifications(setup =>
+{
+    if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+    {
+        setup.UseDevelopment();
+    }
+    else
+    {
+        setup.UseFirebase(builder.Configuration.GetSection("Firebase"));
+    }
+});
+
+// Test
+public sealed class SignupTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task notifies_the_customer()
+    {
+        var app = factory.WithWebHostBuilder(b => b.UseEnvironment("Testing"));
+        var store = app.Services.GetRequiredService<IPushNotificationCaptureStore>();
+        store.Clear(); // the store is a process-wide singleton; clear it so earlier tests do not leak in
+
+        await app.CreateClient().PostAsync("/orders/42/ship", content: null);
+
+        var push = store.Query(new PushNotificationCaptureQuery { Search = "order" }).Should().ContainSingle().Subject;
+        push.ExceedsPayloadLimit.Should().BeFalse();
+    }
+}
+```
+
+The store is shared by every test that uses the same host, so run such tests in one xUnit collection, or filter `Query` by a value unique to the test (a recipient or `SenderName`).
 
 ### Design and runtime behavior
 
-- Registers a singleton `IPushNotificationService` (keyed by name for a named service).
-- Makes no network call, never validates input, never throws, and always returns `Success` with a new GUID as the message id.
-- Takes no options.
+- `UseDevelopment` registers a singleton `IPushNotificationService` (keyed by name for a named service) that makes no network call.
+- It validates the request and the client identifiers with the same rules as Firebase and APNs, and throws `ArgumentException` for a malformed one after capturing it with `FailureError` set.
+- A multicast with no identifiers throws `ArgumentException`, as Firebase does, and is not captured.
+- Every identifier returns `Success` with the capture id as `MessageId`. A payload estimated over 4096 bytes still succeeds and sets `ExceedsPayloadLimit`, because the estimate is not a provider's own serialization. Treat the flag as a warning that a real provider may reject the notification.
+- Topic sends are not part of `IPushNotificationService`, so nothing captures them.
+- The store lives in memory for the life of the process. A restart empties it. Nothing gates it on the environment, so register `UseDevelopment` only in development.
+- `UseNoop()` makes no network call, never validates input, never throws, captures nothing, and always returns `Success` with a new GUID as the message id.
 
 ---
 

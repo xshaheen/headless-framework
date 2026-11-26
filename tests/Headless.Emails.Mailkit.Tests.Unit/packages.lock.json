@@ -581,6 +581,13 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.emails": {
         "type": "Project",
         "dependencies": {
@@ -600,8 +607,10 @@
       "headless.emails.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Emails": "[1.0.0, )",
-          "Headless.Emails.Abstractions": "[1.0.0, )"
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.emails.mailkit": {

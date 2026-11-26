@@ -1,10 +1,10 @@
 # Headless.PushNotifications.Dev
 
-No-op push notification provider for local development and testing.
+Development push notification providers that capture or discard notifications instead of sending them.
 
 ## Why use this package
 
-Prevents real notifications from being sent during development or test runs. Uses the same `IPushNotificationService` interface as production so no application code changes are needed when switching environments.
+Prevents real notifications from being sent during development or test runs, and keeps the captured ones in memory so a dev inbox or a test can inspect them. Uses the same `IPushNotificationService` interface as production so no application code changes are needed when switching environments.
 
 ## Install
 

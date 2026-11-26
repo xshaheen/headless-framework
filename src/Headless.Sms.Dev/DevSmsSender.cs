@@ -1,14 +1,31 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
+using Headless.Context;
 using Headless.Sms.Dev.Internal;
 
 namespace Headless.Sms.Dev;
 
-internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender, IDisposable
+/// <summary>
+/// Captures each message in <see cref="ISmsCaptureStore"/>, and appends a plain-text copy to a file when
+/// <see cref="DevSmsOptions.FilePath"/> is set, instead of delivering it.
+/// </summary>
+/// <remarks>
+/// A file that cannot be written returns a failed response, as a real provider reports a transport fault, and the
+/// capture records the error. No SMS is ever sent.
+/// </remarks>
+internal sealed class DevSmsSender(
+    DevSmsOptions options,
+    SmsCaptureStore store,
+    string senderName = "",
+    ICorrelationIdProvider? correlationIdProvider = null
+) : ISmsSender, IBulkSmsSender, IDisposable
 {
     private const string _Separator = "--------------------";
-    private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);
+    private readonly DevSmsOptions _options = Argument.IsNotNull(options);
+    private readonly SmsCaptureStore _store = Argument.IsNotNull(store);
+    private readonly string _senderName = Argument.IsNotNull(senderName);
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     private static readonly JsonSerializerOptions _JsonOptions = new()
@@ -27,9 +44,10 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _WriteAsync(
+        return await _SendAsync(
                 request.MessageId,
-                request.Destination.ToString(),
+                [request.Destination],
+                isBulk: false,
                 request.Text,
                 request.Properties,
                 cancellationToken
@@ -49,9 +67,10 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var outcome = await _WriteAsync(
+        var outcome = await _SendAsync(
                 request.MessageId,
-                request.Destinations.JoinAsString(", "),
+                [.. request.Destinations],
+                isBulk: true,
                 request.Text,
                 request.Properties,
                 cancellationToken
@@ -61,9 +80,75 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
         return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
     }
 
-    private async ValueTask<SendSingleSmsResponse> _WriteAsync(
+    public void Dispose()
+    {
+        _writeLock.Dispose();
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
         string? messageId,
-        string recipients,
+        SmsRequestDestination[] destinations,
+        bool isBulk,
+        string text,
+        IDictionary<string, object>? properties,
+        CancellationToken cancellationToken
+    )
+    {
+        // Copy the caller's dictionary so a later change to it leaves the capture intact.
+        var propertiesSnapshot = properties is null
+            ? null
+            : new Dictionary<string, object>(properties, StringComparer.Ordinal);
+
+        if (_options.FilePath is { } filePath)
+        {
+            try
+            {
+                await _AppendToFileAsync(filePath, messageId, destinations, text, properties, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _Capture(messageId, destinations, isBulk, text, propertiesSnapshot, e.Message);
+
+                return SendSingleSmsResponse.Failed(e.Message);
+            }
+        }
+
+        var captured = _Capture(messageId, destinations, isBulk, text, propertiesSnapshot, failureError: null);
+
+        return SendSingleSmsResponse.Succeeded(captured.Id.ToString());
+    }
+
+    private CapturedSms _Capture(
+        string? messageId,
+        SmsRequestDestination[] destinations,
+        bool isBulk,
+        string text,
+        IReadOnlyDictionary<string, object>? properties,
+        string? failureError
+    )
+    {
+        return _store.Add(
+            new CapturedSms
+            {
+                SenderName = _senderName,
+                Destinations = destinations,
+                IsBulk = isBulk,
+                Text = text,
+                Segmentation = SmsSegmentation.Measure(text),
+                MessageId = messageId,
+                Properties = properties,
+                FailureError = failureError,
+                TraceId = Activity.Current?.TraceId.ToString(),
+                CorrelationId = correlationIdProvider?.CorrelationId,
+            }
+        );
+    }
+
+    private async Task _AppendToFileAsync(
+        string filePath,
+        string? messageId,
+        SmsRequestDestination[] destinations,
         string text,
         IDictionary<string, object>? properties,
         CancellationToken cancellationToken
@@ -76,7 +161,7 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
             sb.Append("MessageId: ").AppendLine(messageId);
         }
 
-        sb.Append("To: ").AppendLine(recipients);
+        sb.Append("To: ").AppendLine(destinations.JoinAsString(", "));
         sb.Append("Text: ").AppendLine(text);
 
         if (properties is not null)
@@ -92,22 +177,11 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
 
         try
         {
-            await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
-        }
-        catch (IOException e)
-        {
-            return SendSingleSmsResponse.Failed(e.Message);
+            await File.AppendAllTextAsync(filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _writeLock.Release();
         }
-
-        return SendSingleSmsResponse.Succeeded();
-    }
-
-    public void Dispose()
-    {
-        _writeLock.Dispose();
     }
 }

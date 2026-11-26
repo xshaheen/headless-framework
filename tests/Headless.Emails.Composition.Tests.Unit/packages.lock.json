@@ -624,6 +624,13 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.emails": {
         "type": "Project",
         "dependencies": {
@@ -661,8 +668,10 @@
       "headless.emails.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Emails": "[1.0.0, )",
-          "Headless.Emails.Abstractions": "[1.0.0, )"
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.emails.mailkit": {
@@ -693,6 +702,12 @@
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
+      "headless.hashing.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
@@ -708,11 +723,36 @@
           "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.testing": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hashing.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.12, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
+          "Microsoft.Extensions.Logging": "[10.0.15, )",
+          "Microsoft.Extensions.TimeProvider.Testing": "[10.11.0, )",
+          "xunit.v3.extensibility.core": "[4.0.3, )"
         }
       },
       "AWSSDK.Extensions.NETCore.Setup": {
@@ -758,6 +798,16 @@
         "contentHash": "PG6hnsklTzd/iK9A6j03OxDOas9mh8zOBkbPzcsLmFOODE8Hw3HTy7HAKiJvVHXNpKc3/KMVG/4QvOAKCBbGhA==",
         "dependencies": {
           "MimeKit.Core": "5.0.0"
+        }
+      },
+      "Meziantou.Extensions.Logging.Xunit.v3": {
+        "type": "CentralTransitive",
+        "requested": "[3.0.12, )",
+        "resolved": "3.0.12",
+        "contentHash": "tZlH1+mlRR3bBqC7tcpPzCvvacwJ3bixPPwFz4SRr0n33h3ueYyVNa4N2Lk8V/LWQboTKnwdcY+QXJizlrWp8A==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.14",
+          "xunit.v3.extensibility.core": "4.0.2"
         }
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
@@ -891,6 +941,12 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.15",
           "Microsoft.Extensions.Options": "10.0.15"
         }
+      },
+      "Microsoft.Extensions.TimeProvider.Testing": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
       },
       "MimeKit.Core": {
         "type": "CentralTransitive",

@@ -12,7 +12,10 @@ public sealed class DevSmsSenderTests : TestBase
     public async Task should_append_the_message_to_the_file()
     {
         var path = Path.Combine(Path.GetTempPath(), $"sms-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevSmsSender(path);
+        using var sender = new DevSmsSender(
+            new DevSmsOptions { FilePath = path },
+            new SmsCaptureStore(500, TimeProvider.System)
+        );
 
         try
         {
@@ -31,7 +34,10 @@ public sealed class DevSmsSenderTests : TestBase
     public async Task should_append_a_bulk_message_for_every_recipient()
     {
         var path = Path.Combine(Path.GetTempPath(), $"sms-dev-{Guid.NewGuid():N}.txt");
-        using var sender = new DevSmsSender(path);
+        using var sender = new DevSmsSender(
+            new DevSmsOptions { FilePath = path },
+            new SmsCaptureStore(500, TimeProvider.System)
+        );
 
         try
         {
