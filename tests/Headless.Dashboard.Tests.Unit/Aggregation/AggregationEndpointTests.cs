@@ -346,6 +346,22 @@ public sealed class AggregationEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_answer_a_health_check_item_with_kind_health_check_and_any_other_item_with_kind_work()
+    {
+        _diagA.Attention = _ =>
+            _Items(_Item("a-1", count: 1) with { Kind = DashboardAttentionKind.HealthCheck }, _Item("a-2", count: 1));
+
+        await using var app = await _StartAsync(withDiagB: false);
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/dash/api/needs-you", AbortToken);
+
+        var items = (await _ReadAsync(response)).GetProperty("modules")[0].GetProperty("items");
+        items[0].GetProperty("kind").GetString().Should().Be("health-check");
+        items[1].GetProperty("kind").GetString().Should().Be("work");
+    }
+
+    [Fact]
     public async Task should_return_the_recommended_command_with_its_group_filter_and_growth_when_needs_you_asks()
     {
         var lastSeenAt = _time.GetUtcNow().AddMinutes(-5);

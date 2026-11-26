@@ -50,7 +50,7 @@ export function productAttention(
       }
 }
 
-function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
+function Item({ item, source, onOpen }: { item: AttentionItem; source?: string; onOpen: () => void }) {
   const format = useFormat()
   const openObject = useOpenObject()
   const target = item.target
@@ -62,6 +62,8 @@ function Item({ item, onOpen }: { item: AttentionItem; onOpen: () => void }) {
       <span className="hd-mark" />
       <span className="sr-only">{item.severity === 'critical' ? 'Critical: ' : 'Warning: '}</span>
       <span className="flex min-w-0 flex-col wrap-anywhere [&_a]:text-foreground">
+        {/* A health check lists apart from its module, so the row names the module it came from. */}
+        {source ? <span className="hd-hint">{source}</span> : null}
         {target ? (
           <a
             href="#"
@@ -102,11 +104,20 @@ interface AttentionProps {
 
 /**
  * Everything that needs an operator, in every product: each item's severity, title, count, and since when, linking
- * into the module that holds it. A module that did not answer says so beside those that did, with Retry.
+ * into the module that holds it. A module that did not answer says so beside those that did, with Retry. Checks of
+ * the host's health list after the products, in one `Health checks` section, each led by its module's name.
  */
 export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen, onClose, trigger }: AttentionProps) {
   const showLoading = useDelayed(isPending)
-  const listed = (sections ?? []).filter((section) => section.stale || section.items.length > 0)
+  const answered = sections ?? []
+  const listed = answered
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.kind !== 'health-check') }))
+    .filter((section) => section.stale || section.items.length > 0)
+  const health = answered.flatMap((section) =>
+    section.stale
+      ? []
+      : section.items.filter((item) => item.kind === 'health-check').map((item) => ({ item, section })),
+  )
 
   return (
     <Flyout label="Attention" isOpen={isOpen} onClose={onClose} trigger={trigger}>
@@ -119,26 +130,38 @@ export function AttentionPopover({ sections, isPending, isError, onRetry, isOpen
         <p role="alert" className="hd-hint">
           Attention did not load. <Button onPress={onRetry}>Retry</Button>
         </p>
-      ) : listed.length === 0 ? (
+      ) : listed.length === 0 && health.length === 0 ? (
         <p className="hd-hint">Nothing needs you.</p>
       ) : (
-        listed.map((section) => (
-          <section key={section.id} className="flex flex-col gap-1" aria-label={section.displayName}>
-            <h3 className="hd-label">{section.displayName}</h3>
-            {section.stale ? (
-              <p className="hd-hint">
-                {`${section.displayName} did not answer. `}
-                <Button onPress={onRetry}>Retry</Button>
-              </p>
-            ) : (
+        <>
+          {listed.map((section) => (
+            <section key={section.id} className="flex flex-col gap-1" aria-label={section.displayName}>
+              <h3 className="hd-label">{section.displayName}</h3>
+              {section.stale ? (
+                <p className="hd-hint">
+                  {`${section.displayName} did not answer. `}
+                  <Button onPress={onRetry}>Retry</Button>
+                </p>
+              ) : (
+                <ul>
+                  {section.items.map((item) => (
+                    <Item key={item.id} item={item} onOpen={onClose} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          ))}
+          {health.length > 0 ? (
+            <section className="flex flex-col gap-1" aria-label="Health checks">
+              <h3 className="hd-label">Health checks</h3>
               <ul>
-                {section.items.map((item) => (
-                  <Item key={item.id} item={item} onOpen={onClose} />
+                {health.map(({ item, section }) => (
+                  <Item key={`${section.id}/${item.id}`} item={item} source={section.displayName} onOpen={onClose} />
                 ))}
               </ul>
-            )}
-          </section>
-        ))
+            </section>
+          ) : null}
+        </>
       )}
     </Flyout>
   )
