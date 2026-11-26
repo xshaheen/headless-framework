@@ -228,17 +228,23 @@ builder.Services.AddAttemptLimiter(options =>
 ```csharp
 public sealed class AttemptBudgetOperator(IAttemptLimiter limiter, IOptions<AttemptLimiterOptions> options)
 {
-    public async Task<AttemptSnapshot> LookUpAsync(string purpose, string subject, CancellationToken cancellationToken)
+    public async Task<AttemptSnapshot?> LookUpAsync(string purpose, string subject, CancellationToken cancellationToken)
     {
-        var quota = options.Value.Purposes[purpose];
+        if (!options.Value.Purposes.TryGetValue(purpose, out var quota))
+        {
+            return null; // Map to 404 or 400 at the HTTP boundary.
+        }
 
         return await limiter.PeekAsync(purpose, subject, quota, cancellationToken);
     }
 
     // Call only for an authorized operator, and write an audit record with the purpose and snapshot fingerprint.
-    public async Task<bool> LiftAsync(string purpose, string subject, CancellationToken cancellationToken)
+    public async Task<bool?> LiftAsync(string purpose, string subject, CancellationToken cancellationToken)
     {
-        var quota = options.Value.Purposes[purpose];
+        if (!options.Value.Purposes.TryGetValue(purpose, out var quota))
+        {
+            return null; // Map to 404 or 400 at the HTTP boundary.
+        }
 
         return await limiter.ResetAsync(purpose, subject, quota, cancellationToken);
     }

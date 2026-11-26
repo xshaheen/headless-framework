@@ -29,11 +29,7 @@ public sealed class AttemptSubjectFingerprinter
 
     private readonly byte[] _subjectKey;
 
-    /// <summary>Initializes a fingerprinter over the configured <see cref="AttemptLimiterOptions.SubjectKey"/>.</summary>
-    /// <param name="options">The limiter options; their <see cref="AttemptLimiterOptions.SubjectKey"/> is read once.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
-    /// <exception cref="FormatException">The subject key is not valid base64.</exception>
-    public AttemptSubjectFingerprinter(IOptions<AttemptLimiterOptions> options)
+    internal AttemptSubjectFingerprinter(IOptions<AttemptLimiterOptions> options)
     {
         Argument.IsNotNull(options);
         _subjectKey = Convert.FromBase64String(options.Value.SubjectKey);

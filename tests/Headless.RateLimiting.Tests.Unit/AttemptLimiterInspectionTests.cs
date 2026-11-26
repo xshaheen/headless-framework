@@ -342,6 +342,12 @@ public sealed class AttemptLimiterInspectionTests : TestBase
     }
 
     [Fact]
+    public void should_not_expose_a_public_constructor_on_the_fingerprinter()
+    {
+        typeof(AttemptSubjectFingerprinter).GetConstructors().Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_refuse_a_snapshot_whose_window_does_not_end_after_it_starts()
     {
         var act = () => new AttemptSnapshot(_Purpose, "fp", 0, 3, _Start, _Start, TimeSpan.FromSeconds(1));

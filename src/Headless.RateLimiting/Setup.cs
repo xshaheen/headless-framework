@@ -74,7 +74,9 @@ public static class SetupAttemptLimiter
             services.AddStartupValidator<AttemptLimiterCacheStartupValidator>();
 
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<AttemptSubjectFingerprinter>();
+            services.TryAddSingleton(provider => new AttemptSubjectFingerprinter(
+                provider.GetRequiredService<IOptions<AttemptLimiterOptions>>()
+            ));
             services.TryAddSingleton<IAttemptLimiter>(provider =>
             {
                 var options = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>();
