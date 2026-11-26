@@ -27,7 +27,8 @@ namespace Headless;
 /// <c>Microsoft.*</c>, each as a method full name with no line number and with compiler-generated lambda and async
 /// state-machine names reduced to the declaring method. A method that is not async but returns the task of a callee the
 /// runtime runs as async is skipped: under runtime async it shows only when that callee failed before it suspended, and
-/// a state-machine trace never shows it. The result is the SHA-256 of those lines, truncated to 16 hex characters. The
+/// a state-machine trace never shows it. A method that blocks on that task (<c>GetAwaiter().GetResult()</c>) is a real
+/// caller and stays, whatever it returns. The result is the SHA-256 of those lines, truncated to 16 hex characters. The
 /// message never takes part, because it carries the ids that would split one cause into many groups.
 /// </para>
 /// <para>
@@ -65,6 +66,7 @@ public static class FailureFingerprint
         var input = new StringBuilder(innermost.GetType().FullName ?? innermost.GetType().Name);
         var taken = 0;
         MethodBase? callee = null;
+        MethodBase? plumbingBelow = null;
 
         foreach (var frame in new StackTrace(innermost, fNeedFileInfo: false).GetFrames())
         {
@@ -73,15 +75,28 @@ public static class FailureFingerprint
                 break;
             }
 
-            if (frame.GetMethod() is not { } method || _IsAwaitPlumbing(method))
+            if (frame.GetMethod() is not { } method)
             {
+                continue;
+            }
+
+            if (_IsAwaitPlumbing(method))
+            {
+                plumbingBelow = method;
+
                 continue;
             }
 
             // A plain method that hands back the task of a runtime-async callee stays on the stack only when that
             // callee failed before it first suspended; after a suspension it is gone. Dropping it keeps one failure on
             // one fingerprint however the awaits completed, and matches the state-machine trace, where it never shows.
-            if (callee is not null && _IsAsyncByRuntime(callee) && _ForwardsTask(method))
+            // Such a forwarder sits directly on its callee, or on the runtime's own await of a delegate's task. A plain
+            // method that sits on an awaiter's rethrow blocked on the task (GetAwaiter().GetResult()) instead: it is a
+            // real caller on every runtime, so it stays.
+            var forwards = plumbingBelow is null || _IsRuntimeAsyncThunkAwait(plumbingBelow);
+            plumbingBelow = null;
+
+            if (forwards && callee is not null && _IsAsyncByRuntime(callee) && _ForwardsTask(method))
             {
                 continue;
             }
@@ -217,6 +232,12 @@ public static class FailureFingerprint
     // and resuming the continuation.
     private static bool _IsAwaitPlumbing(MethodBase method) =>
         method.DeclaringType?.Namespace is "System.Runtime.CompilerServices" or "System.Runtime.ExceptionServices";
+
+    // The await the runtime runs when a plain caller invokes a runtime-async delegate (an async lambda): the frame
+    // under that caller is this await, not the callee. Matched by name because the type is internal to the runtime.
+    private static bool _IsRuntimeAsyncThunkAwait(MethodBase method) =>
+        method.Name.Equals("TransparentAwait", StringComparison.Ordinal)
+        && method.DeclaringType?.FullName is "System.Runtime.CompilerServices.AsyncHelpers";
 
     private static bool _IsAsyncByRuntime(MethodBase method) =>
         method.MethodImplementationFlags.HasFlag(MethodImplAttributes.Async);

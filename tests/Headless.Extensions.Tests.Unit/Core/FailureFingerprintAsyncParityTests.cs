@@ -43,6 +43,11 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
     // "Tests.Core.FailureFingerprintAsyncParityTests.should_keep_a_blocking_caller_frame_when_it_waits_on_an_async_failure".
     private const string _BlockingCallerBaseline = "v1:bfb4bed139c81472";
 
+    // Hashes "System.TimeoutException", then "Tests.Core.FailureFingerprintAsyncParityTests._ThrowAfterAsync",
+    // "Tests.Core.FailureFingerprintAsyncParityTests._BlockOnTask" and
+    // "Tests.Core.FailureFingerprintAsyncParityTests.should_keep_a_task_returning_blocking_caller_frame_when_it_waits_on_an_async_failure".
+    private const string _BlockingTaskCallerBaseline = "v1:21f1d92b8f82e13c";
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -109,6 +114,27 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
         exception.Should().NotBeNull();
         _WriteFrames(exception!);
         FailureFingerprint.Compute(exception!).Should().Be(_BlockingCallerBaseline, because: exception!.ToString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_keep_a_task_returning_blocking_caller_frame_when_it_waits_on_an_async_failure(bool suspend)
+    {
+        // Returns a task like a forwarder, but blocks on its callee instead of handing that callee's task back.
+        Exception? exception = null;
+        try
+        {
+            _ = _BlockOnTask(suspend);
+        }
+        catch (TimeoutException ex)
+        {
+            exception = ex;
+        }
+
+        exception.Should().NotBeNull();
+        _WriteFrames(exception!);
+        FailureFingerprint.Compute(exception!).Should().Be(_BlockingTaskCallerBaseline, because: exception!.ToString());
     }
 
     #region Helpers
@@ -234,6 +260,14 @@ public sealed class FailureFingerprintAsyncParityTests : TestBase
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void _BlockOn(bool suspend) => _ThrowAfterAsync(suspend).GetAwaiter().GetResult();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task _BlockOnTask(bool suspend)
+    {
+        _ThrowAfterAsync(suspend).GetAwaiter().GetResult();
+
+        return Task.CompletedTask;
+    }
 
     private static async Task _ThrowAfterAsync(bool suspend)
     {
