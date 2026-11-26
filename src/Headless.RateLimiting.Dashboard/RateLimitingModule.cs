@@ -11,15 +11,17 @@ namespace Headless.RateLimiting;
 /// argument; every answer and the operator log carry its fingerprint instead.
 /// </summary>
 /// <remarks>
-/// Its sidebar count <c>purposes</c> is the number of declared purposes. Its own API is mapped by
-/// <see cref="RateLimitingApi"/>.
+/// Its sidebar count <c>purposes</c> is the number of declared purposes. Its one object kind is
+/// <c>rate-limit-subject</c>, identified as <c>{purpose}:{fingerprint}</c>, and its one command is
+/// <c>rate-limiting.reset</c> (<see cref="RateLimitingCommands"/>). Its own API is mapped by <see cref="RateLimitingApi"/>.
 /// </remarks>
-internal sealed class RateLimitingModule : IDashboardModule, IDashboardCountSource
+internal sealed class RateLimitingModule : IDashboardModule, IDashboardCountSource, IDashboardCommandSource
 {
     /// <summary>The sidebar count key of the declared purposes.</summary>
     public const string PurposesCountKey = "purposes";
 
     private readonly RateLimitingApi _api;
+    private readonly RateLimitingCommands _commands;
     private readonly IReadOnlyDictionary<string, DashboardCount> _counts;
 
     public RateLimitingModule(
@@ -35,6 +37,7 @@ internal sealed class RateLimitingModule : IDashboardModule, IDashboardCountSour
         Argument.IsNotNull(catalogue);
 
         _api = new RateLimitingApi(limiter, fingerprinter, limiterOptions, catalogue);
+        _commands = new RateLimitingCommands(Id, limiter, fingerprinter, limiterOptions);
         _counts = new Dictionary<string, DashboardCount>(StringComparer.Ordinal)
         {
             [PurposesCountKey] = new() { Count = catalogue.Purposes.Count },
@@ -46,6 +49,8 @@ internal sealed class RateLimitingModule : IDashboardModule, IDashboardCountSour
     public string DisplayName => "Rate limits";
 
     public DashboardModuleAssets Assets { get; } = RateLimitingAssets.Create();
+
+    public IReadOnlyList<DashboardCommand> Commands => _commands.Commands;
 
     public void MapEndpoints(DashboardModuleEndpoints endpoints)
     {
@@ -60,5 +65,25 @@ internal sealed class RateLimitingModule : IDashboardModule, IDashboardCountSour
     )
     {
         return Task.FromResult(_counts);
+    }
+
+    public Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedCommandsAsync(
+        DashboardAllowedCommandsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return Task.FromResult(_commands.GetAllowed(request.Targets));
+    }
+
+    public Task<DashboardCommandResult> ExecuteAsync(
+        DashboardCommandRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.ExecuteAsync(request, cancellationToken);
     }
 }
