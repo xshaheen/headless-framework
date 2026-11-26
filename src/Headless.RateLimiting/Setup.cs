@@ -9,7 +9,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.RateLimiting;
 
-/// <summary>Service-collection extensions that register <see cref="IAttemptLimiter"/>.</summary>
+/// <summary>
+/// Service-collection extensions that register <see cref="IAttemptLimiter"/> and
+/// <see cref="AttemptSubjectFingerprinter"/>.
+/// </summary>
 [PublicAPI]
 public static class SetupAttemptLimiter
 {
@@ -71,6 +74,7 @@ public static class SetupAttemptLimiter
             services.AddStartupValidator<AttemptLimiterCacheStartupValidator>();
 
             services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<AttemptSubjectFingerprinter>();
             services.TryAddSingleton<IAttemptLimiter>(provider =>
             {
                 var options = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>();
@@ -82,7 +86,12 @@ public static class SetupAttemptLimiter
                     ? provider.GetRequiredKeyedService<ICache>(name)
                     : provider.GetRemoteOrDefaultCache();
 
-                return new CacheAttemptLimiter(cache, provider.GetRequiredService<TimeProvider>(), options);
+                return new CacheAttemptLimiter(
+                    cache,
+                    provider.GetRequiredService<TimeProvider>(),
+                    provider.GetRequiredService<AttemptSubjectFingerprinter>(),
+                    options
+                );
             });
 
             return services;

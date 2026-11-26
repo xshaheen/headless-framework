@@ -20,7 +20,8 @@ namespace Headless.RateLimiting;
 /// <see cref="AttemptLimiterOptions.SubjectKey"/>.
 /// </para>
 /// <para>
-/// A counter-store failure propagates to the caller, which fails the guarded operation closed.
+/// A counter-store failure throws <see cref="AttemptLimiterUnavailableException"/> from every member, so the guarded
+/// operation fails closed.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -63,4 +64,56 @@ public interface IAttemptLimiter
     /// <paramref name="attempt"/> has no <see cref="AttemptResult.ResetToken"/>, so it was not issued by a limiter.
     /// </exception>
     ValueTask ResetAsync(AttemptResult attempt, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads <paramref name="subject"/>'s budget for <paramref name="purpose"/> in the current window without charging
+    /// an attempt.
+    /// </summary>
+    /// <remarks>
+    /// Use it to inspect a budget, such as on an operator screen or in a diagnostic; never call
+    /// <see cref="AcquireAsync"/> to look, because that spends an attempt. A subject with no attempts in the window
+    /// reads as a zero count, and the read creates no counter. The snapshot carries the subject's fingerprint, never
+    /// the subject.
+    /// </remarks>
+    /// <param name="purpose">The purpose, exactly as passed to <see cref="AcquireAsync"/>.</param>
+    /// <param name="subject">The normalized subject, exactly as passed to <see cref="AcquireAsync"/>.</param>
+    /// <param name="quota">
+    /// The quota the flow acquires with. Its window selects the counter; a different window reads a different one.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the counter-store call.</param>
+    /// <returns>The count, limit, and window bounds of the current window.</returns>
+    /// <exception cref="ArgumentException"><paramref name="purpose"/> or <paramref name="subject"/> is empty.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    ValueTask<AttemptSnapshot> PeekAsync(
+        string purpose,
+        string subject,
+        AttemptQuota quota,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Clears <paramref name="subject"/>'s budget for <paramref name="purpose"/> in the current window, for an
+    /// operator who lifts a lockout.
+    /// </summary>
+    /// <remarks>
+    /// This removes brute-force protection for the subject until the window closes. Expose it only behind operator
+    /// authorization, and record who reset which purpose and fingerprint. Earlier windows have already closed and the
+    /// next window starts from zero as usual, so only the current window's counter is removed. In application flows,
+    /// reset the exact budget an attempt was charged to with <see cref="ResetAsync(AttemptResult, CancellationToken)"/>.
+    /// </remarks>
+    /// <param name="purpose">The purpose, exactly as passed to <see cref="AcquireAsync"/>.</param>
+    /// <param name="subject">The normalized subject, exactly as passed to <see cref="AcquireAsync"/>.</param>
+    /// <param name="quota">The quota the flow acquires with. Its window selects the counter.</param>
+    /// <param name="cancellationToken">Cancels the counter-store call.</param>
+    /// <returns>
+    /// <see langword="true"/> when a counter was removed; <see langword="false"/> when the window had no attempts.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="purpose"/> or <paramref name="subject"/> is empty.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    ValueTask<bool> ResetAsync(
+        string purpose,
+        string subject,
+        AttemptQuota quota,
+        CancellationToken cancellationToken = default
+    );
 }

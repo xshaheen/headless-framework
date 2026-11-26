@@ -8,7 +8,7 @@ namespace Headless.RateLimiting;
 /// <summary>The outcome of charging one attempt against a subject's budget.</summary>
 /// <remarks>
 /// A result names the exact window it was charged to rather than describing it, so
-/// <see cref="IAttemptLimiter.ResetAsync"/> clears that budget even when the window has since rolled over.
+/// <see cref="IAttemptLimiter.ResetAsync(AttemptResult, CancellationToken)"/> clears that budget even when the window has since rolled over.
 /// It holds no resource and needs no disposal. Construct one directly to stub <see cref="IAttemptLimiter"/> in tests,
 /// or to return results from a custom limiter.
 /// </remarks>
@@ -21,7 +21,7 @@ public sealed class AttemptResult
     /// <param name="limit">The limit in force; at least one.</param>
     /// <param name="retryAfter">How long until the window closes; positive.</param>
     /// <param name="resetToken">
-    /// The limiter-defined handle <see cref="IAttemptLimiter.ResetAsync"/> needs to find this budget again, or
+    /// The limiter-defined handle <see cref="IAttemptLimiter.ResetAsync(AttemptResult, CancellationToken)"/> needs to find this budget again, or
     /// <see langword="null"/> for a result that cannot be reset, such as a test stub.
     /// </param>
     /// <exception cref="ArgumentException"><paramref name="purpose"/> is empty.</exception>
@@ -44,7 +44,7 @@ public sealed class AttemptResult
     }
 
     /// <summary>
-    /// Opaque, limiter-defined handle that <see cref="IAttemptLimiter.ResetAsync"/> uses to clear the exact budget
+    /// Opaque, limiter-defined handle that <see cref="IAttemptLimiter.ResetAsync(AttemptResult, CancellationToken)"/> uses to clear the exact budget
     /// this attempt was charged to. Its format belongs to the limiter that issued it; do not parse or persist it.
     /// <see langword="null"/> when the result cannot be reset.
     /// </summary>

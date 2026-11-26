@@ -107,6 +107,69 @@ public sealed class RedisAttemptLimiterTests(RedisAttemptLimiterFixture fixture)
     }
 
     [Fact]
+    public async Task should_peek_without_creating_a_key_for_an_unseen_subject()
+    {
+        // given
+        await _FlushAsync();
+        var limiter = await _StartLimiterAsync();
+
+        // when
+        var snapshot = await limiter.PeekAsync(
+            "otp-delivery",
+            "+201012345678",
+            new AttemptQuota(5, TimeSpan.FromHours(1)),
+            AbortToken
+        );
+
+        // then
+        snapshot.Count.Should().Be(0);
+        (await _ScanKeysAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_peek_without_changing_the_counter_value_or_its_expiry()
+    {
+        // given
+        await _FlushAsync();
+        var limiter = await _StartLimiterAsync();
+        var quota = new AttemptQuota(5, TimeSpan.FromHours(1));
+        await limiter.AcquireAsync("otp-delivery", "+201012345678", quota, AbortToken);
+        await limiter.AcquireAsync("otp-delivery", "+201012345678", quota, AbortToken);
+        var key = (await _ScanKeysAsync()).Single();
+        var database = _Server().Multiplexer.GetDatabase();
+        var ttlBefore = await database.KeyTimeToLiveAsync(key);
+
+        // when
+        var snapshot = await limiter.PeekAsync("otp-delivery", "+201012345678", quota, AbortToken);
+
+        // then - a read that re-armed the expiry would push the TTL back up
+        snapshot.Count.Should().Be(2);
+        ((long)await database.StringGetAsync(key)).Should().Be(2);
+        var ttlAfter = await database.KeyTimeToLiveAsync(key);
+        ttlAfter.Should().NotBeNull();
+        ttlAfter!.Value.Should().BeLessThanOrEqualTo(ttlBefore!.Value);
+    }
+
+    [Fact]
+    public async Task should_clear_the_current_window_when_an_operator_resets_by_subject()
+    {
+        // given
+        await _FlushAsync();
+        var limiter = await _StartLimiterAsync();
+        var quota = new AttemptQuota(1, TimeSpan.FromHours(1));
+        await limiter.AcquireAsync("otp-delivery", "+201012345678", quota, AbortToken);
+        await limiter.AcquireAsync("otp-delivery", "+201012345678", quota, AbortToken);
+
+        // when
+        var removed = await limiter.ResetAsync("otp-delivery", "+201012345678", quota, AbortToken);
+
+        // then
+        removed.Should().BeTrue();
+        (await _ScanKeysAsync()).Should().BeEmpty();
+        (await limiter.AcquireAsync("otp-delivery", "+201012345678", quota, AbortToken)).IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_count_in_the_named_redis_cache_when_cache_name_is_set()
     {
         // given - the default and the named cache share one server, told apart by their key prefixes
