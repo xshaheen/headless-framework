@@ -83,14 +83,15 @@ internal sealed class MembershipEventSource(
         lock (_gate)
         {
             var sequence = ++_sequence;
-            _log[(int)((sequence - 1) % _LogCapacity)] = new MembershipEventLogEntry(
-                sequence,
-                @event,
-                timeProvider.GetUtcNow(),
-                snapshot?.State,
-                snapshot?.LastHeartbeatAt,
-                isFirstObservation
-            );
+            _log[(int)((sequence - 1) % _LogCapacity)] = new MembershipEventLogEntry
+            {
+                Sequence = sequence,
+                Event = @event,
+                ObservedAt = timeProvider.GetUtcNow(),
+                State = snapshot?.State,
+                LastHeartbeatAt = snapshot?.LastHeartbeatAt,
+                IsFirstObservation = isFirstObservation,
+            };
             subscribers = _subscribers;
         }
 

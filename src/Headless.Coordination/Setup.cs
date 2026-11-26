@@ -234,17 +234,18 @@ public static class SetupCoordinationCore
         {
             var options = sp.GetRequiredService<CoordinationOptions>();
 
-            return new CoordinationClusterSummary(
-                options.ClusterName,
-                providerName,
-                options.Role,
-                options.HeartbeatInterval,
-                options.SuspicionThreshold,
-                options.DeadThreshold,
-                options.DeadRetentionWindow,
-                SelfFenceMargin.Resolve(options),
-                heartbeatEnabled
-            );
+            return new CoordinationClusterSummary
+            {
+                ClusterName = options.ClusterName,
+                ProviderName = providerName,
+                Role = options.Role,
+                HeartbeatInterval = options.HeartbeatInterval,
+                SuspicionThreshold = options.SuspicionThreshold,
+                DeadThreshold = options.DeadThreshold,
+                DeadRetentionWindow = options.DeadRetentionWindow,
+                SelfFenceMargin = SelfFenceMargin.Resolve(options),
+                MembershipHeartbeatEnabled = heartbeatEnabled,
+            };
         });
 
         return services;

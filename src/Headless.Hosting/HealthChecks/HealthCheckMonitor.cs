@@ -274,7 +274,13 @@ internal sealed class HealthCheckMonitor(
                 var description = entry.Exception is null ? entry.Description : $"The '{name}' health check failed.";
 
                 history.Results.Enqueue(
-                    new HealthCheckProbeResult(entry.Status, entry.Duration, description, completedAt)
+                    new HealthCheckProbeResult
+                    {
+                        Status = entry.Status,
+                        Duration = entry.Duration,
+                        Description = description,
+                        CompletedAt = completedAt,
+                    }
                 );
                 history.LatestRunNumber = runNumber;
             }
@@ -285,13 +291,14 @@ internal sealed class HealthCheckMonitor(
 
     private HealthCheckDescriptor _Describe(HealthCheckRegistration registration)
     {
-        return new HealthCheckDescriptor(
-            registration.Name,
-            [.. registration.Tags.Order(StringComparer.Ordinal)],
-            registration.FailureStatus,
-            registration.Timeout == Timeout.InfiniteTimeSpan ? null : registration.Timeout,
-            registration.Tags.Contains(aliveTag)
-        );
+        return new HealthCheckDescriptor
+        {
+            Name = registration.Name,
+            Tags = [.. registration.Tags.Order(StringComparer.Ordinal)],
+            FailureStatus = registration.FailureStatus,
+            Timeout = registration.Timeout == Timeout.InfiniteTimeSpan ? null : registration.Timeout,
+            IsLiveness = registration.Tags.Contains(aliveTag),
+        };
     }
 
     private sealed class CheckHistory

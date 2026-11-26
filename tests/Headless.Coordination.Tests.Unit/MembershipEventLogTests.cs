@@ -167,6 +167,79 @@ public sealed class MembershipEventLogTests : TestBase
     }
 
     [Fact]
+    public async Task should_record_the_snapshot_state_when_a_suspected_node_recovers()
+    {
+        // given
+        var node = _Identity("node-a", 1);
+        var recoveredBeat = _Start.AddSeconds(-1);
+        var store = new FakeMembershipStore();
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Suspected, _Start.AddSeconds(-20)));
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Alive, recoveredBeat));
+        var source = _CreateSource();
+        var sut = _CreateHeartbeatService(store, source);
+
+        // when
+        await sut.RunOnceAsync(AbortToken);
+        await sut.RunOnceAsync(AbortToken);
+
+        // then
+        var entry = source.GetEntries()[^1];
+        entry.Event.Should().BeOfType<NodeRecovered>().Which.Identity.Should().Be(node);
+        entry.State.Should().Be(NodeLivenessState.Alive);
+        entry.LastHeartbeatAt.Should().Be(recoveredBeat);
+        entry.IsFirstObservation.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_record_the_snapshot_state_when_a_known_node_turns_dead()
+    {
+        // given
+        var node = _Identity("node-a", 1);
+        var lastBeat = _Start.AddSeconds(-40);
+        var store = new FakeMembershipStore();
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Suspected, _Start.AddSeconds(-20)));
+        store.EnqueueSnapshot(_Snapshot(node, NodeLivenessState.Dead, lastBeat));
+        var source = _CreateSource();
+        var sut = _CreateHeartbeatService(store, source);
+
+        // when
+        await sut.RunOnceAsync(AbortToken);
+        await sut.RunOnceAsync(AbortToken);
+
+        // then
+        var entry = source.GetEntries()[^1];
+        entry.Event.Should().BeOfType<NodeLeft>().Which.Identity.Should().Be(node);
+        entry.State.Should().Be(NodeLivenessState.Dead);
+        entry.LastHeartbeatAt.Should().Be(lastBeat);
+        entry.IsFirstObservation.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_mark_an_incarnation_that_appears_after_the_first_beat_as_a_first_observation()
+    {
+        // given: a node restarts with a new incarnation between two beats
+        var first = _Identity("node-a", 1);
+        var restarted = _Identity("node-a", 2);
+        var store = new FakeMembershipStore();
+        store.EnqueueSnapshot(_Snapshot(first, NodeLivenessState.Alive));
+        store.EnqueueSnapshot(_Snapshot(restarted, NodeLivenessState.Alive));
+        var source = _CreateSource();
+        var sut = _CreateHeartbeatService(store, source);
+
+        // when
+        await sut.RunOnceAsync(AbortToken);
+        await sut.RunOnceAsync(AbortToken);
+
+        // then
+        source
+            .GetEntries()
+            .Should()
+            .ContainSingle(entry => entry.Event is NodeJoined && entry.Event.Identity == restarted)
+            .Which.IsFirstObservation.Should()
+            .BeTrue();
+    }
+
+    [Fact]
     public async Task should_not_mark_a_rejoin_after_death_as_a_first_observation()
     {
         // given
