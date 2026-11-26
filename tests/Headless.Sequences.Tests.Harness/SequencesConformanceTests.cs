@@ -883,6 +883,12 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         (await namesAsync(new SequenceCounterQuery { Search = accented }))
             .Should()
             .BeEquivalentTo([accented], "a non-ASCII letter matches as typed on every engine");
+        (await namesAsync(new SequenceCounterQuery { Search = "ét" + accented[2..].ToUpperInvariant() }))
+            .Should()
+            .BeEmpty("a non-ASCII letter's case is never folded, on any engine");
+        (await namesAsync(new SequenceCounterQuery { Search = "É" + accented[1..].ToLowerInvariant() }))
+            .Should()
+            .BeEquivalentTo([accented], "ASCII letters beside a non-ASCII one still ignore case");
         (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Search = "FIND%" }))
             .Should()
             .BeEmpty("wildcards in the search match only themselves");

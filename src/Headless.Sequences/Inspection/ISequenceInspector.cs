@@ -15,7 +15,7 @@ namespace Headless.Sequences;
 /// <para>
 /// Each call is one statement with no transaction, so it does not wait on a gap-free unit holding a counter's row. On
 /// PostgreSQL and SQLite a held row shows its last committed value; SQL Server skips it, so a page or a count can miss
-/// a counter an open unit is writing. SQL Server still waits behind a table lock, and SQLite under its default rollback
+/// a counter an open unit is writing. SQL Server still waits behind a page or table lock, and SQLite under its default rollback
 /// journal waits while a writer commits; WAL mode removes that wait.
 /// </para>
 /// <para>

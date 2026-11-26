@@ -34,17 +34,25 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
     private readonly string _partition;
     private readonly string _columns;
     private readonly string _order;
+    private readonly Func<string, string> _foldAsciiCase;
 
     /// <summary>Creates a reader of the counter table <paramref name="options" /> names.</summary>
     /// <param name="dialect">The engine's SQL dialect.</param>
     /// <param name="options">The provider's options: connection string, schema, table, and command timeout.</param>
     /// <param name="timeProvider">The clock retries wait on.</param>
+    /// <param name="foldAsciiCase">
+    /// Renders a column with ASCII letters lowered and every other character unchanged, so a search ignores ASCII case
+    /// alike on every engine. <see langword="null" /> uses <c>LOWER</c>, which folds only ASCII on PostgreSQL's
+    /// <c>"C"</c> and SQLite's binary key columns.
+    /// </param>
     public RelationalSequenceCounterReader(
         ISqlDialect dialect,
         RelationalSequencesOptions options,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        Func<string, string>? foldAsciiCase = null
     )
     {
+        _foldAsciiCase = foldAsciiCase ?? (static column => $"LOWER({column})");
         _dialect = Argument.IsNotNull(dialect);
         _options = Argument.IsNotNull(options);
         _timeProvider = Argument.IsNotNull(timeProvider);
@@ -193,24 +201,19 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
 
         if (filter.Search is { } search)
         {
-            // SQL Server's binary key collation makes LIKE case-sensitive, so the column is lowered and the term folded
-            // to match. Engines disagree on folding non-ASCII letters (SQLite's LOWER leaves them, the others fold
-            // them), so the term folds ASCII only, and the as-typed alternative keeps an exact non-ASCII match working.
+            // Key columns compare case-sensitively, so both the column and the term fold ASCII letters only: engines
+            // disagree on folding other letters, which therefore match only as typed everywhere.
             var escape = $"ESCAPE '{SqlLikePattern.EscapeCharacter}'";
             predicates.Add(
-                $"(LOWER({_name}) LIKE @Search {escape} OR {_name} LIKE @SearchExact {escape} "
-                    + $"OR LOWER({_tenantId}) LIKE @Search {escape} OR {_tenantId} LIKE @SearchExact {escape})"
+                $"({_foldAsciiCase(_name)} LIKE @Search {escape} OR {_foldAsciiCase(_tenantId)} LIKE @Search {escape})"
             );
             bind += command =>
-            {
                 _dialect.AddParameter(
                     command,
                     "Search",
                     SqlColumnType.Text(-1),
                     SqlLikePattern.Contains(_FoldAscii(search))
                 );
-                _dialect.AddParameter(command, "SearchExact", SqlColumnType.Text(-1), SqlLikePattern.Contains(search));
-            };
         }
 
         if (filter.Selection is { } selection)
