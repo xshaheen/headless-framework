@@ -15,7 +15,7 @@ namespace Tests;
 public abstract class UniqueConflictSaveTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : IUniqueConflictFixture
 {
-    private static readonly ErrorDescriptor _EmailTaken = new("members:email_taken", "The email is already taken.");
+    protected static readonly ErrorDescriptor EmailTaken = new("members:email_taken", "The email is already taken.");
 
     [Fact]
     public async Task should_report_the_unique_index_name_when_a_concurrent_insert_took_the_value()
@@ -81,10 +81,10 @@ public abstract class UniqueConflictSaveTests<TFixture>(TFixture fixture) : Test
         db.Members.Add(new Member { Email = email, Code = _NewValue() });
 
         var save = async () =>
-            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, _EmailTaken, AbortToken);
+            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, EmailTaken, AbortToken);
 
         var conflict = (await save.Should().ThrowAsync<ConflictException>()).Which;
-        conflict.Errors.Should().ContainSingle().Which.Should().BeSameAs(_EmailTaken);
+        conflict.Errors.Should().ContainSingle().Which.Should().BeSameAs(EmailTaken);
         conflict.InnerException.Should().BeOfType<DbUpdateException>();
     }
 
@@ -98,11 +98,25 @@ public abstract class UniqueConflictSaveTests<TFixture>(TFixture fixture) : Test
         db.Members.Add(new Member { Email = _NewValue(), Code = code });
 
         var save = async () =>
-            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, _EmailTaken, AbortToken);
+            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, EmailTaken, AbortToken);
 
         var exception = (await save.Should().ThrowAsync<DbUpdateException>()).Which;
         RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
         constraintName.Should().Be(UniqueConflictDbContext.CodeKey);
+    }
+
+    [Fact]
+    public async Task should_propagate_a_failure_that_is_not_a_unique_violation()
+    {
+        await using var db = fixture.CreateContext();
+        // The column holds 64 characters, so the engine rejects the row on its length, not on a key.
+        db.Members.Add(new Member { Email = new string('x', 65), Code = _NewValue() });
+
+        var save = async () =>
+            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, EmailTaken, AbortToken);
+
+        var exception = (await save.Should().ThrowAsync<DbUpdateException>()).Which;
+        RelationalFaults.IsUniqueViolation(exception).Should().BeFalse();
     }
 
     [Fact]
@@ -111,7 +125,7 @@ public abstract class UniqueConflictSaveTests<TFixture>(TFixture fixture) : Test
         await using var db = fixture.CreateContext();
         db.Members.Add(new Member { Email = _NewValue(), Code = _NewValue() });
 
-        var written = await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, _EmailTaken, AbortToken);
+        var written = await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, EmailTaken, AbortToken);
 
         written.Should().Be(1);
     }
@@ -223,5 +237,23 @@ public sealed class SqlServerUniqueConflictSaveTests(SqlServerUniqueConflictFixt
             .NotStartWith("Cannot insert duplicate key", "the server localized it");
         RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
         constraintName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_propagate_the_violation_when_the_localized_message_hides_the_mapped_name()
+    {
+        var email = _NewValue();
+        await _InsertAsync(new Member { Email = email, Code = _NewValue() });
+
+        await using var db = Fixture.CreateContext();
+        await db.Database.OpenConnectionAsync(AbortToken);
+        await db.Database.ExecuteSqlRawAsync("SET LANGUAGE Deutsch", AbortToken);
+        db.Members.Add(new Member { Email = email, Code = _NewValue() });
+
+        var save = async () =>
+            await db.SaveChangesOrConflictAsync(UniqueConflictDbContext.EmailIndex, EmailTaken, AbortToken);
+
+        var exception = (await save.Should().ThrowAsync<DbUpdateException>()).Which;
+        RelationalFaults.IsUniqueViolation(exception).Should().BeTrue();
     }
 }
