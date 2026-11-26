@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -26,7 +25,7 @@ internal sealed class RedisEvents
         _logger.LogRedisConnectionFailed(
             e.Exception,
             e.Exception?.Message,
-            e.EndPoint,
+            e.EndPoint?.ToString(),
             e.FailureType,
             e.ConnectionType
         );
@@ -34,14 +33,19 @@ internal sealed class RedisEvents
 
     private void _Connection_ConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
-        _logger.LogRedisConnectionRestored(e.Exception?.Message, e.EndPoint, e.FailureType, e.ConnectionType);
+        _logger.LogRedisConnectionRestored(
+            e.Exception?.Message,
+            e.EndPoint?.ToString(),
+            e.FailureType,
+            e.ConnectionType
+        );
     }
 
     private void _Connection_ErrorMessage(object? sender, RedisErrorEventArgs e)
     {
         if (e.Message.GetRedisErrorType() == RedisErrorTypes.Unknown)
         {
-            _logger.LogRedisServerReplyError(e.Message, e.EndPoint);
+            _logger.LogRedisServerReplyError(e.Message, e.EndPoint?.ToString());
         }
     }
 }
@@ -70,7 +74,7 @@ internal static partial class RedisEventsLog
         this ILogger logger,
         Exception? exception,
         string? message,
-        EndPoint? endpoint,
+        string? endpoint,
         ConnectionFailureType failureType,
         ConnectionType connectionType
     );
@@ -84,7 +88,7 @@ internal static partial class RedisEventsLog
     internal static partial void LogRedisConnectionRestored(
         this ILogger logger,
         string? message,
-        EndPoint? endpoint,
+        string? endpoint,
         ConnectionFailureType failureType,
         ConnectionType connectionType
     );
@@ -95,5 +99,5 @@ internal static partial class RedisEventsLog
         Level = LogLevel.Error,
         Message = "Server replied with error, {Message}, for endpoint:{Endpoint}"
     )]
-    internal static partial void LogRedisServerReplyError(this ILogger logger, string? message, EndPoint? endpoint);
+    internal static partial void LogRedisServerReplyError(this ILogger logger, string? message, string? endpoint);
 }

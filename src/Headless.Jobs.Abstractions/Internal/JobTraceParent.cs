@@ -48,4 +48,13 @@ internal static class JobTraceParent
         link = default;
         return false;
     }
+
+    /// <summary>
+    /// Returns the 32-hex trace id of a stored <c>traceparent</c>, or <see langword="null"/> for a null or unreadable
+    /// value, so only a well-formed id ever reaches a log entry.
+    /// </summary>
+    internal static string? TryGetTraceId(string? traceParent)
+    {
+        return TryGetLink(traceParent, out var link) ? link.Context.TraceId.ToHexString() : null;
+    }
 }

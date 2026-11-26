@@ -56,10 +56,17 @@ public class JobContext
         CorrelationId = other.CorrelationId;
         CausationId = other.CausationId;
         TenantId = other.TenantId;
+        CausationTraceId = other.CausationTraceId;
         ProgressSink = other.ProgressSink;
     }
 
     internal AsyncServiceScope ServiceScope { get; set; }
+
+    /// <summary>
+    /// Trace id of the span that scheduled the row, logged with every entry of the run: the run's own span starts a
+    /// trace of its own that only links back to its scheduler.
+    /// </summary>
+    internal string? CausationTraceId { get; set; }
 
     internal IJobProgressSink? ProgressSink { get; set; }
 

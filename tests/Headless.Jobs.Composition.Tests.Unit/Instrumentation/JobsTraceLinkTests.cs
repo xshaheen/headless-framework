@@ -7,6 +7,7 @@ using Headless;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Instrumentation;
@@ -23,6 +24,8 @@ public sealed class JobsTraceLinkTests : TestBase
     private const string _TimeJobSpan = "job.execute.timejob";
     private const string _OccurrenceSpan = "job.execute.cronjoboccurrence";
     private const string _RequestSourceName = "Tests.Jobs.TraceLink";
+    private const string _JobLogMessage = "trace job ran";
+    private const string _CausationTraceId = "CausationTraceId";
 
     private static readonly ActivitySource _Requests = new(_RequestSourceName);
 
@@ -273,6 +276,46 @@ public sealed class JobsTraceLinkTests : TestBase
         _ShouldLinkOnlyTo(parent, schedule.Context);
     }
 
+    [Fact]
+    public async Task should_log_the_scheduling_request_trace_id_on_every_entry_the_job_writes()
+    {
+        // given: a request span schedules a job that runs later in a trace of its own
+        using var recorder = SpanRecorder.All();
+        using var logs = new EnrichedLogCapture();
+        await using var harness = Harness.Create(logs: logs);
+        ActivityTraceId requestTraceId;
+
+        using (var requestSpan = _Requests.StartActivity("request"))
+        {
+            requestTraceId = requestSpan!.TraceId;
+            await harness.Scheduler.ScheduleAsync<TraceJob>(harness.Now.AddMinutes(1), AbortToken);
+        }
+
+        // when
+        await harness.RunDueAsync(TimeSpan.FromMinutes(1));
+
+        // then
+        var entry = logs.Single(_JobLogMessage);
+        entry.Fields.Should().Contain(_CausationTraceId, requestTraceId.ToHexString());
+        entry.TraceId.Should().NotBe(requestTraceId, "the run's own trace does not lead back to the request");
+    }
+
+    [Fact]
+    public async Task should_log_no_causation_trace_id_when_nothing_was_traced_at_scheduling()
+    {
+        // given: no listener and no ambient span while scheduling, so the row stores no trace context
+        using var logs = new EnrichedLogCapture();
+        await using var harness = Harness.Create(logs: logs);
+        await harness.Scheduler.ScheduleAsync<TraceJob>(harness.Now.AddMinutes(1), AbortToken);
+
+        // when
+        await harness.RunDueAsync(TimeSpan.FromMinutes(1));
+
+        // then
+        logs.Single(_JobLogMessage).Fields.Should().NotContainKey(_CausationTraceId);
+        logs.Entries.Should().NotContain(x => x.Fields.ContainsKey(_CausationTraceId));
+    }
+
     private static string _TraceParent(Activity activity)
     {
         // The W3C header form, written out here rather than read from the code under test. The flags byte carries
@@ -300,7 +343,14 @@ public sealed class JobsTraceLinkTests : TestBase
         private TraceJobsModule() { }
 
         static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
-            _Register(catalog, static (_, _, _) => Task.CompletedTask);
+            _Register(
+                catalog,
+                static (services, _, _) =>
+                {
+                    services.GetRequiredService<ILogger<TraceJob>>().LogInformation(_JobLogMessage);
+                    return Task.CompletedTask;
+                }
+            );
     }
 
     public sealed class FailingTraceJobsModule : IJobsModule
@@ -355,11 +405,18 @@ public sealed class JobsTraceLinkTests : TestBase
         private IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store =>
             _provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        public static Harness Create(bool failing = false)
+        public static Harness Create(bool failing = false, ILoggerProvider? logs = null)
         {
             var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 13, 12, 0, 0, TimeSpan.Zero));
             var services = new ServiceCollection();
-            services.AddLogging();
+            services.AddLogging(logging =>
+            {
+                if (logs is not null)
+                {
+                    logging.EnableEnrichment();
+                    logging.AddProvider(logs);
+                }
+            });
             services.AddSingleton<TimeProvider>(time);
             services.AddHeadlessJobs(options =>
             {

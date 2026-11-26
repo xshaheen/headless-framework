@@ -18,6 +18,7 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.Enrichment;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -136,6 +137,8 @@ public static class SetupMessaging
             sp.GetRequiredService<IMessageMetadataRegistry>()
         ));
         services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
+        // Takes effect only on a host that enables Microsoft's log enrichment, as AddHeadlessLogging does.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILogEnricher, ConsumeLogEnricher>());
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton(sp =>
             MessagingCapabilityModel.Compose(sp.GetServices<MessagingProviderCapabilities>())

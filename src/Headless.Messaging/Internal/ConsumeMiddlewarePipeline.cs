@@ -88,6 +88,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             consumeContext.CorrelationId,
             storageId == Guid.Empty ? consumeContext.MessageId : storageId.ToString("D")
         );
+        var logScope = ConsumeLogScope.Begin(originHeaders);
 
         try
         {
@@ -129,6 +130,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         finally
         {
             consumeContextAccessor?.Current = previousConsumeContext;
+            logScope.Dispose();
             causalScope.Dispose();
         }
 
