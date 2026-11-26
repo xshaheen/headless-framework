@@ -1,0 +1,10 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>Test doubles for Headless SMS delivery: an in-memory sender that records each message so a test can assert what was sent.</Description>
+    <PackageTags>headless;sms;testing;dotnet</PackageTags>
+    <RootNamespace>Headless.Sms</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

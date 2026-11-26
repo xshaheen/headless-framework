@@ -1346,6 +1346,12 @@
           "Microsoft.Extensions.Http.Resilience": "[10.11.0, )"
         }
       },
+      "headless.sms.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Sms.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.sms.tests.harness": {
         "type": "Project",
         "dependencies": {

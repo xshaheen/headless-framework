@@ -1,6 +1,6 @@
 ---
 domain: SMS
-packages: Sms.Abstractions, Sms, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Infobip, Sms.Twilio, Sms.VictoryLink, Sms.Vodafone
+packages: Sms.Abstractions, Sms, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Infobip, Sms.Testing, Sms.Twilio, Sms.VictoryLink, Sms.Vodafone
 ---
 
 # SMS
@@ -12,6 +12,7 @@ packages: Sms.Abstractions, Sms, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sm
 Install `Headless.Sms.Abstractions` and one provider package. Each provider package brings `Headless.Sms`, which owns `AddHeadlessSms`.
 
 - **Development and tests:** `Headless.Sms.Dev`. `UseDevelopment(path)` appends each message to a file. `UseNoop()` discards it.
+- **Assert what a test sent:** `Headless.Sms.Testing`. Replace the default `ISmsSender` with a `RecordingSmsSender`, then read `Sent`.
 - **International:** `Headless.Sms.Twilio`, `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip`.
 - **MENA:** `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
@@ -40,6 +41,7 @@ builder.Services.AddHeadlessSms(setup =>
 - Give each named sender a non-blank name that is unique in the call (ordinal comparison), and exactly one provider. A blank name throws `ArgumentException`. A duplicate name, or zero or several providers in one named instance, throws `InvalidOperationException`.
 - Resolve a named sender with `ISmsSenderProvider.GetSender(name)`, which throws `InvalidOperationException` for an unregistered name, or `GetSenderOrNull(name)`, which returns `null`. Both throw `ArgumentException` for a blank name. To validate a name from outside input, check `ISmsSenderProvider.RegisteredNames` first. `ISmsSenderProvider` never returns the default sender, and `RegisteredNames` does not list it.
 - Use `UseDevelopment` or `UseNoop` in development and in tests, so no real SMS leaves the machine.
+- To assert what a test sent, replace the default `ISmsSender` with one `RecordingSmsSender` singleton after the application's registration, and read its `Sent` and `SentBulk` lists. Replace only `ISmsSender`: the default `IBulkSmsSender` forwards to it. Do not register a fake that implements only `ISmsSender`, because resolving `IBulkSmsSender` then throws `InvalidCastException`.
 - Address one recipient with `SendSingleSmsRequest.Destination` and the body with `Text`. The request has no `To` or `Message` property. `SmsRequestDestination` takes the country calling code (`Code`) and the local number (`Number`) as separate values.
 - Check `response.Success` after every send. A provider or transport failure returns a failed `SendSingleSmsResponse`. Only cancellation and argument validation (a null request, a null destination, empty text) throw. The response has `Success` and `FailureError`, not `IsSuccess` or `ErrorMessage`.
 - Never retry an `Unknown` failure automatically: a timeout or reset after sending is `Unknown`, because the provider may have delivered the message, and a retry can send it twice. A `Transient` failure means the request never left the process, so a retry is safe.
@@ -447,6 +449,66 @@ builder.Services.AddHeadlessSms(setup => setup.UseInfobip(builder.Configuration.
 
 - **Failure kinds.** A message whose status group is undeliverable, expired, or rejected returns `InvalidRecipient`.
 - **Success.** A single send's `ProviderMessageId` is the Infobip bulk id. A bulk send reports each recipient's message id separately.
+
+---
+
+## Headless.Sms.Testing
+
+Test doubles for SMS delivery.
+
+### Setup
+
+```bash
+dotnet add package Headless.Sms.Testing
+```
+
+Replace the default sender after the application registers it. In a `WebApplicationFactory` test, `ConfigureTestServices` runs after the application's own registration:
+
+```csharp
+using Headless.Sms;
+using Headless.Sms.Testing;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+public sealed class PhoneVerificationTests(WebApplicationFactory<Program> factory)
+    : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task verify_phone_texts_a_code()
+    {
+        var sms = new RecordingSmsSender();
+
+        using var client = factory
+            .WithWebHostBuilder(host =>
+                host.ConfigureTestServices(services =>
+                {
+                    // Replace the default sender that AddHeadlessSms registered. The default IBulkSmsSender forwards to it.
+                    services.RemoveAll<ISmsSender>();
+                    services.AddSingleton<ISmsSender>(sms);
+                })
+            )
+            .CreateClient();
+
+        await client.PostAsJsonAsync("/phone/verify", new { Code = 20, Number = "1000000001" });
+
+        var message = Assert.Single(sms.Sent);
+        Assert.Equal(new SmsRequestDestination(20, "1000000001"), message.Destination);
+    }
+}
+```
+
+**Verify:** `sms.Sent` holds the request the code under test sent, or `sms.SentBulk` for a bulk send. Empty lists mean the code resolved a different sender: check that the replacement runs after `AddHeadlessSms`.
+
+### Design and runtime behavior
+
+- `RecordingSmsSender` implements `ISmsSender` and `IBulkSmsSender`. `SendAsync` records into `Sent`, and `SendBulkAsync` records the whole request once into `SentBulk`, never into `Sent`.
+- It replaces the default (unkeyed) sender only. `RemoveAll<ISmsSender>()` leaves named senders registered. To record a named sender, remove and re-register both keyed services: `RemoveAllKeyed<ISmsSender>(name)` and `RemoveAllKeyed<IBulkSmsSender>(name)`, then `AddKeyedSingleton<ISmsSender>(name, sms)` and `AddKeyedSingleton<IBulkSmsSender>(name, sms)`.
+- Both methods validate the request as the development senders do. A `null` request, destination, or destination list throws `ArgumentNullException`. Empty text or an empty destination list throws `ArgumentException`. A cancelled token throws `OperationCanceledException`. None of them is recorded.
+- Every accepted request succeeds with a `null` `ProviderMessageId`. A bulk send returns one success per destination. The sender never returns a failed response.
+- `Sent` and `SentBulk` return copies in acceptance order, which later sends do not change. `Clear()` discards both lists.
+- One instance is safe to share across threads. Concurrent sends each record their request exactly once.
 
 ---
 

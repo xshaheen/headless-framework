@@ -13,5 +13,7 @@
     <ProjectReference Include="..\..\src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails.Testing\Headless.Emails.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

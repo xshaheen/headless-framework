@@ -209,6 +209,7 @@
         <Project Path="src\Headless.Emails\Headless.Emails.csproj" />
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
+        <Project Path="src\Headless.Emails.Testing\Headless.Emails.Testing.csproj" />
     </Folder>
     <Folder Name="/Emails/Tests/">
         <Project Path="tests/Headless.Emails.Composition.Tests.Unit/Headless.Emails.Composition.Tests.Unit.csproj" />
@@ -659,6 +660,7 @@
         <Project Path="src\Headless.Sms\Headless.Sms.csproj" />
         <Project Path="src\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
         <Project Path="src\Headless.Sms.Infobip\Headless.Sms.Infobip.csproj" />
+        <Project Path="src\Headless.Sms.Testing\Headless.Sms.Testing.csproj" />
         <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
         <Project Path="src\Headless.Sms.VictoryLink\Headless.Sms.VictoryLink.csproj" />
         <Project Path="src\Headless.Sms.Vodafone\Headless.Sms.Vodafone.csproj" />

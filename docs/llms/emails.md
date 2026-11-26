@@ -1,6 +1,6 @@
 ---
 domain: Email
-packages: Emails.Abstractions, Emails, Emails.Aws, Emails.Azure, Emails.Dev, Emails.Mailkit
+packages: Emails.Abstractions, Emails, Emails.Aws, Emails.Azure, Emails.Dev, Emails.Mailkit, Emails.Testing
 ---
 
 # Email
@@ -17,6 +17,7 @@ Install `Headless.Emails.Abstractions` and one provider package. Each provider p
 | Azure | `Headless.Emails.Azure` | `UseAzure(...)` sends through Azure Communication Services (ACS) Email. |
 | AWS | `Headless.Emails.Aws` | `UseAwsSes(awsOptions)` sends through AWS SES v2. |
 | Any SMTP server | `Headless.Emails.Mailkit` | `UseMailkit(...)` sends over pooled SMTP connections. |
+| Assert what a test sent | `Headless.Emails.Testing` | Replace the default `IEmailSender` with a `RecordingEmailSender`, then read `Sent`. |
 
 Register every sender in one `AddHeadlessEmails` call: an optional **default** sender, chosen by a `Use*` call on the setup builder, plus any number of **named** senders added with `setup.AddNamed(name, i => i.Use…())`. Inject `IEmailSender` for the default. Resolve a named sender with `[FromKeyedServices("name")] IEmailSender` or `IEmailSenderProvider.GetSender("name")`.
 
@@ -43,6 +44,7 @@ builder.Services.AddHeadlessEmails(setup =>
 - Give each named sender a non-empty name that is unique in the call, and exactly one provider. A blank name throws `ArgumentException`. A duplicate name, or zero or several providers in one named instance, throws `InvalidOperationException`.
 - Resolve a named sender with `IEmailSenderProvider.GetSender(name)`, which throws `InvalidOperationException` for an unregistered name, or `GetSenderOrNull(name)`, which returns `null`. To validate a name from outside input, check `IEmailSenderProvider.RegisteredNames` first. `IEmailSenderProvider` never returns the default sender, and `RegisteredNames` does not list it.
 - Use `UseDevelopment` or `UseNoop` in development and in tests, gated on `builder.Environment.IsDevelopment()`, so no real email leaves the machine.
+- To assert what a test sent, replace the default `IEmailSender` with one `RecordingEmailSender` singleton after the application's registration, and read its `Sent` list. Do not substitute `IEmailSender` with a mock to capture requests, and do not write your own recording fake.
 - Set both `From` and `Destination` on `SendSingleEmailRequest`; they are `required`. Set `MessageHtml`, `MessageText`, or both. A request with neither body throws `InvalidOperationException` from every sender except `UseNoop`, which discards everything without validation.
 - Check `response.Success` after every `SendAsync`. A provider or transport failure returns a failed `SendSingleEmailResponse` with a non-null `FailureError`. Only cancellation by your token and argument validation throw.
 - Keep an attachment's `File` memory unchanged until `SendAsync` returns. The providers read it during the send, without a copy.
@@ -445,3 +447,61 @@ builder.Services.AddHeadlessEmails(setup =>
 - **Failures.** SMTP command and protocol errors, a rejected credential, a `530` authentication-required reply, and connect, TLS, or timeout faults all return a failed response. A rejected credential also logs at `Critical` level, because it is a configuration error. A connect timeout returns a failure; only cancellation of your own token throws.
 - **After a failure.** The connection is closed instead of returned to the pool, and the next send connects and authenticates again.
 - **Success.** `ProviderMessageId` is the SMTP server's final response. A multi-line response keeps every line, joined with `\r\n`.
+
+---
+
+## Headless.Emails.Testing
+
+Test doubles for email delivery.
+
+### Setup
+
+```bash
+dotnet add package Headless.Emails.Testing
+```
+
+Replace the default sender after the application registers it. In a `WebApplicationFactory` test, `ConfigureTestServices` runs after the application's own registration:
+
+```csharp
+using Headless.Emails;
+using Headless.Emails.Testing;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+public sealed class SignUpTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+{
+    [Fact]
+    public async Task sign_up_sends_a_welcome_email()
+    {
+        var emails = new RecordingEmailSender();
+
+        using var client = factory
+            .WithWebHostBuilder(host =>
+                host.ConfigureTestServices(services =>
+                {
+                    // Replace the default sender that AddHeadlessEmails registered.
+                    services.RemoveAll<IEmailSender>();
+                    services.AddSingleton<IEmailSender>(emails);
+                })
+            )
+            .CreateClient();
+
+        await client.PostAsJsonAsync("/sign-up", new { Email = "user@example.com" });
+
+        var email = Assert.Single(emails.Sent);
+        Assert.Equal("user@example.com", Assert.Single(email.Destination.ToAddresses).EmailAddress);
+    }
+}
+```
+
+**Verify:** `emails.Sent` holds the request the code under test sent. An empty list means the code resolved a different sender: check that the replacement runs after `AddHeadlessEmails`.
+
+### Design and runtime behavior
+
+- `RecordingEmailSender` replaces the default (unkeyed) sender only. `RemoveAll<IEmailSender>()` leaves named senders registered, so a named sender keeps its provider. To record a named sender, call `services.RemoveAllKeyed<IEmailSender>(name)`, then `services.AddKeyedSingleton<IEmailSender>(name, sender)`.
+- `SendAsync` validates the request as the real providers do. A `null` request throws `ArgumentNullException`, and a request with neither `MessageHtml` nor `MessageText` throws `InvalidOperationException`. A cancelled token throws `OperationCanceledException`. None of them is recorded.
+- Every accepted request returns `SendSingleEmailResponse.Succeeded()` with a `null` `ProviderMessageId`. The sender never returns a failed response.
+- `Sent` returns a copy in acceptance order, which later sends do not change. Read it again to see them. `Clear()` discards every recorded request.
+- One instance is safe to share across threads. Concurrent sends each record their request exactly once.

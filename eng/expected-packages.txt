@@ -66,6 +66,7 @@ Headless.Emails.Aws
 Headless.Emails.Azure
 Headless.Emails.Dev
 Headless.Emails.Mailkit
+Headless.Emails.Testing
 Headless.Encryption
 Headless.Encryption.Abstractions
 Headless.Encryption.AzureKeyVault
@@ -199,6 +200,7 @@ Headless.Sms.Cequens
 Headless.Sms.Connekio
 Headless.Sms.Dev
 Headless.Sms.Infobip
+Headless.Sms.Testing
 Headless.Sms.Twilio
 Headless.Sms.VictoryLink
 Headless.Sms.Vodafone

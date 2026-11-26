@@ -1,0 +1,10 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>Test doubles for Headless email delivery: an in-memory sender that records each email so a test can assert what was sent.</Description>
+    <PackageTags>headless;emails;testing;dotnet</PackageTags>
+    <RootNamespace>Headless.Emails</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

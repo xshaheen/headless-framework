@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.Infobip\Headless.Sms.Infobip.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sms.Testing\Headless.Sms.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.VictoryLink\Headless.Sms.VictoryLink.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sms.Vodafone\Headless.Sms.Vodafone.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
