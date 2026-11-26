@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Context;
+using Headless.Logging;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.Enrichment;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -39,18 +41,18 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         MessageLane lane
     )
     {
-        // given
+        // given: a host with the Headless logging profile
         using var listener = _ListenToMessaging();
         using var logs = new EnrichedLogCapture();
-        await using var provider = await _StartInMemoryHostAsync(logs);
-        var recorder = provider.GetRequiredService<ConsumeRecorder>();
+        using var host = await _StartInMemoryHostAsync(logs);
+        var recorder = host.Services.GetRequiredService<ConsumeRecorder>();
         ActivityTraceId requestTraceId;
 
         // when: a request-like span publishes
         using (var request = _StartRequest("GET /orders"))
         {
             requestTraceId = request.TraceId;
-            await using var scope = provider.CreateAsyncScope();
+            await using var scope = host.Services.CreateAsyncScope();
 
             if (lane == MessageLane.Bus)
             {
@@ -69,23 +71,18 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_the_publishing_request_trace_id_on_the_consumer_entries_of_a_broker_transport()
+    public async Task should_carry_the_publishing_request_trace_id_into_the_consumer_of_a_broker_transport()
     {
         // given: the simulated broker carries the envelope like a real broker, through the real pipeline
         using var listener = _ListenToMessaging();
-        using var logs = new EnrichedLogCapture();
         var probe = new PipelineProbe();
-        await using var host = await PipelineHosts.StartAsync(
-            probe,
-            AbortToken,
-            configureServices: services => services.AddLogging(logging => logging.EnableEnrichment().AddProvider(logs))
-        );
-        var consumerLogger = host.Services.GetRequiredService<ILogger<PipelineOrderConsumer>>();
+        string? observed = null;
         probe.Behavior = (_, _, _) =>
         {
-            consumerLogger.LogInformation(_ConsumerLogMessage);
+            observed = CausalScope.CausationTraceId;
             return ValueTask.CompletedTask;
         };
+        await using var host = await PipelineHosts.StartAsync(probe, AbortToken);
         ActivityTraceId requestTraceId;
 
         // when
@@ -97,15 +94,16 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
 
         await host.WithinBoundAsync(probe.WhenCompletedAsync("o1", 1), AbortToken);
 
-        // then
-        logs.Single(_ConsumerLogMessage).Fields.Should().Contain(_CausationTraceId, requestTraceId.ToHexString());
+        // then: the value the logging profile writes as CausationTraceId on every entry the consumer logs
+        observed.Should().Be(requestTraceId.ToHexString());
+        CausalScope.CausationTraceId.Should().BeNull("nothing leaks out of the consume");
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("not-a-traceparent")]
     [InlineData("00-00000000000000000000000000000000-0000000000000000-00")]
-    public void should_add_no_field_when_the_message_carries_no_readable_trace_context(string? traceParent)
+    public void should_carry_no_trace_id_when_the_message_stored_no_readable_trace_context(string? traceParent)
     {
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -114,44 +112,26 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
             headers[Headers.TraceParent] = traceParent;
         }
 
-        var collector = new TagCollector();
-
         // when
-        using (ConsumeLogScope.Begin(headers))
-        {
-            new ConsumeLogEnricher().Enrich(collector);
-        }
+        var traceId = ConsumeMiddlewarePipeline.PublisherTraceId(headers);
 
         // then
-        collector.Tags.Should().BeEmpty();
+        traceId.Should().Be(default(ActivityTraceId));
     }
 
     [Fact]
-    public void should_add_no_field_outside_a_consume_and_restore_the_outer_consume_after_a_nested_one()
+    public void should_read_the_trace_id_of_a_well_formed_traceparent()
     {
-        // given
-        const string outerTraceParent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-        var enricher = new ConsumeLogEnricher();
-        var outside = new TagCollector();
-        var afterNested = new TagCollector();
-
-        // when
-        enricher.Enrich(outside);
-        using (ConsumeLogScope.Begin(new Dictionary<string, string?> { [Headers.TraceParent] = outerTraceParent }))
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            using (ConsumeLogScope.Begin(new Dictionary<string, string?>())) { }
+            [Headers.TraceParent] = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        };
 
-            enricher.Enrich(afterNested);
-        }
-
-        // then
-        outside.Tags.Should().BeEmpty();
-        afterNested
-            .Tags.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Be(new KeyValuePair<string, object>(_CausationTraceId, "4bf92f3577b34da6a3ce929d0e0e4736"));
-        ConsumeLogScope.CausationTraceId.Should().BeNull();
+        ConsumeMiddlewarePipeline
+            .PublisherTraceId(headers)
+            .ToHexString()
+            .Should()
+            .Be("4bf92f3577b34da6a3ce929d0e0e4736");
     }
 
     private static Activity _StartRequest(string name)
@@ -177,17 +157,18 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         return listener;
     }
 
-    private async Task<ServiceProvider> _StartInMemoryHostAsync(EnrichedLogCapture logs)
+    private async Task<IHost> _StartInMemoryHostAsync(EnrichedLogCapture logs)
     {
-        var services = new ServiceCollection();
-        services.AddLogging(logging => logging.EnableEnrichment().AddProvider(logs).AddProvider(LoggerProvider));
-        services.AddSingleton<ConsumeRecorder>();
-        services.ConfigureMessaging(messaging =>
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
+        builder.AddHeadlessLogging();
+        builder.Logging.AddProvider(logs).AddProvider(LoggerProvider);
+        builder.Services.AddSingleton<ConsumeRecorder>();
+        builder.Services.ConfigureMessaging(messaging =>
         {
             messaging.Message<BusProbe>("tests.consume-log.bus-probe");
             messaging.Message<QueueProbe>("tests.consume-log.queue-probe");
         });
-        services.AddHeadlessMessaging(messaging =>
+        builder.Services.AddHeadlessMessaging(messaging =>
         {
             messaging.AddConsumer<BusProbeConsumer>();
             messaging.AddConsumer<QueueProbeConsumer>();
@@ -195,9 +176,9 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
             messaging.UseProcessLocalInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-        return provider;
+        var host = builder.Build();
+        await host.Services.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        return host;
     }
 
     private sealed record BusProbe(string Id);
@@ -237,12 +218,5 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
             recorder.Record(logger);
             return ValueTask.CompletedTask;
         }
-    }
-
-    private sealed class TagCollector : IEnrichmentTagCollector
-    {
-        public List<KeyValuePair<string, object>> Tags { get; } = [];
-
-        public void Add(string tagName, object tagValue) => Tags.Add(new(tagName, tagValue));
     }
 }

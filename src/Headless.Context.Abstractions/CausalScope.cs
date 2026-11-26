@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Checks;
 
 namespace Headless.Context;
@@ -29,6 +30,18 @@ public static class CausalScope
     public static CausalContext? Current => _Current.Value?.Context;
 
     /// <summary>
+    /// Gets the 32-character lowercase hex trace id of the span that caused the innermost open scope's work (the span
+    /// that published the consumed message or scheduled the running job), or <see langword="null"/> when that work
+    /// stored no trace context or no scope is open.
+    /// </summary>
+    /// <remarks>
+    /// The work's own trace does not lead back to its cause: a job runs in a trace of its own that only links to its
+    /// scheduler, and an in-process delivery runs under the consumer loop's activity. Log enrichment writes this value
+    /// so the cause's entries and the work's entries can be found by one trace id.
+    /// </remarks>
+    public static string? CausationTraceId => _Current.Value?.CausationTraceId;
+
+    /// <summary>
     /// Opens a scope for the work of one object. Disposing it restores the scope that was current before.
     /// </summary>
     /// <param name="correlationId">
@@ -37,12 +50,20 @@ public static class CausalScope
     /// correlation instead of failing on an id it cannot store, and never inherits an outer scope that is not its own.
     /// </param>
     /// <param name="causationId">The id of the object whose work runs inside the scope.</param>
+    /// <param name="causationTraceId">
+    /// The trace id of the span that caused the work, read from the trace context the work stored. The default value
+    /// means the work stored none; an inner scope never inherits an outer scope's value.
+    /// </param>
     /// <returns>A handle that closes the scope. Dispose handles in the reverse order they were opened.</returns>
     /// <exception cref="ArgumentException"><paramref name="causationId"/> is blank.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="causationId"/> is longer than <see cref="IdMaxLength"/>.
     /// </exception>
-    public static IDisposable Begin(string? correlationId, string causationId)
+    public static IDisposable Begin(
+        string? correlationId,
+        string causationId,
+        ActivityTraceId causationTraceId = default
+    )
     {
         Argument.IsNotNullOrWhiteSpace(causationId);
         Argument.HasMaxLength(causationId, IdMaxLength);
@@ -52,16 +73,20 @@ public static class CausalScope
                 ? null
                 : new CausalContext(correlationId, causationId);
 
-        var scope = new Scope(context, _Current.Value);
+        // Formatted once per scope, not once per log entry that reads it.
+        var traceId = causationTraceId == default ? null : causationTraceId.ToHexString();
+        var scope = new Scope(context, traceId, _Current.Value);
         _Current.Value = scope;
         return scope;
     }
 
-    private sealed class Scope(CausalContext? context, Scope? parent) : IDisposable
+    private sealed class Scope(CausalContext? context, string? causationTraceId, Scope? parent) : IDisposable
     {
         private bool _disposed;
 
         public CausalContext? Context { get; } = context;
+
+        public string? CausationTraceId { get; } = causationTraceId;
 
 #pragma warning disable CA1065 // Strict LIFO rejection prevents silently restoring the wrong business lineage.
         public void Dispose()

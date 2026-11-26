@@ -378,6 +378,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Logging.Redaction": "[1.0.0, )",
           "Microsoft.Extensions.Telemetry": "[10.11.0, )"

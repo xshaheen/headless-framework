@@ -52,7 +52,7 @@ builder
 
 Every log entry written inside the consume pipeline (consume middleware and the consumer) carries `CausationTraceId`: the trace id of the span that published the message, read from its stored `traceparent`. It is the same on the Bus and Queue lanes and on every transport. Query `TraceId = <request trace id> OR CausationTraceId = <request trace id>` to find the request's lines and its consumers' lines together. The consumer's own `TraceId` can differ from the publisher's: an in-process delivery runs under the consumer loop's activity, and a sampled-out consume has none.
 
-- The field needs Microsoft's log enrichment, which `AddHeadlessLogging()` enables. On a host without it, nothing is added.
+- `AddHeadlessLogging()` adds the field. A host that builds its own logging gets the value on `CausalScope.CausationTraceId` and can add it with its own `ILogEnricher`.
 - A message published while no messaging telemetry listens stores no `traceparent` (see [Trace propagation](#trace-propagation)), so its consumer's entries get no field. An unreadable `traceparent` adds no field either.
 - Entries the framework writes outside the pipeline, such as the retry and terminal-failure logs, do not carry it.
 - The tenant is not added by this field. It comes from the ambient-tenant log enrichment; see [multi-tenancy observability](../multi-tenancy/observability.md).

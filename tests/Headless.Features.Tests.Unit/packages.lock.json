@@ -930,7 +930,6 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.15, )",
           "Microsoft.Extensions.Options": "[10.0.15, )",
-          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
           "OpenTelemetry.Api": "[1.21.0, )",
           "Polly.Core": "[8.9.1, )",
           "System.Threading.RateLimiting": "[10.0.15, )"
