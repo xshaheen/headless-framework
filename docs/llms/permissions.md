@@ -619,6 +619,9 @@ Create the tables with an EF migration. The provider writes no DDL.
 - `setup.UseEntityFramework<TContext>()` registers the EF storage provider.
 - `modelBuilder.ConfigureHeadlessPermissions(DbContext context)` maps the entities. It reads `PermissionsStorageOptions` from the context's service provider and picks snake_case on Npgsql, PascalCase on every other provider.
 - `modelBuilder.ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` maps them from options you hold. Pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database.
+- On SQL Server, `ConfigureHeadlessPermissions(this)` sets `PermissionGrantRecord.TenantId` to `Latin1_General_100_BIN2` so IDs that differ in case or accent identify separate tenants. If you pass `PermissionsStorageOptions` directly or map the entity yourself, set the column collation with `UseCollation("Latin1_General_100_BIN2")`.
+- Startup throws `InvalidOperationException` if the SQL Server model gives `PermissionGrantRecord.TenantId` a different or unspecified collation. The validator also accepts a model default of `Latin1_General_100_BIN2` when the column inherits it. The check reads EF metadata, so apply the migration to bring the database into line with the model.
+- For an existing EF-managed SQL Server database, generate and apply a collation migration. In both migration directions, drop the index filtered by `TenantId IS NULL` before altering the column. Recreate the index afterward. EF Core only rebuilds indexes that list `TenantId` as a key or included column.
 
 ### Design and runtime behavior
 

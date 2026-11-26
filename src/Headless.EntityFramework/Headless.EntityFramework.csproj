@@ -23,6 +23,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Identity.Storage.EntityFramework" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging" />
+    <InternalsVisibleTo Include="Headless.Features.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Permissions.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Settings.Storage.EntityFramework" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Integration" />

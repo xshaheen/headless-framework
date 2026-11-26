@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.EntityFramework.Internal;
 using Headless.Features;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,7 +18,8 @@ public static class HeadlessFeaturesModelBuilderExtensions
         /// <summary>
         /// Applies the Headless features entity configurations, resolving <see cref="FeaturesStorageOptions"/>
         /// from the <paramref name="context"/>'s service provider and the naming style from its database provider
-        /// (snake_case on PostgreSQL, PascalCase elsewhere). Call from <c>OnModelCreating</c> with
+        /// (snake_case on PostgreSQL, PascalCase elsewhere). On SQL Server, maps provider keys with a binary
+        /// collation so keys that differ in case or accent identify separate scopes. Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.ConfigureHeadlessFeatures(this)</c> to avoid injecting the options into the context.
         /// </summary>
         /// <param name="context">The <see cref="DbContext"/> whose service provider supplies <see cref="FeaturesStorageOptions"/>.</param>
@@ -29,9 +31,16 @@ public static class HeadlessFeaturesModelBuilderExtensions
             Argument.IsNotNull(context);
 
             var options = context.GetService<IOptions<FeaturesStorageOptions>>().Value;
-            var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
+            var provider = context.Database.ProviderName;
+            var style = HeadlessStorageNaming.ForProvider(provider);
 
-            return modelBuilder.ConfigureHeadlessFeatures(options, style);
+            modelBuilder.ConfigureHeadlessFeatures(options, style);
+            SqlServerScopeCollation.Configure(
+                modelBuilder.Entity<FeatureValueRecord>().Property(x => x.ProviderKey),
+                provider
+            );
+
+            return modelBuilder;
         }
 
         /// <summary>Applies the Headless features entity configurations using the supplied <paramref name="options"/>.</summary>
@@ -43,6 +52,8 @@ public static class HeadlessFeaturesModelBuilderExtensions
         /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
         /// </param>
         /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <remarks>On SQL Server, explicitly map <see cref="FeatureValueRecord.ProviderKey"/> with the
+        /// <c>Latin1_General_100_BIN2</c> collation when using this overload.</remarks>
         /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
         public ModelBuilder ConfigureHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)
         {

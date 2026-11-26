@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Internal;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,12 @@ internal sealed class PermissionsEntityStartupValidator<TContext>(IServiceProvid
         _EnsureEntity(context, typeof(PermissionGrantRecord), nameof(PermissionGrantRecord));
         _EnsureEntity(context, typeof(PermissionDefinitionRecord), nameof(PermissionDefinitionRecord));
         _EnsureEntity(context, typeof(PermissionGroupDefinitionRecord), nameof(PermissionGroupDefinitionRecord));
+        SqlServerScopeCollation.EnsureConfigured(
+            context,
+            typeof(PermissionGrantRecord),
+            nameof(PermissionGrantRecord.TenantId),
+            nameof(HeadlessPermissionsModelBuilderExtensions.ConfigureHeadlessPermissions)
+        );
     }
 
     private static void _EnsureEntity(DbContext context, Type entityType, string entityName)
