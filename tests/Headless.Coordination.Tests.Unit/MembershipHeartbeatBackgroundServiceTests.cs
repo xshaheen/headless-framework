@@ -569,7 +569,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
     )
     {
         var coordinationOptions = options ?? new CoordinationOptions();
-        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider());
         timeProvider ??= new FakeTimeProvider();
         var membership = new MembershipService(
             store,

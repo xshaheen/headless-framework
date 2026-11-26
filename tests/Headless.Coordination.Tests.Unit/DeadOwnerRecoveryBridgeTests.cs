@@ -469,7 +469,7 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
             store,
             nodeIdProvider,
             new CoordinationOptions(),
-            new MembershipEventSource(NullLogger<MembershipEventSource>.Instance),
+            new MembershipEventSource(NullLogger<MembershipEventSource>.Instance, new FakeTimeProvider()),
             timeProvider,
             hostApplicationLifetime: null,
             NullLogger<MembershipService>.Instance

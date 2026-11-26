@@ -149,6 +149,7 @@ public static class SetupCoordinationCore
             services.TryAddSingleton<IMembershipEventSource>(static sp =>
                 sp.GetRequiredService<MembershipEventSource>()
             );
+            services.TryAddSingleton<IMembershipEventLog>(static sp => sp.GetRequiredService<MembershipEventSource>());
 
             services.TryAddSingleton<MembershipService>(sp => new MembershipService(
                 storeFactory(sp),

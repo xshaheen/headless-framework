@@ -394,7 +394,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
                 continue;
             }
 
-            _PublishTransition(snapshot.Identity, previousState, snapshot.State);
+            _PublishTransition(snapshot, previousState);
         }
 
         _previous = current;
@@ -405,25 +405,24 @@ internal sealed class MembershipHeartbeatBackgroundService(
         switch (snapshot.State)
         {
             case NodeLivenessState.Alive:
-                eventSource.Publish(new NodeJoined(snapshot.Identity));
+                eventSource.Publish(new NodeJoined(snapshot.Identity), snapshot, isFirstObservation: true);
                 break;
 
             case NodeLivenessState.Suspected:
-                eventSource.Publish(new NodeSuspected(snapshot.Identity));
+                eventSource.Publish(new NodeSuspected(snapshot.Identity), snapshot, isFirstObservation: true);
                 break;
 
             case NodeLivenessState.Dead:
-                eventSource.Publish(new NodeLeft(snapshot.Identity));
+                eventSource.Publish(new NodeLeft(snapshot.Identity), snapshot, isFirstObservation: true);
                 break;
         }
     }
 
-    private void _PublishTransition(
-        NodeIdentity identity,
-        NodeLivenessState previousState,
-        NodeLivenessState currentState
-    )
+    private void _PublishTransition(NodeLivenessSnapshot snapshot, NodeLivenessState previousState)
     {
+        var identity = snapshot.Identity;
+        var currentState = snapshot.State;
+
         if (previousState == currentState)
         {
             return;
@@ -431,28 +430,28 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
         if (previousState == NodeLivenessState.Suspected && currentState == NodeLivenessState.Alive)
         {
-            eventSource.Publish(new NodeRecovered(identity));
+            eventSource.Publish(new NodeRecovered(identity), snapshot);
 
             return;
         }
 
         if (previousState == NodeLivenessState.Alive && currentState == NodeLivenessState.Suspected)
         {
-            eventSource.Publish(new NodeSuspected(identity));
+            eventSource.Publish(new NodeSuspected(identity), snapshot);
 
             return;
         }
 
         if (currentState == NodeLivenessState.Dead)
         {
-            eventSource.Publish(new NodeLeft(identity));
+            eventSource.Publish(new NodeLeft(identity), snapshot);
 
             return;
         }
 
         if (previousState == NodeLivenessState.Dead && currentState == NodeLivenessState.Alive)
         {
-            eventSource.Publish(new NodeJoined(identity));
+            eventSource.Publish(new NodeJoined(identity), snapshot);
         }
     }
 }

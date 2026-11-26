@@ -6,11 +6,37 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
-internal sealed class MembershipEventSource(ILogger<MembershipEventSource> logger, int capacity = 256)
-    : IMembershipEventSource
+/// <summary>Fans membership events out to subscribers and keeps the bounded local event log.</summary>
+/// <param name="capacity">The buffer of each <see cref="WatchAsync"/> subscriber; the event log keeps its own size.</param>
+internal sealed class MembershipEventSource(
+    ILogger<MembershipEventSource> logger,
+    TimeProvider timeProvider,
+    int capacity = 256
+) : IMembershipEventSource, IMembershipEventLog
 {
+    private const int _LogCapacity = 256;
+
     private readonly Lock _gate = new();
+    private readonly MembershipEventLogEntry[] _log = new MembershipEventLogEntry[_LogCapacity];
+    private long _sequence;
     private ImmutableArray<Channel<NodeMembershipEvent>> _subscribers = [];
+
+    public IReadOnlyList<MembershipEventLogEntry> GetEntries()
+    {
+        lock (_gate)
+        {
+            var count = (int)Math.Min(_sequence, _LogCapacity);
+            var entries = new MembershipEventLogEntry[count];
+            var oldest = _sequence - count + 1;
+
+            for (var i = 0; i < count; i++)
+            {
+                entries[i] = _log[(int)((oldest + i - 1) % _LogCapacity)];
+            }
+
+            return entries;
+        }
+    }
 
     /// <summary>Streams best-effort membership observations until <paramref name="cancellationToken"/> is cancelled.</summary>
     /// <remarks>
@@ -40,12 +66,31 @@ internal sealed class MembershipEventSource(ILogger<MembershipEventSource> logge
         return _ReadAsync(channel, cancellationToken);
     }
 
-    internal void Publish(NodeMembershipEvent @event)
+    /// <summary>Records <paramref name="event"/> in the log, then offers it to every subscriber.</summary>
+    /// <param name="event">The membership event.</param>
+    /// <param name="snapshot">The liveness snapshot the event came from, or <see langword="null"/> when none did.</param>
+    /// <param name="isFirstObservation">Whether the event reports the first sighting of an incarnation.</param>
+    internal void Publish(
+        NodeMembershipEvent @event,
+        NodeLivenessSnapshot? snapshot = null,
+        bool isFirstObservation = false
+    )
     {
         ImmutableArray<Channel<NodeMembershipEvent>> subscribers;
 
+        // The log is written whether or not anyone watches: both the heartbeat and the membership-loss path publish,
+        // and a reader that polls later must still see what happened.
         lock (_gate)
         {
+            var sequence = ++_sequence;
+            _log[(int)((sequence - 1) % _LogCapacity)] = new MembershipEventLogEntry(
+                sequence,
+                @event,
+                timeProvider.GetUtcNow(),
+                snapshot?.State,
+                snapshot?.LastHeartbeatAt,
+                isFirstObservation
+            );
             subscribers = _subscribers;
         }
 
