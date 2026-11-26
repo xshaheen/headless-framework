@@ -113,9 +113,11 @@ public sealed class AttemptLimiterInspectionTests : TestBase
         await limiter.PeekAsync(_Purpose, _Subject, _ThreePerMinute, AbortToken);
 
         // then
-        await store.ReceivedWithAnyArgs(1).GetAsync<long>(default!, default);
-        await store.DidNotReceiveWithAnyArgs().IncrementAsync(default!, default(long), default(TimeSpan?), default);
-        await store.DidNotReceiveWithAnyArgs().RemoveAsync(default!, default);
+        await store.Received(1).GetAsync<long>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store
+            .DidNotReceive()
+            .IncrementAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

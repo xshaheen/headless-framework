@@ -73,7 +73,8 @@ public interface IAttemptLimiter
     /// Use it to inspect a budget, such as on an operator screen or in a diagnostic; never call
     /// <see cref="AcquireAsync"/> to look, because that spends an attempt. A subject with no attempts in the window
     /// reads as a zero count, and the read creates no counter. The snapshot carries the subject's fingerprint, never
-    /// the subject.
+    /// the subject. Read through the counter store itself, not a hybrid cache: a hybrid serves its local copy and
+    /// reports a failed remote read as a miss, which reads as a zero count.
     /// </remarks>
     /// <param name="purpose">The purpose, exactly as passed to <see cref="AcquireAsync"/>.</param>
     /// <param name="subject">The normalized subject, exactly as passed to <see cref="AcquireAsync"/>.</param>
