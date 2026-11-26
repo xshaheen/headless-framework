@@ -8,6 +8,15 @@ namespace Headless.DevInbox.Dashboard.Internal;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 )]
 [JsonSerializable(typeof(DevInboxChannelsView))]
+[JsonSerializable(typeof(DevInboxList<DevInboxEmailRow>))]
+[JsonSerializable(typeof(DevInboxList<DevInboxSmsRow>))]
+[JsonSerializable(typeof(DevInboxList<DevInboxPushRow>))]
+[JsonSerializable(typeof(DevInboxEmailRow))]
+[JsonSerializable(typeof(DevInboxSmsRow))]
+[JsonSerializable(typeof(DevInboxPushRow))]
+[JsonSerializable(typeof(DevInboxEmailDetail))]
+[JsonSerializable(typeof(DevInboxSmsDetail))]
+[JsonSerializable(typeof(DevInboxPushDetail))]
 internal sealed partial class DevInboxJsonContext : JsonSerializerContext;
 
 /// <summary>One channel the host configured: its kind (<c>email</c>, <c>sms</c>, <c>push</c>) and store capacity.</summary>
