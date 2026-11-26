@@ -29,7 +29,7 @@ internal static class RedisNativeGenerationKey
     private static int _CalculateSlot(string key)
     {
         var start = key.IndexOf('{', StringComparison.Ordinal);
-        var end = start < 0 ? -1 : key.IndexOf('}', start + 1);
+        var end = start < 0 ? -1 : key.IndexOf('}', start + 1, StringComparison.Ordinal);
         var tag = end > start + 1 ? key[(start + 1)..end] : key;
         var crc = 0;
 

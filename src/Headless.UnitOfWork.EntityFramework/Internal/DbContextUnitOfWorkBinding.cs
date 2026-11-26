@@ -236,9 +236,10 @@ internal static class DbContextUnitOfWorkBinding
     {
         private readonly Lock _gate = new();
 
-        private readonly Dictionary<DbContext, IDbContextTransaction?> _contexts = new(
-            ReferenceEqualityComparer.Instance
-        );
+        private readonly Dictionary<DbContext, IDbContextTransaction?> _contexts =
+        [
+            with(ReferenceEqualityComparer.Instance),
+        ];
 
         private bool _disposed;
 
