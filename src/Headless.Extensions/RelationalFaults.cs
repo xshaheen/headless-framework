@@ -269,8 +269,7 @@ public static partial class RelationalFaults
             return null;
         }
 
-        // The duplicate key is not always the first error, so the message is read from the error that reported it;
-        // the legacy driver exposes no collection, and its own message is that of the first error.
+        // The duplicate key is not always the first error, so the message is read from the error that reported it.
         if (
             _ErrorsProperties
                 .GetOrAdd(exception.GetType(), static type => type.GetProperty("Errors"))
@@ -280,18 +279,20 @@ public static partial class RelationalFaults
         {
             foreach (var error in errors)
             {
-                if (error is not null && _ReadNumber(error) is { } number && _ReadMessage(error) is { } message)
+                if (
+                    error is not null
+                    && _ReadNumber(error) is { } number
+                    && _ReadMessage(error) is { } message
+                    && _ParseSqlServerConstraintName(number, message) is { } name
+                )
                 {
-                    if (_ParseSqlServerConstraintName(number, message) is { } name)
-                    {
-                        return name;
-                    }
+                    return name;
                 }
             }
-
-            return null;
         }
 
+        // An exception whose errors carry no readable message still reports the first error as its own Number and
+        // Message, as _ReadErrorNumbers falls back to Number.
         return _ReadNumber(exception) is { } own ? _ParseSqlServerConstraintName(own, exception.Message) : null;
     }
 
@@ -323,10 +324,15 @@ public static partial class RelationalFaults
     )]
     private static partial Regex _SqlServerDuplicateConstraint { get; }
 
-    // Error 2601: "Cannot insert duplicate key row in object 'dbo.T' with unique index 'IX_T_Email'. ..."
+    // Error 2601: "Cannot insert duplicate key row in object 'dbo.T' with unique index 'IX_T_Email'. The duplicate key
+    // value is (...)." Older servers end the message after the name. The lazy name stops only where that known
+    // continuation, or the end of a line, follows "'.", so a name holding "'. " still parses.
     [GeneratedRegex(
-        pattern: @"\Acannot insert duplicate key row in object '.+?' with unique index '(?<name>.+?)'\.(?: |\z)",
-        options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        pattern: @"\Acannot insert duplicate key row in object '.+?' with unique index '(?<name>.+?)'\.(?: the duplicate key value is|\r?$)",
+        options: RegexOptions.IgnoreCase
+            | RegexOptions.CultureInvariant
+            | RegexOptions.ExplicitCapture
+            | RegexOptions.Multiline,
         matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
     )]
     private static partial Regex _SqlServerDuplicateIndex { get; }

@@ -9,10 +9,13 @@ namespace Microsoft.Data.SqlClient
     /// no public constructor, and Headless.Extensions references no driver. Like the real one, it reports the first
     /// error as <see cref="Number" /> and every error through <see cref="Errors" />.
     /// </summary>
-    internal sealed class SqlException(params SqlError[] errors) : DbException(errors[0].Message)
+    internal sealed class SqlException(string? message, SqlError[] errors) : DbException(message ?? errors[0].Message)
     {
+        public SqlException(params SqlError[] errors)
+            : this(null, errors) { }
+
         public SqlException(int number, params int[] furtherNumbers)
-            : this([new SqlError(number), .. furtherNumbers.Select(n => new SqlError(n))]) { }
+            : this(null, [new SqlError(number), .. furtherNumbers.Select(n => new SqlError(n))]) { }
 
         public int Number { get; } = errors[0].Number;
 
