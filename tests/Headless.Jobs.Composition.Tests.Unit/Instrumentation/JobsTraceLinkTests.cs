@@ -4,10 +4,10 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using Headless;
+using Headless.Context;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Instrumentation;
@@ -24,8 +24,6 @@ public sealed class JobsTraceLinkTests : TestBase
     private const string _TimeJobSpan = "job.execute.timejob";
     private const string _OccurrenceSpan = "job.execute.cronjoboccurrence";
     private const string _RequestSourceName = "Tests.Jobs.TraceLink";
-    private const string _JobLogMessage = "trace job ran";
-    private const string _CausationTraceId = "CausationTraceId";
 
     private static readonly ActivitySource _Requests = new(_RequestSourceName);
 
@@ -277,12 +275,12 @@ public sealed class JobsTraceLinkTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_the_scheduling_request_trace_id_on_every_entry_the_job_writes()
+    public async Task should_carry_the_scheduling_request_trace_id_into_the_run_for_its_log_entries()
     {
         // given: a request span schedules a job that runs later in a trace of its own
         using var recorder = SpanRecorder.All();
-        using var logs = new EnrichedLogCapture();
-        await using var harness = Harness.Create(logs: logs);
+        await using var harness = Harness.Create();
+        TraceJob.Observed.Clear();
         ActivityTraceId requestTraceId;
 
         using (var requestSpan = _Requests.StartActivity("request"))
@@ -294,26 +292,26 @@ public sealed class JobsTraceLinkTests : TestBase
         // when
         await harness.RunDueAsync(TimeSpan.FromMinutes(1));
 
-        // then
-        var entry = logs.Single(_JobLogMessage);
-        entry.Fields.Should().Contain(_CausationTraceId, requestTraceId.ToHexString());
-        entry.TraceId.Should().NotBe(requestTraceId, "the run's own trace does not lead back to the request");
+        // then: the value the logging profile writes as CausationTraceId on every entry the job logs
+        var (causationTraceId, ownTraceId) = TraceJob.Observed.Should().ContainSingle().Subject;
+        causationTraceId.Should().Be(requestTraceId.ToHexString());
+        ownTraceId.Should().NotBe(requestTraceId, "the run's own trace does not lead back to the request");
+        CausalScope.CausationTraceId.Should().BeNull("nothing leaks out of the run");
     }
 
     [Fact]
-    public async Task should_log_no_causation_trace_id_when_nothing_was_traced_at_scheduling()
+    public async Task should_carry_no_trace_id_into_the_run_when_nothing_was_traced_at_scheduling()
     {
         // given: no listener and no ambient span while scheduling, so the row stores no trace context
-        using var logs = new EnrichedLogCapture();
-        await using var harness = Harness.Create(logs: logs);
+        await using var harness = Harness.Create();
+        TraceJob.Observed.Clear();
         await harness.Scheduler.ScheduleAsync<TraceJob>(harness.Now.AddMinutes(1), AbortToken);
 
         // when
         await harness.RunDueAsync(TimeSpan.FromMinutes(1));
 
         // then
-        logs.Single(_JobLogMessage).Fields.Should().NotContainKey(_CausationTraceId);
-        logs.Entries.Should().NotContain(x => x.Fields.ContainsKey(_CausationTraceId));
+        TraceJob.Observed.Should().ContainSingle().Which.CausationTraceId.Should().BeNull();
     }
 
     private static string _TraceParent(Activity activity)
@@ -334,6 +332,9 @@ public sealed class JobsTraceLinkTests : TestBase
 
     public sealed class TraceJob : IJob
     {
+        /// <summary>What each run saw; the collection runs one test at a time, so a test clears it first.</summary>
+        public static ConcurrentQueue<(string? CausationTraceId, ActivityTraceId OwnTraceId)> Observed { get; } = new();
+
         public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
@@ -345,9 +346,9 @@ public sealed class JobsTraceLinkTests : TestBase
         static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
             _Register(
                 catalog,
-                static (services, _, _) =>
+                static (_, _, _) =>
                 {
-                    services.GetRequiredService<ILogger<TraceJob>>().LogInformation(_JobLogMessage);
+                    TraceJob.Observed.Enqueue((CausalScope.CausationTraceId, Activity.Current?.TraceId ?? default));
                     return Task.CompletedTask;
                 }
             );
@@ -405,18 +406,11 @@ public sealed class JobsTraceLinkTests : TestBase
         private IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store =>
             _provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
-        public static Harness Create(bool failing = false, ILoggerProvider? logs = null)
+        public static Harness Create(bool failing = false)
         {
             var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 13, 12, 0, 0, TimeSpan.Zero));
             var services = new ServiceCollection();
-            services.AddLogging(logging =>
-            {
-                if (logs is not null)
-                {
-                    logging.EnableEnrichment();
-                    logging.AddProvider(logs);
-                }
-            });
+            services.AddLogging();
             services.AddSingleton<TimeProvider>(time);
             services.AddHeadlessJobs(options =>
             {

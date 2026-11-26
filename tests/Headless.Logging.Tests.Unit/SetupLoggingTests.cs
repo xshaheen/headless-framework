@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Context;
 using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
@@ -231,6 +232,34 @@ public sealed partial class SetupLoggingTests : TestBase
 
         // then
         act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_add_the_causation_trace_id_to_entries_written_inside_a_traced_causal_scope_only()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var host = _Build(sink);
+        var logger = _Logger(host);
+        var traceId = ActivityTraceId.CreateRandom();
+
+        // when: a consume or job run opens its causal scope with the cause's stored trace id
+        logger.LogInformation("before");
+        using (CausalScope.Begin("order-7", "run-1", traceId))
+        {
+            logger.LogInformation("inside");
+        }
+
+        using (CausalScope.Begin("order-8", "run-2"))
+        {
+            logger.LogInformation("untraced");
+        }
+
+        // then
+        sink.Entries.Should().HaveCount(3);
+        sink.Entries[0].Properties.Should().NotContainKey("CausationTraceId");
+        sink.Entries[1].Properties["CausationTraceId"].Should().Be(traceId.ToHexString());
+        sink.Entries[2].Properties.Should().NotContainKey("CausationTraceId");
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Signup {Email}")]

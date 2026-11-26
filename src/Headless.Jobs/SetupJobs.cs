@@ -19,7 +19,6 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Diagnostics.Enrichment;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
@@ -232,8 +231,6 @@ public static class SetupJobs
             provider.GetRequiredService<JobsDashboardBackend<TTimeJob, TCronJob>>()
         );
         services.TryAddSingleton(TimeProvider.System);
-        // Takes effect only on a host that enables Microsoft's log enrichment, as AddHeadlessLogging does.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILogEnricher, JobLogEnricher>());
 
         // Per-host tenancy DI (see _AddTenancyServices).
         _AddTenancyServices(services);

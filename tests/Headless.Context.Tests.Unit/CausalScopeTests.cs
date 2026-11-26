@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Context;
 
 namespace Tests;
@@ -146,5 +147,53 @@ public sealed class CausalScopeTests
         var begin = () => CausalScope.Begin("order-7", new string('c', CausalScope.IdMaxLength + 1));
 
         begin.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_expose_the_causation_trace_id_only_while_its_scope_is_open()
+    {
+        var traceId = ActivityTraceId.CreateFromString("4bf92f3577b34da6a3ce929d0e0e4736");
+
+        using (CausalScope.Begin("order-7", "run-1", traceId))
+        {
+            CausalScope.CausationTraceId.Should().Be("4bf92f3577b34da6a3ce929d0e0e4736");
+        }
+
+        CausalScope.CausationTraceId.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_expose_no_causation_trace_id_when_the_work_stored_none()
+    {
+        using (CausalScope.Begin("order-7", "run-1"))
+        {
+            CausalScope.CausationTraceId.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public void should_keep_the_causation_trace_id_when_the_scope_has_no_usable_correlation()
+    {
+        // A foreign correlation too long to store still came from a traced cause.
+        var traceId = ActivityTraceId.CreateRandom();
+
+        using (CausalScope.Begin(new string('x', CausalScope.IdMaxLength + 1), "delivery-2", traceId))
+        {
+            CausalScope.Current.Should().BeNull();
+            CausalScope.CausationTraceId.Should().Be(traceId.ToHexString());
+        }
+    }
+
+    [Fact]
+    public void should_not_inherit_the_outer_causation_trace_id_in_a_nested_scope_and_restore_it_after()
+    {
+        var outerTraceId = ActivityTraceId.CreateRandom();
+        using var outer = CausalScope.Begin("order-7", "run-1", outerTraceId);
+
+        var inner = CausalScope.Begin("order-8", "delivery-2");
+        CausalScope.CausationTraceId.Should().BeNull("the inner work has its own cause");
+        inner.Dispose();
+
+        CausalScope.CausationTraceId.Should().Be(outerTraceId.ToHexString());
     }
 }
