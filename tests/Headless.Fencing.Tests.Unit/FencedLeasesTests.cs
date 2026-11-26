@@ -542,13 +542,18 @@ public sealed class FencedLeasesTests : TestBase
         context.Tenant.Id = "t1";
         var key = new LeaseKey("t1", "job", "order-1");
         var lease = new FencedLease("t1", "job", "order-1", 7);
-        var snapshot = new LeaseSnapshot(
-            lease,
-            LeaseFenceStatus.Current,
-            DateTimeOffset.UnixEpoch,
-            "cluster/node-1@3",
-            TakeoverCount: 0
-        );
+        var snapshot = new LeaseSnapshot
+        {
+            Lease = lease,
+            Status = LeaseFenceStatus.Current,
+            ExpiresAt = DateTimeOffset.UnixEpoch,
+            Holder = "cluster/node-1@3",
+            TakeoverCount = 0,
+            GrantedAt = DateTimeOffset.UnixEpoch,
+            EndedAt = null,
+            ProgressSizeBytes = null,
+            ProgressContract = null,
+        };
         var connection = Substitute.For<DbConnection>();
         var transaction = Substitute.For<DbTransaction>();
         context.Store.GetCurrentAsync(key, AbortToken).Returns(snapshot);

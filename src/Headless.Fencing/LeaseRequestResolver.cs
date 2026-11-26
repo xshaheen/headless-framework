@@ -49,6 +49,64 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return new LeaseKey(tenantId, lease.Kind, lease.Resource);
     }
 
+    /// <summary>
+    /// Validates an operator lookup that names its tenant explicitly, and returns the lease key. The current tenant is
+    /// never read.
+    /// </summary>
+    /// <exception cref="ArgumentException">The tenant id, kind, or resource is invalid.</exception>
+    public static LeaseKey ResolveExplicit(string? tenantId, string kind, string resource)
+    {
+        _ValidateKind(kind, nameof(kind));
+        _ValidateResource(resource, nameof(resource));
+
+        return new LeaseKey(_NormalizeTenantId(tenantId, "The tenant id", nameof(tenantId)), kind, resource);
+    }
+
+    /// <summary>Validates an inspector query and returns the filter the store applies.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="query" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">A filter names a tenant, kind, or resource no lease can have.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The state is not a defined value.</exception>
+    public static LeaseListFilter ResolveQuery(FencedLeaseQuery query)
+    {
+        Argument.IsNotNull(query);
+        Argument.IsInEnum(query.State, paramName: nameof(query));
+
+        var tenantId = query.Tenant.IsAny
+            ? null
+            : _NormalizeTenantId(query.Tenant.TenantId, "The query's tenant id", nameof(query));
+
+        if (query.Kind is not null)
+        {
+            _ValidateKind(query.Kind, nameof(query));
+        }
+
+        // An empty prefix matches every resource, so it is the same as no prefix: a cleared search box reads all.
+        var prefix = string.IsNullOrEmpty(query.ResourcePrefix) ? null : query.ResourcePrefix;
+
+        if (prefix is not null)
+        {
+            Argument.HasMaxLength(prefix, FencingFieldLimits.ResourceMaxLength, paramName: nameof(query));
+            // A prefix may end where a resource has interior white space ("report " of "report 2026"), so only its
+            // end is exempt from the key rules; a trailing character closes a surrogate pair the prefix may split.
+            Argument.IsPortableKey(prefix + "x", paramName: nameof(query));
+        }
+
+        return new LeaseListFilter(tenantId, query.Kind, prefix, query.State);
+    }
+
+    /// <summary>Validates a list position handed back by the caller and returns the stored key it names.</summary>
+    /// <exception cref="ArgumentException">The position names a tenant, kind, or resource no lease can have.</exception>
+    public static LeaseKey ResolvePosition(FencedLeasePosition position)
+    {
+        Argument.IsNotNull(position);
+        _ValidateKind(position.Kind, nameof(position));
+        _ValidateResource(position.Resource, nameof(position));
+
+        var tenantId = _NormalizeTenantId(position.TenantId, "The position's tenant id", nameof(position));
+
+        return new LeaseKey(tenantId, position.Kind, position.Resource);
+    }
+
     /// <summary>Validates the kind of a sweep or purge, which spans every tenant.</summary>
     /// <exception cref="ArgumentException"><paramref name="kind" /> is invalid.</exception>
     public static string ResolveKind(string kind)

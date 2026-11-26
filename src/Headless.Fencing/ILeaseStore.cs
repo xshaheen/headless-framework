@@ -315,4 +315,40 @@ public interface ILeaseStore
     /// <param name="cancellationToken">Token used to cancel the database calls.</param>
     /// <returns>The number of rows deleted.</returns>
     ValueTask<int> PurgeAsync(string kind, TimeSpan olderThan, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads, on the provider's own connection and without a row lock or transaction, at most
+    /// <paramref name="limit" /> leases <paramref name="filter" /> matches, in <c>(tenant_id, kind, resource)</c>
+    /// ordinal order, strictly after <paramref name="after" />. Expiry is judged by one read of the store's clock.
+    /// </summary>
+    /// <param name="filter">The leases to read; already validated.</param>
+    /// <param name="after">The stored key of the last lease an earlier call returned, or <see langword="null" />.</param>
+    /// <param name="limit">The most leases to return; positive.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The leases, in key order, none carrying progress bytes.</returns>
+    ValueTask<IReadOnlyList<LeaseSnapshot>> ListAsync(
+        LeaseListFilter filter,
+        LeaseKey? after,
+        int limit,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Counts, in one statement on the provider's own connection, the live, expired, and ended leases
+    /// <paramref name="filter" /> matches, each stopping at <paramref name="cap" />.
+    /// </summary>
+    /// <param name="filter">The leases to count; already validated. Its state keeps only that state's count.</param>
+    /// <param name="cap">The cap of each count; positive and below <see cref="int.MaxValue" />.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The capped counts.</returns>
+    ValueTask<FencedLeaseCounts> CountAsync(
+        LeaseListFilter filter,
+        int cap,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Reads every distinct lease kind with at least one row, in ordinal order.</summary>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>The kinds.</returns>
+    ValueTask<IReadOnlyList<string>> ListKindsAsync(CancellationToken cancellationToken = default);
 }

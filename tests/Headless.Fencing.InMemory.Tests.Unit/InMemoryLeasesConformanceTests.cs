@@ -6,6 +6,8 @@ namespace Tests;
 // - should_decide_expiry_by_the_database_clock_whatever_the_application_clock: the injected TimeProvider is this
 //   provider's clock authority by design, so there is no separate application clock to ignore.
 //   InMemoryLeaseStoreTests drives expiry with FakeTimeProvider instead.
+// - should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock: the same reason as the grant
+//   variant above; the injected TimeProvider is the clock the inspector judges by.
 // - should_mark_only_an_observed_unit_non_retryable_and_only_for_writes: an observed unit wraps a caller-owned
 //   database transaction, which this provider refuses.
 // - should_refuse_a_unit_on_another_database_before_any_statement: there is no database to compare.
@@ -264,5 +266,53 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     public override Task should_purge_a_revoked_lease_older_than_the_threshold()
     {
         return base.should_purge_a_revoked_lease_older_than_the_threshold();
+    }
+
+    [Fact]
+    public override Task should_list_every_lease_of_a_kind_in_key_order_by_pages_without_repeat_or_gap()
+    {
+        return base.should_list_every_lease_of_a_kind_in_key_order_by_pages_without_repeat_or_gap();
+    }
+
+    [Fact]
+    public override Task should_partition_listed_and_counted_leases_into_live_expired_and_ended_by_the_database_clock()
+    {
+        return base.should_partition_listed_and_counted_leases_into_live_expired_and_ended_by_the_database_clock();
+    }
+
+    [Fact]
+    public override Task should_filter_by_tenant_or_the_host_scope_and_get_by_an_explicit_tenant()
+    {
+        return base.should_filter_by_tenant_or_the_host_scope_and_get_by_an_explicit_tenant();
+    }
+
+    [Fact]
+    public override Task should_match_the_resource_prefix_ordinally_and_with_every_character_literal()
+    {
+        return base.should_match_the_resource_prefix_ordinally_and_with_every_character_literal();
+    }
+
+    [Fact]
+    public override Task should_report_progress_size_and_contract_without_its_bytes()
+    {
+        return base.should_report_progress_size_and_contract_without_its_bytes();
+    }
+
+    [Fact]
+    public override Task should_list_the_kinds_in_use_in_ordinal_order_until_their_rows_are_purged()
+    {
+        return base.should_list_the_kinds_in_use_in_ordinal_order_until_their_rows_are_purged();
+    }
+
+    [Fact]
+    public override Task should_cap_each_state_count_on_its_own()
+    {
+        return base.should_cap_each_state_count_on_its_own();
+    }
+
+    [Fact]
+    public override Task should_refuse_an_invalid_inspection_before_reading()
+    {
+        return base.should_refuse_an_invalid_inspection_before_reading();
     }
 }
