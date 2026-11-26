@@ -11,8 +11,8 @@ namespace Headless.Sequences;
 /// <remarks>
 /// The reader knows nothing about policies. The inspector turns its query's mode and current-partition filters into an
 /// explicit <see cref="SequenceCounterSelection" /> of names and partitions before calling it, and classifies modes
-/// through <see cref="SequenceModeNames" />. Each call runs one statement that does not wait on a row another
-/// transaction holds. A provider package registers the implementation; application code never calls it.
+/// through <see cref="SequenceModeNames" />. Each call runs one statement with no transaction that does not wait on a
+/// row lock another transaction holds. A provider package registers the implementation; application code never calls it.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -20,14 +20,14 @@ public interface ISequenceCounterReader
 {
     /// <summary>
     /// Reads at most <see cref="SequenceCounterReadRequest.Limit" /> counters that match the filter, ordered by tenant
-    /// id, name, then partition, ordinally, starting after <see cref="SequenceCounterReadRequest.After" />.
+    /// id, name, then partition, in the database's binary key order, starting after <see cref="SequenceCounterReadRequest.After" />.
     /// </summary>
     /// <param name="request">The filter, the cursor, and the row limit.</param>
     /// <param name="cancellationToken">A token to cancel the read.</param>
     /// <returns>The matching rows, in key order.</returns>
     ValueTask<IReadOnlyList<SequenceCounterRecord>> ListAsync(
         SequenceCounterReadRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     );
 
     /// <summary>
@@ -39,7 +39,7 @@ public interface ISequenceCounterReader
     /// <returns>The rows, newest partition first.</returns>
     ValueTask<IReadOnlyList<SequenceCounterRecord>> ListPartitionsAsync(
         SequencePartitionReadRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     );
 
     /// <summary>
@@ -51,7 +51,7 @@ public interface ISequenceCounterReader
     /// <returns>The counts, and whether more rows than the cap matched.</returns>
     ValueTask<SequenceCounterCounts> CountAsync(
         SequenceCounterCountRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     );
 }
 
@@ -133,8 +133,8 @@ public sealed record SequenceCounterFilter
     public string? Name { get; init; }
 
     /// <summary>
-    /// Gets lowercase text the lowercased name or tenant id contains, matched literally, or <see langword="null" />
-    /// for no search.
+    /// Gets text the name or tenant id contains, matched literally and ignoring case for ASCII letters only, or
+    /// <see langword="null" /> for no search. Non-ASCII letters match only as typed.
     /// </summary>
     public string? Search { get; init; }
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.MultiTenancy;
 using Headless.Sequences;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -105,7 +106,7 @@ public sealed class SequenceInspectorTests : TestBase
 
         _listed!.Filter.TenantId.Should().Be("t1");
         _listed.Filter.Name.Should().Be("invoice");
-        _listed.Filter.Search.Should().Be("inv");
+        _listed.Filter.Search.Should().Be("INV", "the reader folds case itself");
         _listed.After.Should().Be(after);
         _listed.Limit.Should().Be(4);
     }
@@ -343,9 +344,8 @@ public sealed class SequenceInspectorTests : TestBase
     }
 
     [Fact]
-    public void should_depend_on_no_numbering_service()
+    public void should_depend_on_no_numbering_service_and_not_on_the_current_tenant()
     {
-        // Inspection must never take a number, so it cannot reach the services that issue them.
         var dependencies = typeof(SequenceInspector)
             .GetConstructors()
             .SelectMany(static c => c.GetParameters())
@@ -353,7 +353,15 @@ public sealed class SequenceInspectorTests : TestBase
 
         dependencies
             .Should()
-            .NotContain([typeof(ISequenceStore), typeof(ISequenceGenerator), typeof(IUnitOfWorkSequences)]);
+            .NotContain(
+                [
+                    typeof(ISequenceStore),
+                    typeof(ISequenceGenerator),
+                    typeof(IUnitOfWorkSequences),
+                    typeof(ICurrentTenant),
+                ],
+                "inspection reads every tenant, whatever tenant the caller runs as"
+            );
     }
 
     private void _Rows(params SequenceCounterRecord[] rows)

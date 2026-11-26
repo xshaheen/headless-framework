@@ -223,6 +223,12 @@ public sealed class SqlServerSequencesConformanceTests(SqlServerSequencesFixture
     }
 
     [Fact]
+    public override Task should_stop_counting_at_the_cap_and_report_it()
+    {
+        return base.should_stop_counting_at_the_cap_and_report_it();
+    }
+
+    [Fact]
     public override Task should_show_the_last_formatted_number_and_when_the_counter_changed()
     {
         return base.should_show_the_last_formatted_number_and_when_the_counter_changed();

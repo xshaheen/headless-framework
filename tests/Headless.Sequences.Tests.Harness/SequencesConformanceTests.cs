@@ -836,6 +836,7 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         var otherTenant = CreateName("tenant");
         var (fast, gapFree, reported) = (CreateName("receipt"), CreateName("invoice"), CreateName("terminal"));
         var searchable = "FIND-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+        var accented = "ÉTAT-" + Guid.NewGuid().ToString("N");
         await using var host = await Fixture.CreateHostAsync(
             setup =>
                 setup
@@ -848,6 +849,7 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         {
             await host.Generator.NextAsync(fast, cancellationToken: AbortToken);
             await host.Generator.NextAsync(searchable, cancellationToken: AbortToken);
+            await host.Generator.NextAsync(accented, cancellationToken: AbortToken);
 
             await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
             await unit.Unit.Sequences.NextAsync(gapFree, cancellationToken: AbortToken);
@@ -871,13 +873,19 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
 
         (await namesAsync(new SequenceCounterQuery { TenantId = tenant }))
             .Should()
-            .BeEquivalentTo(fast, searchable, gapFree, reported);
+            .BeEquivalentTo(fast, searchable, accented, gapFree, reported);
         (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Name = gapFree }))
             .Should()
             .BeEquivalentTo(gapFree);
         (await namesAsync(new SequenceCounterQuery { Search = searchable.ToLowerInvariant()[5..] }))
             .Should()
             .BeEquivalentTo([searchable], "the search ignores ASCII case and spans every tenant");
+        (await namesAsync(new SequenceCounterQuery { Search = accented }))
+            .Should()
+            .BeEquivalentTo([accented], "a non-ASCII letter matches as typed on every engine");
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Search = "FIND%" }))
+            .Should()
+            .BeEmpty("wildcards in the search match only themselves");
         (await namesAsync(new SequenceCounterQuery { Search = otherTenant.ToUpperInvariant() }))
             .Should()
             .BeEquivalentTo([fast], "the search also matches the tenant id");
@@ -889,7 +897,7 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
             .BeEquivalentTo(reported);
         (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Mode = SequenceMode.Fast }))
             .Should()
-            .BeEquivalentTo([fast, searchable], "names with no registered policy take the fast default");
+            .BeEquivalentTo([fast, searchable, accented], "names with no registered policy take the fast default");
     }
 
     public virtual async Task should_keep_only_current_partitions_of_resetting_policies_and_every_partition_of_the_others()
@@ -1043,6 +1051,34 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
             );
         current.Total.Should().Be(1);
         current.GapFree.Should().Be(1);
+    }
+
+    public virtual async Task should_stop_counting_at_the_cap_and_report_it()
+    {
+        var tenant = CreateName("tenant");
+        var name = CreateName("capped");
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                await host.Generator.NextAsync(name, $"p{i}", AbortToken);
+            }
+        }
+
+        var reader = host.Services.GetRequiredService<ISequenceCounterReader>();
+
+        SequenceCounterCountRequest request(int cap) =>
+            new()
+            {
+                Filter = new SequenceCounterFilter { TenantId = tenant },
+                Modes = new SequenceModeNames { DefaultMode = SequenceMode.Fast },
+                Cap = cap,
+            };
+
+        (await reader.CountAsync(request(3), AbortToken)).Should().Be(new SequenceCounterCounts(3, 3, 0, 0, true));
+        (await reader.CountAsync(request(5), AbortToken)).Should().Be(new SequenceCounterCounts(5, 5, 0, 0, false));
     }
 
     public virtual async Task should_show_the_last_formatted_number_and_when_the_counter_changed()

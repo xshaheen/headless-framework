@@ -13,9 +13,10 @@ namespace Headless.Sequences;
 /// operator authorization.
 /// </para>
 /// <para>
-/// Each call is one statement with no transaction, so it never waits on a gap-free unit holding a counter's row. On
+/// Each call is one statement with no transaction, so it does not wait on a gap-free unit holding a counter's row. On
 /// PostgreSQL and SQLite a held row shows its last committed value; SQL Server skips it, so a page or a count can miss
-/// a counter an open unit is writing.
+/// a counter an open unit is writing. SQL Server still waits behind a table lock, and SQLite under its default rollback
+/// journal waits while a writer commits; WAL mode removes that wait.
 /// </para>
 /// <para>
 /// Never call <c>NextAsync</c> or <c>ReserveAsync</c> to learn a counter's value: each takes a number, and for a

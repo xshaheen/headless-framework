@@ -343,7 +343,7 @@ internal sealed class SequenceInspector(
 
         Argument.HasMaxLength(search, SequenceFieldLimits.NameMaxLength);
 
-        // Every engine lowers ASCII the same way; the reader lowers the columns to match.
-        return search.ToLowerInvariant();
+        // Passed as typed: the reader folds ASCII case itself, because only ASCII folds the same way on every engine.
+        return search;
     }
 }

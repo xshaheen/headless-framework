@@ -59,7 +59,6 @@ public static class SetupSequences
             services.TryAddSingleton<SequenceBlocks>();
             services.TryAddSingleton<ISequenceGenerator, SequenceGenerator>();
             services.TryAddSingleton<IUnitOfWorkSequences, UnitOfWorkSequencesFeature>();
-            // Reads through the provider's ISequenceCounterReader; never issues a number.
             services.TryAddSingleton<ISequenceInspector, SequenceInspector>();
 
             foreach (var extension in setup.Extensions)

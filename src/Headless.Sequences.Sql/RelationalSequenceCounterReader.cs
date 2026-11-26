@@ -59,7 +59,7 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
 
     public ValueTask<IReadOnlyList<SequenceCounterRecord>> ListAsync(
         SequenceCounterReadRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(request);
@@ -88,7 +88,7 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
 
     public ValueTask<IReadOnlyList<SequenceCounterRecord>> ListPartitionsAsync(
         SequencePartitionReadRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(request);
@@ -118,7 +118,7 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
 
     public ValueTask<SequenceCounterCounts> CountAsync(
         SequenceCounterCountRequest request,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(request);
@@ -193,12 +193,24 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
 
         if (filter.Search is { } search)
         {
-            // Both sides lowered: SQL Server's binary key collation makes LIKE case-sensitive, and LOWER folds ASCII
-            // the same way on every engine.
+            // SQL Server's binary key collation makes LIKE case-sensitive, so the column is lowered and the term folded
+            // to match. Engines disagree on folding non-ASCII letters (SQLite's LOWER leaves them, the others fold
+            // them), so the term folds ASCII only, and the as-typed alternative keeps an exact non-ASCII match working.
             var escape = $"ESCAPE '{SqlLikePattern.EscapeCharacter}'";
-            predicates.Add($"(LOWER({_name}) LIKE @Search {escape} OR LOWER({_tenantId}) LIKE @Search {escape})");
+            predicates.Add(
+                $"(LOWER({_name}) LIKE @Search {escape} OR {_name} LIKE @SearchExact {escape} "
+                    + $"OR LOWER({_tenantId}) LIKE @Search {escape} OR {_tenantId} LIKE @SearchExact {escape})"
+            );
             bind += command =>
-                _dialect.AddParameter(command, "Search", SqlColumnType.Text(-1), SqlLikePattern.Contains(search));
+            {
+                _dialect.AddParameter(
+                    command,
+                    "Search",
+                    SqlColumnType.Text(-1),
+                    SqlLikePattern.Contains(_FoldAscii(search))
+                );
+                _dialect.AddParameter(command, "SearchExact", SqlColumnType.Text(-1), SqlLikePattern.Contains(search));
+            };
         }
 
         if (filter.Selection is { } selection)
@@ -343,6 +355,22 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
     private static string _Mode(SequenceMode mode)
     {
         return ((int)mode).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string _FoldAscii(string value)
+    {
+        return string.Create(
+            value.Length,
+            value,
+            static (span, source) =>
+            {
+                for (var i = 0; i < source.Length; i++)
+                {
+                    var c = source[i];
+                    span[i] = c is >= 'A' and <= 'Z' ? (char)(c | 0x20) : c;
+                }
+            }
+        );
     }
 }
 #pragma warning restore CA2100

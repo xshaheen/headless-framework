@@ -147,7 +147,7 @@ When an allocation would advance a stored counter past `long.MaxValue`, SQLite t
 
 ### Inspecting counters
 
-Inject `ISequenceInspector` to show counters to an operator, for example in a dashboard. Every call is one read-only statement with no transaction: it never takes, reserves, or changes a number, and never waits on a gap-free unit that holds a counter.
+Inject `ISequenceInspector` to show counters to an operator, for example in a dashboard. Every call is one read-only statement with no transaction: it never takes, reserves, or changes a number, and does not wait on a gap-free unit's row lock (see the engine notes below for the exceptions).
 
 ```csharp
 SequenceCounterPage page = await inspector.ListCountersAsync(
@@ -167,7 +167,7 @@ SequenceCounterSummary summary = await inspector.GetSummaryAsync(new SequenceSum
 
 | Call | Returns |
 | --- | --- |
-| `ListCountersAsync(SequenceCounterQuery)` | One page of counters in key order (tenant id, name, partition, ordinally). `Next` is the key to pass as `After`. |
+| `ListCountersAsync(SequenceCounterQuery)` | One page of counters in key order (tenant id, name, partition), in the database's binary key order. That order can differ from .NET ordinal order for characters outside the Basic Multilingual Plane. `Next` is the key to pass as `After`. |
 | `ListPartitionsAsync(SequencePartitionQuery)` | One page of one name's partitions in one tenant, newest partition first. `Next` is the partition to pass as `Before`. |
 | `GetSummaryAsync(SequenceSummaryQuery)` | `Total`, `Fast`, `GapFree`, and `Reported` counts, and `NextResetAt`, the earliest next reset of the registered policies and the default policy. |
 
@@ -175,7 +175,7 @@ Filters, all optional and combined:
 
 - `TenantId`: an exact tenant id, or `""` for the host scope. `null` reads every tenant.
 - `Name`: an exact counter name.
-- `Search`: text the name or the tenant id contains, matched literally (no wildcards), ignoring case for ASCII letters only. At most 128 characters.
+- `Search`: text the name or the tenant id contains, matched literally (`%` and `_` match themselves), ignoring case for ASCII letters only. A non-ASCII letter matches only as typed. At most 128 characters.
 - `Mode`: the mode of the policy each name resolves to now (its registered policy, else the default policy). Modes are never stored, so changing a name's policy moves its counters to the new mode.
 - `CurrentPartitionsOnly`: for a resetting policy, only the partition it chooses now. A policy with `Reset = Never` keeps every partition, so reported counters partitioned by device stay visible. A partition the caller chose under a resetting policy (a device id on a monthly name) is never the policy's period, so it is not current and this filter drops it.
 
@@ -190,7 +190,8 @@ Limits and engine differences:
 
 - `Limit` is 1 to 200 (default 50); outside that range the call throws `ArgumentOutOfRangeException`. An invalid tenant id, name, partition, or search term throws `ArgumentException` before any SQL runs.
 - `GetSummaryAsync` stops counting at 10,000 counters. Past that, `Capped` is `true` and the counts cover the first 10,000 in key order.
-- On PostgreSQL and SQLite, a counter an open gap-free unit is writing shows its last committed value. SQL Server skips that counter (`READPAST`), so a page or a count can miss it until the unit ends.
+- On PostgreSQL and SQLite, a counter an open gap-free unit is writing shows its last committed value. SQL Server skips that counter (`READPAST`), so a page or a count can miss it until the unit ends. `READPAST` skips row and page locks but not a table lock, so on SQL Server an inspection still waits behind a unit whose locks escalated to the table.
+- On SQLite with the default rollback journal, an inspection waits while a writer commits, and a long read delays that commit. Set `PRAGMA journal_mode=WAL` on the database so reads and commits never wait on each other.
 - There is no write, reset, or edit member. Inspection reads only.
 
 **Verify:** after `NextAsync("receipt")` in tenant `acme`, `ListCountersAsync(new SequenceCounterQuery { TenantId = "acme", Name = "receipt" })` returns one counter with `Value` 1, and a second read leaves the value unchanged. In a test, assert the counter's value before and after inspection.
