@@ -98,6 +98,12 @@ public static class EntityFrameworkEnlistment
                 // Not the caller's token: the context must let go of the unit's transaction even when the work was cancelled.
                 await db.Database.UseTransactionAsync(transaction: null, CancellationToken.None).ConfigureAwait(false);
 
+                // UseTransactionAsync counted an open of the unit's connection that nothing else balances. EF Core 11
+                // no longer clears that count when the connection is swapped (dotnet/efcore#39327), so the pooled
+                // context would carry it into its next lease and refuse to swap connections again. EF did not open the
+                // unit's connection, so this close only lowers the count and leaves the connection open.
+                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+
                 if (configured.Connection is { } supplied)
                 {
                     db.Database.SetDbConnection(supplied, contextOwnsConnection: false);

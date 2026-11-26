@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Hosting;
 using Headless.Permissions;
 using Headless.UnitOfWork;
@@ -151,6 +152,52 @@ public sealed class PermissionsPooledUnitOfWorkTests(PermissionsTestFixture fixt
                 .ContainSingle()
                 .Which.IsGranted.Should()
                 .BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task should_close_the_pooled_context_connection_after_each_command_on_the_next_lease()
+    {
+        // given one enlisted call, after which the pool holds the context that borrowed the unit's connection
+        await Fixture.ResetAsync();
+        using var host = _CreateHost();
+        var factory = host.Services.GetRequiredService<IUnitOfWorkFactory>();
+        var dbFactory = host.Services.GetRequiredService<IDbContextFactory<PooledPermissionsDbContext>>();
+        var repository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+
+        await using (var db = await dbFactory.CreateDbContextAsync(AbortToken))
+        {
+            await factory.RunAsync(
+                db,
+                (unit, ct) => repository.GetListEnlistedAsync(unit, "Role", "admin", ct),
+                AbortToken
+            );
+        }
+
+        // when every pooled context is leased at once and runs a command
+        var leases = new List<PooledPermissionsDbContext>();
+
+        try
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                leases.Add(await dbFactory.CreateDbContextAsync(AbortToken));
+            }
+
+            foreach (var lease in leases)
+            {
+                await lease.Database.ExecuteSqlRawAsync("SELECT 1", AbortToken);
+
+                // then the lease opened its own connection for the command and closed it afterwards
+                lease.Database.GetDbConnection().State.Should().Be(ConnectionState.Closed);
+            }
+        }
+        finally
+        {
+            foreach (var lease in leases)
+            {
+                await lease.DisposeAsync();
+            }
         }
     }
 
