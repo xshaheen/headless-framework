@@ -34,7 +34,8 @@ internal static class PostgreSqlCommitHealthCheck
             transaction.Connection ?? throw new InvalidOperationException("The PostgreSQL transaction is closed.");
         var command = connection.CreateCommand();
         // PostgreSQL answers COMMIT on an aborted transaction with ROLLBACK, a command tag Npgsql's commit API
-        // discards. A statement on that transaction surfaces SQLSTATE 25P02 before a COMMIT can be sent.
+        // discards. A statement on that transaction surfaces SQLSTATE 25P02 before a COMMIT can be sent. Remove this
+        // check once the Npgsql in use throws from Commit instead: https://github.com/npgsql/npgsql/issues/6775
         command.CommandText = "SELECT 1";
         command.Transaction = transaction;
 
