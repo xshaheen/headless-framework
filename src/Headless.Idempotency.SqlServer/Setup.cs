@@ -121,6 +121,7 @@ public static class SetupIdempotencySqlServer
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqlConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
-        SqlServerIdempotencySchemaContribution.Create
+        SqlServerIdempotencySchemaContribution.Create,
+        "DATALENGTH"
     );
 }

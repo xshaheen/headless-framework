@@ -38,6 +38,10 @@ public sealed class CacheIdempotencyFixture
 
     public bool RunsUnitsOnConnections => false;
 
+    public bool StoresTakeoverCount => false;
+
+    public bool PurgeDeletesRecords => false;
+
     public void ConfigureIdempotency(HeadlessIdempotencySetupBuilder setup)
     {
         setup.RegisterExtension(

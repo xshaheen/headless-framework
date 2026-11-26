@@ -234,6 +234,25 @@ public interface IIdempotencyRecordStore
     );
 
     /// <summary>
+    /// Reads <paramref name="key" />'s metadata on the provider's own connection, with the same lock-free read
+    /// <see cref="PeekAsync" /> takes, and never reads the result or recovery-state bytes beyond their sizes: a
+    /// relational provider measures them in SQL without selecting the columns.
+    /// </summary>
+    /// <param name="key">The record key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// The record's snapshot, judged against the database clock read in the same statement; <see langword="null" />
+    /// when the row does not exist or its <c>retention_until</c> is at or before that clock.
+    /// </returns>
+    ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Gets what the store says about itself: its provider, where its records live, and whether it purges.</summary>
+    IdempotencyStoreInfo Info { get; }
+
+    /// <summary>
     /// Deletes, on the provider's own connection and committed before returning, at most <paramref name="limit" />
     /// records whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the database clock and
     /// whose lease, if any, is no longer live. A record another transaction holds is skipped for a later purge rather

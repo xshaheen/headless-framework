@@ -329,6 +329,55 @@ internal sealed class InMemoryIdempotencyRecordStore(
         return ValueTask.FromResult(result);
     }
 
+    public IdempotencyStoreInfo Info { get; } =
+        new("Headless.Idempotency.InMemory", Location: null, PurgeDeletesRecords: true);
+
+    public ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The same lock-free committed snapshot PeekAsync reads, judged on one clock reading.
+        var now = timeProvider.GetUtcNow();
+
+        if (Table.Read(key) is not { } record || record.RetentionUntil <= now)
+        {
+            return ValueTask.FromResult<IdempotencyRecordSnapshot?>(null);
+        }
+
+        var lease = record.Lease;
+        var isActive = lease.State == RowLeaseState.Active;
+        var isLive = _IsLive(lease, now);
+        var status = lease.State switch
+        {
+            RowLeaseState.Settled => IdempotencyPeekStatus.Completed,
+            _ when isLive => IdempotencyPeekStatus.Pending,
+            _ => IdempotencyPeekStatus.Released,
+        };
+
+        // Generation 0 is a fresh lease's default, which no admission ever draws: the key was never admitted.
+        var snapshot = new IdempotencyRecordSnapshot(
+            key.ToKey(),
+            status,
+            lease.Generation == 0 ? null : lease.Generation,
+            lease.TakeoverCount,
+            record.Fingerprint,
+            isActive ? lease.ExpiresAt : null,
+            IsLeaseExpired: isActive && !isLive,
+            record.RetentionUntil,
+            now,
+            record.Result?.Contract,
+            record.Result?.Payload.Length,
+            record.RecoveryPoint?.Name,
+            record.RecoveryPoint?.Contract,
+            record.RecoveryPoint?.State.Length
+        );
+
+        return ValueTask.FromResult<IdempotencyRecordSnapshot?>(snapshot);
+    }
+
     #endregion
 
     #region Purge

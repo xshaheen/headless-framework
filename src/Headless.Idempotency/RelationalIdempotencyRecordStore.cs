@@ -67,6 +67,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _setRecoveryPointSet;
     private readonly string _peekSql;
     private readonly string _resultSql;
+    private readonly string _inspectSql;
     private readonly string _purgeSql;
 
     // The units this store began for its autonomous calls, tracked only when enlisted admissions are refused.
@@ -190,6 +191,17 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 $"SELECT {t.LeaseState}, {t.RetentionUntil}, {now}, {t.Result}, {t.ResultContract} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
             )
         );
+
+        // The same lock-free read as the peek. The result and recovery state are measured in SQL, never selected, so
+        // inspection moves no stored body off the database.
+        string size(string column) => $"CAST({storage.ByteLengthFunction}({column}) AS bigint)";
+        _inspectSql = _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {t.LeaseState}, {t.RetentionUntil}, {now}, CASE WHEN {live} THEN 1 ELSE 0 END, {t.LeaseGeneration}, {t.LeaseExpiresAt}, {t.LeaseTakeoverCount}, {t.FingerprintAlgorithm}, {t.Fingerprint}, {t.ResultContract}, {size(t.Result)}, {t.RecoveryPoint}, {t.RecoveryContract}, {size(t.RecoveryState)} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
+            )
+        );
+
+        Info = new IdempotencyStoreInfo(storage.PackageName, $"{t.Schema}.{t.TableName}", PurgeDeletesRecords: true);
 
         // Skipping locked rows leaves a record an admission, fence, or completion holds for a later purge, so the purge
         // never waits on application work and never deletes a row under a transaction that is deciding on it. A live
@@ -707,6 +719,70 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         );
     }
 
+    public IdempotencyStoreInfo Info { get; }
+
+    public ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RunReadOnlyAsync<IdempotencyRecordSnapshot?>(
+            "idempotency.inspect",
+            async (connection, ct) =>
+            {
+                await using var command = _Command(_inspectSql, connection, transaction: null, key);
+                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var state = (RowLeaseState)reader.GetInt16(0);
+                var retentionUntil = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct).ConfigureAwait(false);
+                var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
+
+                if (retentionUntil <= now)
+                {
+                    return null;
+                }
+
+                var isLive = reader.GetInt32(3) == 1;
+                var isActive = state == RowLeaseState.Active;
+                var status = state switch
+                {
+                    RowLeaseState.Settled => IdempotencyPeekStatus.Completed,
+                    _ when isLive => IdempotencyPeekStatus.Pending,
+                    _ => IdempotencyPeekStatus.Released,
+                };
+
+                // Generation 0 is the lease columns' default, which no admission ever draws: the key was never admitted.
+                var generation = reader.GetInt64(4);
+
+                return new IdempotencyRecordSnapshot(
+                    key.ToKey(),
+                    status,
+                    generation == 0 ? null : generation,
+                    reader.GetInt32(6),
+                    new IdempotencyFingerprint(
+                        reader.GetString(7),
+                        await reader.GetFieldValueAsync<byte[]>(8, ct).ConfigureAwait(false)
+                    ),
+                    isActive ? await _ReadTimestampOrNullAsync(reader, 5, ct).ConfigureAwait(false) : null,
+                    IsLeaseExpired: isActive && !isLive,
+                    retentionUntil,
+                    now,
+                    await _ReadStringOrNullAsync(reader, 9, ct).ConfigureAwait(false),
+                    await _ReadInt64OrNullAsync(reader, 10, ct).ConfigureAwait(false),
+                    await _ReadStringOrNullAsync(reader, 11, ct).ConfigureAwait(false),
+                    await _ReadStringOrNullAsync(reader, 12, ct).ConfigureAwait(false),
+                    await _ReadInt64OrNullAsync(reader, 13, ct).ConfigureAwait(false)
+                );
+            },
+            cancellationToken
+        );
+    }
+
     #endregion
 
     #region Purge
@@ -951,6 +1027,28 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
             ? null
             : await reader.GetFieldValueAsync<DateTimeOffset>(ordinal, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> _ReadStringOrNullAsync(
+        DbDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    )
+    {
+        return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetString(ordinal);
+    }
+
+    private static async Task<long?> _ReadInt64OrNullAsync(
+        DbDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    )
+    {
+        return await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetInt64(ordinal);
     }
 
     private (DbConnection Connection, DbTransaction Transaction) _RequireLive(IUnitOfWork unitOfWork)

@@ -209,4 +209,34 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     {
         return base.should_keep_recovery_points_of_different_tenants_independent();
     }
+
+    [Fact]
+    public override Task should_inspect_each_record_state_by_the_store_clock_and_respect_retention_and_tenant_scope()
+    {
+        return base.should_inspect_each_record_state_by_the_store_clock_and_respect_retention_and_tenant_scope();
+    }
+
+    [Fact]
+    public override Task should_inspect_the_recovery_point_by_name_contract_and_size()
+    {
+        return base.should_inspect_the_recovery_point_by_name_contract_and_size();
+    }
+
+    [Fact]
+    public override Task should_inspect_without_creating_or_changing_the_record()
+    {
+        return base.should_inspect_without_creating_or_changing_the_record();
+    }
+
+    [Fact]
+    public override Task should_inspect_without_waiting_on_an_uncommitted_write_to_the_record()
+    {
+        return base.should_inspect_without_waiting_on_an_uncommitted_write_to_the_record();
+    }
+
+    [Fact]
+    public override Task should_describe_the_provider_and_the_configured_defaults()
+    {
+        return base.should_describe_the_provider_and_the_configured_defaults();
+    }
 }

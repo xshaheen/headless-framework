@@ -34,6 +34,18 @@ public interface IIdempotencyFixture
     /// </summary>
     bool SupportsEnlistedAdmission => true;
 
+    /// <summary>
+    /// Whether the provider counts takeovers. The cache provider does not, so its inspection reports a
+    /// <see langword="null" /> takeover count.
+    /// </summary>
+    bool StoresTakeoverCount => true;
+
+    /// <summary>
+    /// Whether the provider's purge deletes records. The cache provider's entries expire in the cache, so it describes
+    /// no purge schedule.
+    /// </summary>
+    bool PurgeDeletesRecords => true;
+
     /// <summary>Creates an unopened connection to the shared database.</summary>
     DbConnection CreateConnection();
 

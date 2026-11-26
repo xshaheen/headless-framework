@@ -353,6 +353,54 @@ internal sealed class CacheIdempotencyRecordStore(
             : null;
     }
 
+    // The purge has nothing to delete: every entry expires in the cache on its own (see PurgeAsync).
+    public IdempotencyStoreInfo Info => new("Headless.Idempotency.Caching", _keyPrefix, PurgeDeletesRecords: false);
+
+    public async ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The entry is one frame, body included, so the whole entry is read; only its sizes leave this method.
+        var (_, record) = await _ReadAsync(key, cancellationToken).ConfigureAwait(false);
+        var now = timeProvider.GetUtcNow();
+
+        if (record is null || record.RetentionUntil <= now)
+        {
+            return null;
+        }
+
+        // A pending entry naming a generation is an admitted attempt's lease, live or expired; completion and
+        // release clear the expiry.
+        var holdsLease = record is { Status: IdempotencyRecordStatus.Pending, Generation: not null };
+        var isLive = holdsLease && record.LeaseExpiresAt > now;
+        var status = record.Status switch
+        {
+            IdempotencyRecordStatus.Completed => IdempotencyPeekStatus.Completed,
+            _ when isLive => IdempotencyPeekStatus.Pending,
+            _ => IdempotencyPeekStatus.Released,
+        };
+
+        return new IdempotencyRecordSnapshot(
+            key.ToKey(),
+            status,
+            // A release clears the generation but keeps the highest one admitted, which is the released attempt's.
+            record.Generation
+                ?? record.HighestGeneration,
+            TakeoverCount: null,
+            new IdempotencyFingerprint(record.FingerprintAlgorithm, record.Fingerprint),
+            holdsLease ? record.LeaseExpiresAt : null,
+            IsLeaseExpired: holdsLease && !isLive,
+            record.RetentionUntil,
+            now,
+            record.ResultContract,
+            record.Result?.Length,
+            record.RecoveryPoint,
+            record.RecoveryContract,
+            record.RecoveryState?.Length
+        );
+    }
+
     public ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
     {
         Argument.IsPositiveOrZero(olderThan);

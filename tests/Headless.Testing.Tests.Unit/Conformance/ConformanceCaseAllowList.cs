@@ -108,6 +108,11 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_inspect_without_waiting_on_an_uncommitted_write_to_the_record",
+            "Needs an uncommitted enlisted write; the cache provider refuses enlistment."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_purge_only_records_past_retention_whose_lease_is_not_live",
             "The cache's own entry expiry is the purge, so PurgeAsync deletes nothing by design."
         ),
@@ -274,6 +279,11 @@ internal static class ConformanceCaseAllowList
         new(
             "SqlServerIdempotencyConformanceTests",
             "should_peek_without_waiting_on_an_uncommitted_write_to_the_record",
+            "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
+        ),
+        new(
+            "SqlServerIdempotencyConformanceTests",
+            "should_inspect_without_waiting_on_an_uncommitted_write_to_the_record",
             "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
         ),
         new(
