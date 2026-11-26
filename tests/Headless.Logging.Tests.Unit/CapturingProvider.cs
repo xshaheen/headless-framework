@@ -20,6 +20,9 @@ internal sealed class CapturingProvider : ILoggerProvider, ISupportExternalScope
 
     public void Dispose() { }
 
+    /// <summary>One entry as a provider received it.</summary>
+    /// <param name="Message">The rendered message.</param>
+    /// <param name="Properties">The entry's properties, the last value winning for a repeated key.</param>
     /// <param name="Keys">Every key the entry carries, in order and with repeats, which a provider would export.</param>
     internal sealed record Entry(
         string Message,

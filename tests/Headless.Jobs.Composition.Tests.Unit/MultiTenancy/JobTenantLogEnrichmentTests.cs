@@ -26,7 +26,7 @@ public sealed class JobTenantLogEnrichmentTests : TestBase
     public async Task should_log_the_job_tenant_once_on_the_attempt_entries_of_a_console_only_host()
     {
         // given: the Headless logging profile with no OpenTelemetry
-        var logs = new KeyCapture();
+        using var logs = new KeyCapture();
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 13, 12, 0, 0, TimeSpan.Zero));
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { DisableDefaults = true });
         builder.AddHeadlessLogging();
@@ -51,8 +51,11 @@ public sealed class JobTenantLogEnrichmentTests : TestBase
         await _RunDueAsync(host.Services);
 
         // then: the job's own entry gets the tenant from the enrichment
-        var ran = logs.Entries.Should().ContainSingle(x => x.Message == _JobLogMessage).Subject;
-        ran.Keys.Count(k => k == _TenantId).Should().Be(1);
+        var ran = logs
+            .Entries.Should()
+            .ContainSingle(x => string.Equals(x.Message, _JobLogMessage, StringComparison.Ordinal))
+            .Subject;
+        ran.Keys.Count(k => string.Equals(k, _TenantId, StringComparison.Ordinal)).Should().Be(1);
         ran.Values[_TenantId].Should().Be("acme");
 
         // and the framework's restore entry, written under the restored tenant with {TenantId} in its template, keeps
@@ -61,7 +64,7 @@ public sealed class JobTenantLogEnrichmentTests : TestBase
             .Entries.Should()
             .ContainSingle(x => x.Message.StartsWith("Restoring ICurrentTenant to tenant", StringComparison.Ordinal))
             .Subject;
-        restored.Keys.Count(k => k == _TenantId).Should().Be(1);
+        restored.Keys.Count(k => string.Equals(k, _TenantId, StringComparison.Ordinal)).Should().Be(1);
         restored.Values[_TenantId].Should().Be("acme");
     }
 

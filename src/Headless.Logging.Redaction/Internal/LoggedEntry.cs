@@ -63,7 +63,7 @@ internal static class LoggedEntry
             // A provider that logs while it handles an entry nests a second call on this thread; that one gets its own
             // probe so the outer entry is still readable once it returns.
             var cached = _cached;
-            var probe = cached is not null && !cached._inUse ? cached : (_cached = new Probe<TState>());
+            var probe = cached?._inUse == false ? cached : (_cached = new Probe<TState>());
             probe._inUse = true;
             probe._state = state;
 
