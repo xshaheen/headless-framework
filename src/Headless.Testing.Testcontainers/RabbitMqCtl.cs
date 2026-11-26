@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using DotNet.Testcontainers.Containers;
 
 namespace Headless.Testing.Testcontainers;
@@ -49,7 +50,10 @@ internal static class RabbitMqCtl
                 }
 
                 throw new TimeoutException(
-                    $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {bound} ({attempts} attempt(s)).",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {bound} ({attempts} attempt(s))."
+                    ),
                     e
                 );
             }

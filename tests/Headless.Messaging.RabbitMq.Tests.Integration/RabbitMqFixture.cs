@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
@@ -58,7 +59,10 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
                 }
 
                 throw new TimeoutException(
-                    $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {_RabbitMqCtlTimeout} ({attempts} attempt(s)).",
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {_RabbitMqCtlTimeout} ({attempts} attempt(s))."
+                    ),
                     e
                 );
             }
