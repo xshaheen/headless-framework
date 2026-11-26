@@ -126,8 +126,8 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
             // A client that leaves out the virtual host lands in the default one, where every run would meet every
             // other run's exchanges. Refuse it there, so a connection that forgot VirtualHost fails at once instead of
             // sharing state.
-            await _container
-                .ExecAsync(["rabbitmqctl", "clear_permissions", "-p", "/", UserName], cancellationToken)
+            await RabbitMqCtl
+                .ExecAsync(_container, ["clear_permissions", "-p", "/", UserName], cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -175,8 +175,8 @@ public class HeadlessRabbitMqFixture : IAsyncLifetime
 
         while (true)
         {
-            var result = await container
-                .ExecAsync(["rabbitmqctl", "list_vhosts", "-q"], cancellationToken)
+            var result = await RabbitMqCtl
+                .ExecAsync(container, ["list_vhosts", "-q"], cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.ExitCode == 0)

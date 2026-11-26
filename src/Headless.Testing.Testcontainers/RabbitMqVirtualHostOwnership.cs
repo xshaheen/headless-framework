@@ -143,7 +143,7 @@ internal sealed class RabbitMqVirtualHostOwnership : IAsyncDisposable
         bool allowMissing = false
     )
     {
-        var result = await container.ExecAsync(["rabbitmqctl", .. arguments], cancellationToken).ConfigureAwait(false);
+        var result = await RabbitMqCtl.ExecAsync(container, arguments, cancellationToken).ConfigureAwait(false);
 
         // Another sweeper may delete the same dead virtual host first.
         if (
