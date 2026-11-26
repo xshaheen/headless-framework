@@ -6,8 +6,16 @@ USER $APP_UID
 WORKDIR /app
 EXPOSE 80
 
+# Supplies Node and npm only: the demo references the messaging dashboard, whose build runs npm ci and a Vite build
+# of its SPA, and the .NET SDK image ships no Node.
+FROM node:22-bookworm-slim@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb AS node
+
 # This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:11.0@sha256:2794448a07118a6eaf00f29ab5d2bf44928517ce5ff86505a63a69230374f599 AS build
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && node --version && npm --version
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 # The SDK version, the target framework, and every package version live in the repository-wide build files, and the
