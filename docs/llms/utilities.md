@@ -490,7 +490,7 @@ Display code reads `GetSnapshot()`. Do not call a probe method on every page ref
 
 Observed behavior:
 
-- The monitor runs no check on its own. It adds no publisher, no startup probe, and no hosted service. History fills only from `ProbeAllAsync` and `ProbeAsync`, so its spacing follows when callers probe, and a node nobody probes has none.
+- The monitor runs no check on its own. It adds no publisher, no startup probe, and no hosted service beyond the inert one `AddHealthChecks()` registers. History fills only from `ProbeAllAsync` and `ProbeAsync`, so its spacing follows when callers probe, and a node nobody probes has none.
 - A request to `/health` or `/alive`, or the [`check` verb](#health-check-command), runs the checks without feeding the history.
 - `Status` is the worst latest status among the registrations with at least one result, and `null` before any probe. A registration never probed does not count.
 - A check removed with `RemoveHealthChecks` or turned off in configuration is neither listed nor probed, and its earlier history is not returned.
