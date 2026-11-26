@@ -9,6 +9,27 @@ namespace Tests;
 public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ICoordinationFixture
 {
+    /// <summary>Gets the provider name the fixture's store reports in the cluster summary.</summary>
+    protected abstract string ExpectedProviderName { get; }
+
+    public virtual void should_report_the_provider_name_in_the_cluster_summary()
+    {
+        // Resolving the summary reads options only, so no host, heartbeat, or schema is needed.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessCoordination(setup =>
+        {
+            fixture.ConfigureProvider(services, setup);
+            setup.DisableMembershipHeartbeat();
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var summary = provider.GetRequiredService<CoordinationClusterSummary>();
+
+        summary.ProviderName.Should().Be(ExpectedProviderName);
+        summary.MembershipHeartbeatEnabled.Should().BeFalse();
+    }
+
     public virtual async Task should_register_and_appear_in_live_set()
     {
         var cluster = _Cluster();

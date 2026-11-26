@@ -218,15 +218,34 @@ public static class SetupCoordinationCore
         }
 
         var extension = setup.Extensions.Single();
-        var extensionTypeName = extension.GetType().FullName ?? "unknown";
-        services.AddSingleton(new CoordinationProviderRegistration(extensionTypeName));
+        var providerName = extension.ProviderName;
+        var heartbeatEnabled = setup.RegisterMembershipHeartbeat;
+        services.AddSingleton(new CoordinationProviderRegistration(providerName));
 
         extension.AddServices(services);
 
-        if (setup.RegisterMembershipHeartbeat)
+        if (heartbeatEnabled)
         {
             services._AddMembershipHeartbeat();
         }
+
+        // Built from options on first resolve, so it reads the bound values and costs no store round trip.
+        services.AddSingleton(sp =>
+        {
+            var options = sp.GetRequiredService<CoordinationOptions>();
+
+            return new CoordinationClusterSummary(
+                options.ClusterName,
+                providerName,
+                options.Role,
+                options.HeartbeatInterval,
+                options.SuspicionThreshold,
+                options.DeadThreshold,
+                options.DeadRetentionWindow,
+                SelfFenceMargin.Resolve(options),
+                heartbeatEnabled
+            );
+        });
 
         return services;
     }

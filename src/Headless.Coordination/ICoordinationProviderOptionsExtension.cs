@@ -14,6 +14,12 @@ namespace Headless.Coordination;
 [PublicAPI]
 public interface ICoordinationProviderOptionsExtension
 {
+    /// <summary>
+    /// Gets the stable name of the membership store this extension registers, such as <c>PostgreSql</c> or
+    /// <c>Redis</c>. <see cref="CoordinationClusterSummary.ProviderName"/> reports it.
+    /// </summary>
+    string ProviderName { get; }
+
     /// <summary>Registers all provider-specific services into <paramref name="services"/>.</summary>
     /// <param name="services">The application's <see cref="IServiceCollection"/>.</param>
     void AddServices(IServiceCollection services);

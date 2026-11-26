@@ -52,6 +52,8 @@ internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptions
         _configureWithServices = configure;
     }
 
+    public string ProviderName => _provider.ProviderName;
+
     public void AddServices(IServiceCollection services)
     {
         if (_configuration is not null)
@@ -97,10 +99,12 @@ internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptions
 }
 
 /// <summary>Encapsulates provider-specific relational configurations: dialect, connection creation, and schema DDL.</summary>
+/// <param name="ProviderName">The stable provider name the cluster summary reports.</param>
 /// <param name="Dialect">The provider SQL dialect.</param>
 /// <param name="CreateConnection">Creates an unopened connection from provider options.</param>
 /// <param name="SchemaContribution">Builds the schema contribution in the provider dialect.</param>
 internal sealed record RelationalCoordinationProvider<TOptions>(
+    string ProviderName,
     ISqlDialect Dialect,
     Func<TOptions, DbConnection> CreateConnection,
     Func<TOptions, CoordinationStorageOptions, SchemaContribution> SchemaContribution

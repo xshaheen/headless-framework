@@ -102,6 +102,7 @@ public static class SetupCoordinationSqlServer
     }
 
     private static readonly RelationalCoordinationProvider<SqlServerCoordinationOptions> _Provider = new(
+        "SqlServer",
         SqlServerDialect.Instance,
         static options => SqlServerDialect.Instance.CreateConnection(options.ConnectionString),
         SqlServerMembershipSchemaContribution.Create

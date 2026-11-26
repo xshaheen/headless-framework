@@ -391,6 +391,8 @@ public sealed class MembershipEventLogTests : TestBase
 
     private sealed class LogTestProviderExtension : ICoordinationProviderOptionsExtension
     {
+        public string ProviderName => "Fake";
+
         public void AddServices(IServiceCollection services)
         {
             services.AddCoordinationCore<FakeMembershipStore>();
