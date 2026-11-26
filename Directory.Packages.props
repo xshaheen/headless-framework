@@ -62,13 +62,6 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
-    <!-- Transitive-pin the SQLitePCLRaw chain to the patched 3.x line: EF/Data.Sqlite 10.0.x still requests the 2.1.x
-         bundle, whose SQLitePCLRaw.lib.e_sqlite3 2.1.11 carries GHSA-2m69-gcr7-jv3q (NU1903). No 2.1.x patch exists; the
-         fix shipped in the 3.x line, whose bundle no longer depends on lib.e_sqlite3, so pinning these three removes it
-         from the graph. -->
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-    <PackageVersion Include="SQLitePCLRaw.core" Version="3.0.5" />
-    <PackageVersion Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="11.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="11.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="11.0.0" />
