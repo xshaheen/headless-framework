@@ -5,7 +5,8 @@ namespace Headless.Idempotency;
 /// <summary>The idempotency store this host runs on and the defaults its admissions use.</summary>
 /// <param name="Provider">The provider package, for example <c>Headless.Idempotency.PostgreSql</c>.</param>
 /// <param name="Location">
-/// Where the records live: the schema-qualified table on a relational provider, the key prefix on the cache provider;
+/// Where the records live: the quoted, qualified table name the provider's SQL uses on a relational provider (SQLite
+/// folds the schema into the table name), the key prefix on the cache provider;
 /// <see langword="null" /> for the in-memory provider.
 /// </param>
 /// <param name="DefaultRetention">How long a completed record replays when the caller passes no retention.</param>

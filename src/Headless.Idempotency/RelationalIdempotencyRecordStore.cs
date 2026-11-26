@@ -201,7 +201,8 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             )
         );
 
-        Info = new IdempotencyStoreInfo(storage.PackageName, $"{t.Schema}.{t.TableName}", PurgeDeletesRecords: true);
+        // The table as this store's statements name it: SQLite folds the schema into the table name.
+        Info = new IdempotencyStoreInfo(storage.PackageName, t.Table, PurgeDeletesRecords: true);
 
         // Skipping locked rows leaves a record an admission, fence, or completion holds for a later purge, so the purge
         // never waits on application work and never deletes a row under a transaction that is deciding on it. A live

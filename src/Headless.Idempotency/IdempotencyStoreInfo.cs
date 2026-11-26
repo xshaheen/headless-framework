@@ -5,7 +5,7 @@ namespace Headless.Idempotency;
 /// <summary>What a record store says about itself for <see cref="IIdempotentOperations.Describe" />.</summary>
 /// <param name="Provider">The provider package's name.</param>
 /// <param name="Location">
-/// Where the records live (the schema-qualified table, or the cache key prefix); <see langword="null" /> when the
+/// Where the records live (the quoted, qualified table name the store's SQL uses, or the cache key prefix); <see langword="null" /> when the
 /// provider keeps them in process memory.
 /// </param>
 /// <param name="PurgeDeletesRecords">

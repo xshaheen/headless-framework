@@ -180,7 +180,7 @@ No provider stores when a record was admitted or completed, or the HTTP status o
 | InMemory | Registered `TimeProvider` | Reads the committed record. |
 | Caching | Registered `TimeProvider` | Reads the whole cache entry, body included, and drops the body before returning. `TakeoverCount` is `null`. |
 
-`Describe()` returns `IdempotencyStoreDescription(Provider, Location, DefaultRetention, DefaultLeaseDuration, MinimumLeaseDuration, MaximumLeaseDuration, PurgeInterval, PurgeBatchSize)`. `Location` is the schema-qualified table on a relational provider, the key prefix on the cache provider, and `null` in memory. `PurgeInterval` is `null` when the purge is off, and on the cache provider, whose entries expire on their own.
+`Describe()` returns `IdempotencyStoreDescription(Provider, Location, DefaultRetention, DefaultLeaseDuration, MinimumLeaseDuration, MaximumLeaseDuration, PurgeInterval, PurgeBatchSize)`. `Location` is the quoted, qualified table name the provider's SQL uses on a relational provider (SQLite folds the schema into the name, `"headless_idempotency_records"`), the key prefix on the cache provider, and `null` in memory. `PurgeInterval` is `null` when the purge is off, and on the cache provider, whose entries expire on their own.
 
 **Verify:** admit a key, then `InspectAsync` returns `Status` `Pending` with `Generation` equal to the admission's; after `CompleteAsync`, it returns `Completed` with `ResultSizeBytes` equal to the stored result's length, and `GetResultAsync` is never called.
 

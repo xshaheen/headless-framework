@@ -1180,6 +1180,11 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         var description = host.Operations.Describe();
 
         description.Provider.Should().StartWith("Headless.Idempotency.");
+
+        if (Fixture.RunsUnitsOnConnections)
+        {
+            description.Location.Should().NotBeNullOrWhiteSpace("a relational provider names the table it reads");
+        }
         description.DefaultRetention.Should().Be(TimeSpan.FromHours(6));
         description.DefaultLeaseDuration.Should().Be(TimeSpan.FromMinutes(3));
         description.PurgeBatchSize.Should().Be(250);
