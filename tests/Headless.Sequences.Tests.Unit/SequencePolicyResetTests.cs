@@ -119,6 +119,85 @@ public sealed class SequencePolicyResetTests : TestBase
         }
     }
 
+    [Fact]
+    public void should_reset_at_the_first_pass_of_a_midnight_the_zone_repeats()
+    {
+        // Daylight time ends at 01:00 on November 1, back to 00:00, so that day's local midnight happens twice.
+        var zone = TimeZoneInfo.CreateCustomTimeZone(
+            "Test/RepeatedMidnight",
+            TimeSpan.FromHours(-5),
+            "Repeated midnight",
+            "Standard",
+            "Daylight",
+            [
+                TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(
+                    DateTime.MinValue.Date,
+                    DateTime.MaxValue.Date,
+                    TimeSpan.FromHours(1),
+                    TimeZoneInfo.TransitionTime.CreateFixedDateRule(new DateTime(1, 1, 1, 2, 0, 0), 3, 1),
+                    TimeZoneInfo.TransitionTime.CreateFixedDateRule(new DateTime(1, 1, 1, 1, 0, 0), 11, 1)
+                ),
+            ]
+        );
+        var policy = new SequencePolicy { Reset = SequenceReset.Day, TimeZone = zone };
+        var date = _FirstRepeatedMidnight(zone, 2026);
+        var evening = new DateTimeOffset(
+            date.AddDays(-1).ToDateTime(new TimeOnly(20, 0)),
+            zone.GetUtcOffset(date.AddDays(-1).ToDateTime(new TimeOnly(20, 0)))
+        );
+
+        var next = policy.NextResetAt(evening);
+
+        next.Should().NotBeNull();
+        var offsets = zone.GetAmbiguousTimeOffsets(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified));
+        next!.Value.Should().Be(new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), offsets.Max()));
+        policy.PartitionAt(next.Value).Should().Be(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        policy.PartitionAt(next.Value.AddTicks(-1)).Should().Be(policy.PartitionAt(evening));
+    }
+
+    [Theory]
+    [InlineData(SequenceReset.Year, "2026", 1, "2026-01-01")]
+    [InlineData(SequenceReset.Month, "2026-10", 1, "2026-10-01")]
+    [InlineData(SequenceReset.Day, "2026-10-08", 1, "2026-10-08")]
+    [InlineData(SequenceReset.FiscalYear, "FY2026", 7, "2026-07-01")]
+    public void should_read_the_first_day_of_the_period_a_partition_names(
+        SequenceReset reset,
+        string partition,
+        int fiscalYearStartMonth,
+        string expected
+    )
+    {
+        var policy = new SequencePolicy { Reset = reset, FiscalYearStartMonth = fiscalYearStartMonth };
+
+        SequenceNumberFormat
+            .PeriodStart(policy, partition)
+            .Should()
+            .Be(DateOnly.ParseExact(expected, "yyyy-MM-dd", CultureInfo.InvariantCulture));
+    }
+
+    [Theory]
+    [InlineData(SequenceReset.Never, "2026")]
+    [InlineData(SequenceReset.Month, "device-7")]
+    [InlineData(SequenceReset.FiscalYear, "2026")]
+    [InlineData(SequenceReset.FiscalYear, "FYxx")]
+    public void should_name_no_period_for_a_partition_the_reset_never_chooses(SequenceReset reset, string partition)
+    {
+        SequenceNumberFormat.PeriodStart(new SequencePolicy { Reset = reset }, partition).Should().BeNull();
+    }
+
+    private static DateOnly _FirstRepeatedMidnight(TimeZoneInfo zone, int year)
+    {
+        for (var date = new DateOnly(year, 1, 1); date.Year == year; date = date.AddDays(1))
+        {
+            if (zone.IsAmbiguousTime(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified)))
+            {
+                return date;
+            }
+        }
+
+        throw new InvalidOperationException($"{zone.Id} repeats no local midnight in {year}.");
+    }
+
     private static DateOnly _FirstSkippedMidnight(TimeZoneInfo zone, int year)
     {
         for (var date = new DateOnly(year, 1, 1); date.Year == year; date = date.AddDays(1))
