@@ -55,7 +55,7 @@ Every log entry written inside the consume pipeline (consume middleware and the 
 - `AddHeadlessLogging()` adds the field. A host that builds its own logging gets the value on `CausalScope.CausationTraceId` and can add it with its own `ILogEnricher`.
 - A message published while no messaging telemetry listens stores no `traceparent` (see [Trace propagation](#trace-propagation)), so its consumer's entries get no field. An unreadable `traceparent` adds no field either.
 - Entries the framework writes outside the pipeline, such as the retry and terminal-failure logs, do not carry it.
-- The tenant is not added by this field. It comes from the ambient-tenant log enrichment; see [multi-tenancy observability](../multi-tenancy/observability.md).
+- The consumer's entries also carry the envelope tenant as `TenantId` when tenant propagation is on, from the same profile's tenant enrichment, on every provider. See [multi-tenancy observability](../multi-tenancy/observability.md#observability).
 
 **Verify:** publish from inside a request, then find the consumer's entry by the request's trace id in `CausationTraceId`.
 

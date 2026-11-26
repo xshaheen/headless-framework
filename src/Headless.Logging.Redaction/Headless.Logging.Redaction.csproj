@@ -13,6 +13,8 @@
   <ItemGroup>
     <!-- Span tags are redacted by the same classified property names as log properties. -->
     <InternalsVisibleTo Include="Headless.Logging.Redaction.AspNetCore" />
+    <!-- The logging profile's tenant enricher reads the entry this package's logger is handling. -->
+    <InternalsVisibleTo Include="Headless.Logging" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
