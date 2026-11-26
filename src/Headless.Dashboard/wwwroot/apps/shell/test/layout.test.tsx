@@ -236,6 +236,37 @@ describe('shell layout', () => {
     }
   })
 
+  it('draws an icon for every icon key a module may declare, and none for an unknown key', async () => {
+    const keys = [
+      'runs',
+      'lock',
+      'gauge',
+      'repeat',
+      'hash',
+      'mail',
+      'message',
+      'bell',
+      'activity',
+      'heart-pulse',
+      'nodes',
+    ]
+    const modules = [moduleManifest('diag', { displayName: 'Diagnostics' })]
+    const entries = [...keys, 'no-such-icon'].map((key) => ({
+      id: `diag.nav.${key}`,
+      label: key,
+      route: 'runs',
+      icon: key,
+    }))
+    renderShell(shellState(modules, {}, { diag: entries }), { path: '/diag/settings', files: moduleFiles(modules) })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Jobs' })
+    const drawn = (label: string) =>
+      within(sidebar).getByRole('link', { name: label }).querySelector('svg path')?.getAttribute('d') ?? ''
+    expect(keys.filter((key) => drawn(key) === '')).toEqual([])
+    expect(within(sidebar).getByRole('link', { name: 'no-such-icon' }).querySelector('svg')).toBeTruthy()
+    expect(drawn('no-such-icon')).toBe('')
+  })
+
   it('marks a product tab by its worst attention, in words as well as the dot', async () => {
     const api: ApiHandler = (request) =>
       request.path === 'needs-you'

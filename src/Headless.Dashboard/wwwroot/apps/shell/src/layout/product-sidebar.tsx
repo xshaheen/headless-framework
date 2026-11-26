@@ -11,7 +11,10 @@ import { modulePath } from '../route-handles.ts'
 import { useShell } from '../shell-context.tsx'
 import { useProductCounts } from '../shell-data.ts'
 
-/** The sidebar's 15 px stroke icons by the icon key a module declares; an unknown key draws none. */
+/**
+ * The sidebar's stroke icons by the icon key a module declares, each one path on the 16-unit grid the entry's box
+ * draws at 15 px; an unknown key draws none.
+ */
 const icons: Record<string, string> = {
   dashboard: 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z',
   runs: 'M3 4h10M3 8h10M3 12h6',
@@ -19,6 +22,18 @@ const icons: Record<string, string> = {
   function:
     'M5.5 3.5C4 3.5 4 5 4 6s-1 2-1.5 2C3 8 4 9 4 10s0 2.5 1.5 2.5M10.5 3.5C12 3.5 12 5 12 6s1 2 1.5 2c-.5 0-1.5 1-1.5 2s0 2.5-1.5 2.5',
   server: 'M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11zM5 4.75h.01M5 11.25h.01',
+  lock: 'M4.5 7h7a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 12.5v-4A1.5 1.5 0 0 1 4.5 7zM5.5 7V5a2.5 2.5 0 0 1 5 0v2',
+  gauge: 'M2.5 11a5.5 5.5 0 0 1 11 0M8 11l2.5-3.5',
+  repeat: 'M3 8a5 5 0 0 1 8.5-3.5L13 6M13 2.5V6H9.5M13 8a5 5 0 0 1-8.5 3.5L3 10M3 13.5V10h3.5',
+  hash: 'M6.5 2.5L5 13.5M11.5 2.5L10 13.5M3 6h10.5M2.5 10h10.5',
+  mail: 'M4.5 3.5h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM2.5 5.5L8 9l5.5-3.5',
+  message: 'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z',
+  bell: 'M4 11.5V7a4 4 0 0 1 8 0v4.5l1.2 1.2H2.8zM6.5 14a1.6 1.6 0 0 0 3 0',
+  activity: 'M2.5 8h2.5l1.5-4 3 8 1.5-4h2.5',
+  'heart-pulse':
+    'M8 13.5C5 11.5 2.5 9.3 2.5 6.5a3 3 0 0 1 5.5-1.7a3 3 0 0 1 5.5 1.7c0 2.8-2.5 5-5.5 7zM4 8.5h2l1-1.5 1.5 3 1-1.5h2.5',
+  nodes:
+    'M9.5 4a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0zM5.5 12a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0zM13.5 12a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0zM7.33 5.34L4.67 10.66M8.67 5.34l2.66 5.32M5.5 12h5',
 }
 
 function Lead({ entry }: { entry: BootstrapSidebarEntry }) {
