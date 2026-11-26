@@ -86,7 +86,9 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         if (prefix is not null)
         {
             Argument.HasMaxLength(prefix, FencingFieldLimits.ResourceMaxLength, paramName: nameof(query));
-            Argument.IsPortableKey(prefix, paramName: nameof(query));
+            // A prefix may end where a resource has interior white space ("report " of "report 2026"), so only its
+            // end is exempt from the key rules; a trailing character closes a surrogate pair the prefix may split.
+            Argument.IsPortableKey(prefix + "x", paramName: nameof(query));
         }
 
         return new LeaseListFilter(tenantId, query.Kind, prefix, query.State);

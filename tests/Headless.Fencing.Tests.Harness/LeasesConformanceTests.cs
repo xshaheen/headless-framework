@@ -1735,8 +1735,10 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
                 cancellationToken: AbortToken
             );
 
-            page.Items.Single(static s => s.Lease.Resource == "live").IsLive.Should().BeTrue($"under a {skew} skew");
-            page.Items.Single(static s => s.Lease.Resource == "expired")
+            page.Items.Single(static s => string.Equals(s.Lease.Resource, "live", StringComparison.Ordinal))
+                .IsLive.Should()
+                .BeTrue($"under a {skew} skew");
+            page.Items.Single(static s => string.Equals(s.Lease.Resource, "expired", StringComparison.Ordinal))
                 .IsExpired.Should()
                 .BeTrue($"under a {skew} skew");
             counts.Live.Count.Should().Be(1);
@@ -1820,6 +1822,8 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
             "ex*p?",
             @"ex\q",
             "exq",
+            "report 2026",
+            "report",
         ];
 
         foreach (var resource in resources)
@@ -1847,6 +1851,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         (await matching("ex*")).Should().Equal("ex*p?");
         (await matching(@"ex\")).Should().Equal(@"ex\q");
         (await matching("export/1")).Should().Equal("export/1");
+        (await matching("report ")).Should().Equal("report 2026");
         (await matching("export/1-longer")).Should().BeEmpty();
         (await matching("")).Should().HaveCount(resources.Length, "an empty prefix matches every resource");
 
@@ -1883,8 +1888,12 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         withProgress.ExpiresAt.Should().BeCloseTo(stored.ExpiresAt, TimeSpan.FromMicroseconds(1));
 
         var page = await host.Inspector.ListAsync(new FencedLeaseQuery { Kind = kind }, null, 10, AbortToken);
-        page.Items.Single(static s => s.Lease.Resource == "with-progress").Should().Be(withProgress);
-        var without = page.Items.Single(static s => s.Lease.Resource == "without-progress");
+        page.Items.Single(static s => string.Equals(s.Lease.Resource, "with-progress", StringComparison.Ordinal))
+            .Should()
+            .Be(withProgress);
+        var without = page.Items.Single(static s =>
+            string.Equals(s.Lease.Resource, "without-progress", StringComparison.Ordinal)
+        );
         without.ProgressSizeBytes.Should().BeNull();
         without.ProgressContract.Should().BeNull();
 
@@ -2006,6 +2015,16 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
             .Awaiting(async () => await host.Inspector.CountAsync(query, cap: 0, AbortToken))
             .Should()
             .ThrowAsync<ArgumentOutOfRangeException>();
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.CountAsync(query, cap: int.MaxValue, AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentOutOfRangeException>("the store reads one lease past the cap");
+        await FluentActions
+            .Awaiting(async () =>
+                await host.Inspector.ListAsync(query with { ResourcePrefix = " r" }, null, 10, AbortToken)
+            )
+            .Should()
+            .ThrowAsync<ArgumentException>("no resource starts with white space");
     }
 
     private async Task _SweepOneAsync(LeasesHost host, string kind, string resource)

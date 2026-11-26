@@ -91,7 +91,9 @@ public interface IFencedLeaseInspector
     /// <returns>The capped counts.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="query" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">A filter names a tenant, kind, or resource no lease can have.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="cap" /> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="cap" /> is not positive, or is <see cref="int.MaxValue" />.
+    /// </exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The query's state is not a defined value.</exception>
     ValueTask<FencedLeaseCounts> CountAsync(
         FencedLeaseQuery query,
