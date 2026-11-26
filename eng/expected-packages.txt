@@ -51,6 +51,7 @@ Headless.Coordination.Sqlite
 Headless.Couchbase
 Headless.Dashboard
 Headless.DataProtection.Blobs
+Headless.DevInbox.Dashboard
 Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions
 Headless.DistributedLocks.Database

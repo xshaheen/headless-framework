@@ -1,0 +1,24 @@
+import { defineModule } from '@headless/dashboard-sdk'
+
+export default defineModule({
+  id: 'dev-inbox',
+  product: 'dev-inbox',
+  // Each countKey is a key the module's counts answer serves; an unregistered channel's key is absent, so its count
+  // reads as unknown rather than zero.
+  sidebar: [
+    {
+      label: 'Inbox',
+      entries: [
+        { id: 'dev-inbox.nav.emails', label: 'Emails', route: 'emails', icon: 'mail', countKey: 'emails' },
+        { id: 'dev-inbox.nav.sms', label: 'SMS', route: 'sms', icon: 'message', countKey: 'sms' },
+        { id: 'dev-inbox.nav.push', label: 'Push', route: 'push', icon: 'bell', countKey: 'push' },
+      ],
+    },
+  ],
+  routes: [],
+  objectKinds: {
+    email: { route: (id: string) => `emails?open=${encodeURIComponent(id)}` },
+    sms: { route: (id: string) => `sms?open=${encodeURIComponent(id)}` },
+    push: { route: (id: string) => `push?open=${encodeURIComponent(id)}` },
+  },
+})
