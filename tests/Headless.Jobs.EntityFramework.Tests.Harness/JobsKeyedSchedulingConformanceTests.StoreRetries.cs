@@ -86,7 +86,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             CancellationToken cancellationToken = default
         )
         {
-            if (Armed && command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal))
+            if (Armed && SqlStatementKind.IsUpdate(command.CommandText))
             {
                 // Fail only the first attempt, after its UPDATE already ran inside the transaction.
                 if (Contexts.Add(eventData.Context!.ContextId) && Contexts.Count == 1)
