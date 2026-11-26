@@ -70,7 +70,7 @@ public sealed class FeatureManager(
 
         if (featureNames.Count == 0)
         {
-            return new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
+            return [with(StringComparer.Ordinal)];
         }
 
         // Matching against an ordinal set keeps the definition filter linear and folds duplicate names.
