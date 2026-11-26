@@ -2,7 +2,7 @@
 
 namespace Headless.Idempotency;
 
-/// <summary>What a record store says about itself for <see cref="IIdempotentOperations.Describe" />.</summary>
+/// <summary>What a record store says about itself for <see cref="IIdempotencyInspector.Describe" />.</summary>
 /// <param name="Provider">The provider package's name.</param>
 /// <param name="Location">
 /// Where the records live (the quoted, qualified table name the store's SQL uses, or the cache key prefix); <see langword="null" /> when the

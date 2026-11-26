@@ -184,6 +184,8 @@ public sealed class IdempotencyHost(ServiceProvider services) : IAsyncDisposable
 
     public IIdempotentOperations Operations { get; } = services.GetRequiredService<IIdempotentOperations>();
 
+    public IIdempotencyInspector Inspector { get; } = services.GetRequiredService<IIdempotencyInspector>();
+
     public IIdempotencyRecordStore Store { get; } = services.GetRequiredService<IIdempotencyRecordStore>();
 
     public IUnitOfWorkFactory Factory { get; } = services.GetRequiredService<IUnitOfWorkFactory>();

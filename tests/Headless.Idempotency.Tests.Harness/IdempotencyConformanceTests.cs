@@ -1011,11 +1011,11 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
 
-        (await host.Operations.InspectAsync(key, AbortToken)).Should().BeNull("no record exists");
+        (await host.Inspector.InspectAsync(key, AbortToken)).Should().BeNull("no record exists");
 
         // Pending under a live lease.
         var released = await AdmitAsync(host, key);
-        var live = await host.Operations.InspectAsync(key, AbortToken);
+        var live = await host.Inspector.InspectAsync(key, AbortToken);
 
         live.Should().NotBeNull();
         live!.Key.Should().Be(new IdempotencyKey(null, key));
@@ -1041,7 +1041,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         // Released: no lease, but the released attempt's generation stays visible.
         await host.Operations.ReleaseAsync(released, AbortToken);
-        var free = await host.Operations.InspectAsync(key, AbortToken);
+        var free = await host.Inspector.InspectAsync(key, AbortToken);
 
         free!.Status.Should().Be(IdempotencyPeekStatus.Released);
         free.Generation.Should().Be(released.Generation, "the generation names the last admitted attempt");
@@ -1051,7 +1051,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         // An attempt that stalled past its lease: still holding it, but expired.
         var stalled = await AdmitAsync(host, key);
         await Fixture.ShiftLeaseIntoPastAsync(HostKey(key), LongLease + TimeSpan.FromMinutes(1), AbortToken);
-        var expired = await host.Operations.InspectAsync(key, AbortToken);
+        var expired = await host.Inspector.InspectAsync(key, AbortToken);
 
         expired!.Status.Should().Be(IdempotencyPeekStatus.Released, "no live attempt holds an expired lease");
         expired.Generation.Should().Be(stalled.Generation);
@@ -1064,14 +1064,14 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         if (Fixture.StoresTakeoverCount)
         {
-            (await host.Operations.InspectAsync(key, AbortToken))!
+            (await host.Inspector.InspectAsync(key, AbortToken))!
                 .TakeoverCount.Should()
                 .Be(1, "one admission took the key over from the stalled attempt");
         }
 
         var stored = Payload("a stored result body");
         await host.Operations.CompleteAsync(takeover, stored, Contract, cancellationToken: AbortToken);
-        var completed = await host.Operations.InspectAsync(key, AbortToken);
+        var completed = await host.Inspector.InspectAsync(key, AbortToken);
 
         completed!.Status.Should().Be(IdempotencyPeekStatus.Completed);
         completed.Generation.Should().Be(takeover.Generation, "a completed record keeps the completing generation");
@@ -1088,16 +1088,48 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         using (host.CurrentTenant.Change("tenant-a"))
         {
-            (await host.Operations.InspectAsync(key, AbortToken))
+            (await host.Inspector.InspectAsync(key, AbortToken))
                 .Should()
                 .BeNull("an inspection is scoped to the current tenant");
         }
 
         await Fixture.ShiftRecordIntoPastAsync(HostKey(key), Retention + TimeSpan.FromHours(1), AbortToken);
 
-        (await host.Operations.InspectAsync(key, AbortToken))
+        (await host.Inspector.InspectAsync(key, AbortToken))
             .Should()
             .BeNull("a record past its retention inspects as absent");
+    }
+
+    public virtual async Task should_inspect_a_live_attempt_whose_retention_already_elapsed()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var admitted = await host.Operations.AdmitAsync(
+            key,
+            Fingerprint,
+            leaseDuration: LongLease,
+            retention: TimeSpan.FromSeconds(1),
+            cancellationToken: AbortToken
+        );
+
+        // Retention ends long before the lease: the record is kept for the live attempt, so it stays visible.
+        await Fixture.ShiftRecordIntoPastAsync(HostKey(key), TimeSpan.FromMinutes(1), AbortToken);
+        var snapshot = await host.Inspector.InspectAsync(key, AbortToken);
+
+        snapshot.Should().NotBeNull("a live attempt keeps its record past retention");
+        snapshot!.Status.Should().Be(IdempotencyPeekStatus.Pending);
+        snapshot.Generation.Should().Be(admitted.Generation);
+        snapshot.RetentionUntil.Should().BeOnOrBefore(snapshot.ObservedAt);
+        snapshot.LeaseExpiresAt.Should().NotBeNull().And.BeAfter(snapshot.ObservedAt);
+
+        await host.Operations.ReleaseAsync(admitted, AbortToken);
+
+        // Releasing extends retention to now plus the retention, so move it past again.
+        await Fixture.ShiftRecordIntoPastAsync(HostKey(key), TimeSpan.FromMinutes(1), AbortToken);
+
+        (await host.Inspector.InspectAsync(key, AbortToken))
+            .Should()
+            .BeNull("no live attempt holds the record once its retention elapsed");
     }
 
     public virtual async Task should_inspect_the_recovery_point_by_name_contract_and_size()
@@ -1108,7 +1140,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         var state = Payload("charge-state-1");
 
         await host.Operations.SetRecoveryPointAsync(admitted, "charged", state, RecoveryContract, AbortToken);
-        var snapshot = await host.Operations.InspectAsync(key, AbortToken);
+        var snapshot = await host.Inspector.InspectAsync(key, AbortToken);
 
         snapshot!.Status.Should().Be(IdempotencyPeekStatus.Pending);
         snapshot.RecoveryPoint.Should().Be("charged");
@@ -1121,7 +1153,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         var absent = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
 
-        (await host.Operations.InspectAsync(absent, AbortToken)).Should().BeNull();
+        (await host.Inspector.InspectAsync(absent, AbortToken)).Should().BeNull();
         (await Fixture.ReadRecordAsync(HostKey(absent), AbortToken))
             .Should()
             .BeNull("inspecting a key never starts an operation");
@@ -1131,8 +1163,8 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         await host.Operations.SetRecoveryPointAsync(admitted, "reserved", Payload("r-1"), RecoveryContract, AbortToken);
         var before = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
 
-        await host.Operations.InspectAsync(key, AbortToken);
-        await host.Operations.InspectAsync(key, AbortToken);
+        await host.Inspector.InspectAsync(key, AbortToken);
+        await host.Inspector.InspectAsync(key, AbortToken);
 
         (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))
             .Should()
@@ -1153,14 +1185,14 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
         await unit.Unit.Idempotency.CompleteAsync(admitted, Payload("done"), Contract, cancellationToken: AbortToken);
 
-        var snapshot = await host.Operations.InspectAsync(key, AbortToken).Bounded();
+        var snapshot = await host.Inspector.InspectAsync(key, AbortToken).Bounded();
 
         snapshot!.Status.Should().Be(IdempotencyPeekStatus.Pending, "the completing transaction has not committed yet");
         snapshot.ResultSizeBytes.Should().BeNull();
 
         await unit.CommitAsync(AbortToken);
 
-        (await host.Operations.InspectAsync(key, AbortToken))!.Status.Should().Be(IdempotencyPeekStatus.Completed);
+        (await host.Inspector.InspectAsync(key, AbortToken))!.Status.Should().Be(IdempotencyPeekStatus.Completed);
     }
 
     public virtual async Task should_describe_the_provider_and_the_configured_defaults()
@@ -1177,7 +1209,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
             cancellationToken: AbortToken
         );
 
-        var description = host.Operations.Describe();
+        var description = host.Inspector.Describe();
 
         description.Provider.Should().StartWith("Headless.Idempotency.");
 

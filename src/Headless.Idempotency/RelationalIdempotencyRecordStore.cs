@@ -742,13 +742,15 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 var state = (RowLeaseState)reader.GetInt16(0);
                 var retentionUntil = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct).ConfigureAwait(false);
                 var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
+                var isLive = reader.GetInt32(3) == 1;
 
-                if (retentionUntil <= now)
+                // A live attempt keeps its record past retention (the purge skips it, and it may still complete), so
+                // it stays visible; only a record no live attempt holds is gone once its retention elapsed.
+                if (retentionUntil <= now && !isLive)
                 {
                     return null;
                 }
 
-                var isLive = reader.GetInt32(3) == 1;
                 var isActive = state == RowLeaseState.Active;
                 var status = state switch
                 {
@@ -760,25 +762,28 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 // Generation 0 is the lease columns' default, which no admission ever draws: the key was never admitted.
                 var generation = reader.GetInt64(4);
 
-                return new IdempotencyRecordSnapshot(
-                    key.ToKey(),
-                    status,
-                    generation == 0 ? null : generation,
-                    reader.GetInt32(6),
-                    new IdempotencyFingerprint(
+                return new IdempotencyRecordSnapshot
+                {
+                    Key = key.ToKey(),
+                    Status = status,
+                    Generation = generation == 0 ? null : generation,
+                    TakeoverCount = reader.GetInt32(6),
+                    Fingerprint = new IdempotencyFingerprint(
                         reader.GetString(7),
                         await reader.GetFieldValueAsync<byte[]>(8, ct).ConfigureAwait(false)
                     ),
-                    isActive ? await _ReadTimestampOrNullAsync(reader, 5, ct).ConfigureAwait(false) : null,
-                    IsLeaseExpired: isActive && !isLive,
-                    retentionUntil,
-                    now,
-                    await _ReadStringOrNullAsync(reader, 9, ct).ConfigureAwait(false),
-                    await _ReadInt64OrNullAsync(reader, 10, ct).ConfigureAwait(false),
-                    await _ReadStringOrNullAsync(reader, 11, ct).ConfigureAwait(false),
-                    await _ReadStringOrNullAsync(reader, 12, ct).ConfigureAwait(false),
-                    await _ReadInt64OrNullAsync(reader, 13, ct).ConfigureAwait(false)
-                );
+                    LeaseExpiresAt = isActive
+                        ? await _ReadTimestampOrNullAsync(reader, 5, ct).ConfigureAwait(false)
+                        : null,
+                    IsLeaseExpired = isActive && !isLive,
+                    RetentionUntil = retentionUntil,
+                    ObservedAt = now,
+                    ResultContract = await _ReadStringOrNullAsync(reader, 9, ct).ConfigureAwait(false),
+                    ResultSizeBytes = await _ReadInt64OrNullAsync(reader, 10, ct).ConfigureAwait(false),
+                    RecoveryPoint = await _ReadStringOrNullAsync(reader, 11, ct).ConfigureAwait(false),
+                    RecoveryContract = await _ReadStringOrNullAsync(reader, 12, ct).ConfigureAwait(false),
+                    RecoveryStateSizeBytes = await _ReadInt64OrNullAsync(reader, 13, ct).ConfigureAwait(false),
+                };
             },
             cancellationToken
         );

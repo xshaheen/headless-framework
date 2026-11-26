@@ -365,7 +365,7 @@ internal sealed class CacheIdempotencyRecordStore(
         var (_, record) = await _ReadAsync(key, cancellationToken).ConfigureAwait(false);
         var now = timeProvider.GetUtcNow();
 
-        if (record is null || record.RetentionUntil <= now)
+        if (record is null)
         {
             return null;
         }
@@ -374,6 +374,13 @@ internal sealed class CacheIdempotencyRecordStore(
         // release clear the expiry.
         var holdsLease = record is { Status: IdempotencyRecordStatus.Pending, Generation: not null };
         var isLive = holdsLease && record.LeaseExpiresAt > now;
+
+        // A live attempt keeps its entry past retention (the cache expires it at the later of the two).
+        if (record.RetentionUntil <= now && !isLive)
+        {
+            return null;
+        }
+
         var status = record.Status switch
         {
             IdempotencyRecordStatus.Completed => IdempotencyPeekStatus.Completed,
@@ -381,24 +388,24 @@ internal sealed class CacheIdempotencyRecordStore(
             _ => IdempotencyPeekStatus.Released,
         };
 
-        return new IdempotencyRecordSnapshot(
-            key.ToKey(),
-            status,
+        return new IdempotencyRecordSnapshot
+        {
+            Key = key.ToKey(),
+            Status = status,
             // A release clears the generation but keeps the highest one admitted, which is the released attempt's.
-            record.Generation
-                ?? record.HighestGeneration,
-            TakeoverCount: null,
-            new IdempotencyFingerprint(record.FingerprintAlgorithm, record.Fingerprint),
-            holdsLease ? record.LeaseExpiresAt : null,
-            IsLeaseExpired: holdsLease && !isLive,
-            record.RetentionUntil,
-            now,
-            record.ResultContract,
-            record.Result?.Length,
-            record.RecoveryPoint,
-            record.RecoveryContract,
-            record.RecoveryState?.Length
-        );
+            Generation = record.Generation ?? record.HighestGeneration,
+            TakeoverCount = null,
+            Fingerprint = new IdempotencyFingerprint(record.FingerprintAlgorithm, record.Fingerprint),
+            LeaseExpiresAt = holdsLease ? record.LeaseExpiresAt : null,
+            IsLeaseExpired = holdsLease && !isLive,
+            RetentionUntil = record.RetentionUntil,
+            ObservedAt = now,
+            ResultContract = record.ResultContract,
+            ResultSizeBytes = record.Result?.Length,
+            RecoveryPoint = record.RecoveryPoint,
+            RecoveryContract = record.RecoveryContract,
+            RecoveryStateSizeBytes = record.RecoveryState?.Length,
+        };
     }
 
     public ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)

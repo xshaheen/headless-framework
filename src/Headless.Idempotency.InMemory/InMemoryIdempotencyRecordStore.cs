@@ -342,7 +342,7 @@ internal sealed class InMemoryIdempotencyRecordStore(
         // The same lock-free committed snapshot PeekAsync reads, judged on one clock reading.
         var now = timeProvider.GetUtcNow();
 
-        if (Table.Read(key) is not { } record || record.RetentionUntil <= now)
+        if (Table.Read(key) is not { } record)
         {
             return ValueTask.FromResult<IdempotencyRecordSnapshot?>(null);
         }
@@ -350,6 +350,13 @@ internal sealed class InMemoryIdempotencyRecordStore(
         var lease = record.Lease;
         var isActive = lease.State == RowLeaseState.Active;
         var isLive = _IsLive(lease, now);
+
+        // A live attempt keeps its record past retention (the purge skips it, and it may still complete).
+        if (record.RetentionUntil <= now && !isLive)
+        {
+            return ValueTask.FromResult<IdempotencyRecordSnapshot?>(null);
+        }
+
         var status = lease.State switch
         {
             RowLeaseState.Settled => IdempotencyPeekStatus.Completed,
@@ -358,22 +365,23 @@ internal sealed class InMemoryIdempotencyRecordStore(
         };
 
         // Generation 0 is a fresh lease's default, which no admission ever draws: the key was never admitted.
-        var snapshot = new IdempotencyRecordSnapshot(
-            key.ToKey(),
-            status,
-            lease.Generation == 0 ? null : lease.Generation,
-            lease.TakeoverCount,
-            record.Fingerprint,
-            isActive ? lease.ExpiresAt : null,
-            IsLeaseExpired: isActive && !isLive,
-            record.RetentionUntil,
-            now,
-            record.Result?.Contract,
-            record.Result?.Payload.Length,
-            record.RecoveryPoint?.Name,
-            record.RecoveryPoint?.Contract,
-            record.RecoveryPoint?.State.Length
-        );
+        var snapshot = new IdempotencyRecordSnapshot
+        {
+            Key = key.ToKey(),
+            Status = status,
+            Generation = lease.Generation == 0 ? null : lease.Generation,
+            TakeoverCount = lease.TakeoverCount,
+            Fingerprint = record.Fingerprint,
+            LeaseExpiresAt = isActive ? lease.ExpiresAt : null,
+            IsLeaseExpired = isActive && !isLive,
+            RetentionUntil = record.RetentionUntil,
+            ObservedAt = now,
+            ResultContract = record.Result?.Contract,
+            ResultSizeBytes = record.Result?.Payload.Length,
+            RecoveryPoint = record.RecoveryPoint?.Name,
+            RecoveryContract = record.RecoveryPoint?.Contract,
+            RecoveryStateSizeBytes = record.RecoveryPoint?.State.Length,
+        };
 
         return ValueTask.FromResult<IdempotencyRecordSnapshot?>(snapshot);
     }

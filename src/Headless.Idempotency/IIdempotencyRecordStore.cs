@@ -234,15 +234,17 @@ public interface IIdempotencyRecordStore
     );
 
     /// <summary>
-    /// Reads <paramref name="key" />'s metadata on the provider's own connection, with the same lock-free read
-    /// <see cref="PeekAsync" /> takes, and never reads the result or recovery-state bytes beyond their sizes: a
-    /// relational provider measures them in SQL without selecting the columns.
+    /// Reads <paramref name="key" />'s metadata with the same lock-free read <see cref="PeekAsync" /> takes, and returns
+    /// the result and recovery state only as sizes and contracts, never their bytes. A relational store measures the
+    /// sizes in SQL, so the bytes never leave the database. A store that keeps the whole record in one value (the
+    /// cache provider) reads and deserializes that value, payload included, and discards the bytes before it returns.
     /// </summary>
     /// <param name="key">The record key.</param>
-    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <param name="cancellationToken">Token used to cancel the store call.</param>
     /// <returns>
-    /// The record's snapshot, judged against the database clock read in the same statement; <see langword="null" />
-    /// when the row does not exist or its <c>retention_until</c> is at or before that clock.
+    /// The record's snapshot, judged against the store clock read with the record; <see langword="null" /> when the
+    /// record does not exist, or its <c>retention_until</c> is at or before that clock and no live lease holds it. A
+    /// record whose live attempt outlasts its retention is still returned, as <see cref="IdempotencyPeekStatus.Pending" />.
     /// </returns>
     ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
         IdempotencyRecordKey key,

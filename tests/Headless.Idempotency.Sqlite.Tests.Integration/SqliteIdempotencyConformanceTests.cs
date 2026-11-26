@@ -239,4 +239,10 @@ public sealed class SqliteIdempotencyConformanceTests(SqliteIdempotencyFixture f
     {
         return base.should_describe_the_provider_and_the_configured_defaults();
     }
+
+    [Fact]
+    public override Task should_inspect_a_live_attempt_whose_retention_already_elapsed()
+    {
+        return base.should_inspect_a_live_attempt_whose_retention_already_elapsed();
+    }
 }

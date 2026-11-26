@@ -6,33 +6,31 @@ using static Tests.IdempotencyTestContext;
 
 namespace Tests;
 
-public sealed class IdempotentOperationsInspectTests : TestBase
+public sealed class IdempotencyInspectorTests : TestBase
 {
     [Fact]
     public async Task should_inspect_the_current_tenant_record_through_the_store()
     {
         // given
         var context = new IdempotencyTestContext();
-        var snapshot = new IdempotencyRecordSnapshot(
-            RecordKey.ToKey(),
-            IdempotencyPeekStatus.Completed,
-            Generation,
-            TakeoverCount: 0,
-            Fingerprint,
-            LeaseExpiresAt: null,
-            IsLeaseExpired: false,
-            RetentionUntil: ExpiresAt,
-            ObservedAt: ExpiresAt.AddHours(-1),
-            ResultContract: "c.v1",
-            ResultSizeBytes: 12,
-            RecoveryPoint: null,
-            RecoveryContract: null,
-            RecoveryStateSizeBytes: null
-        );
+        var snapshot = new IdempotencyRecordSnapshot
+        {
+            Key = RecordKey.ToKey(),
+            Status = IdempotencyPeekStatus.Completed,
+            Generation = Generation,
+            TakeoverCount = 0,
+            Fingerprint = Fingerprint,
+            LeaseExpiresAt = null,
+            IsLeaseExpired = false,
+            RetentionUntil = ExpiresAt,
+            ObservedAt = ExpiresAt.AddHours(-1),
+            ResultContract = "c.v1",
+            ResultSizeBytes = 12,
+        };
         context.Store.InspectAsync(RecordKey, AbortToken).Returns(snapshot);
 
         // when
-        var result = await context.Operations.InspectAsync(Key, AbortToken);
+        var result = await _Inspector(context).InspectAsync(Key, AbortToken);
 
         // then - the key resolves against the current tenant, and nothing but the lock-free read runs
         result.Should().BeSameAs(snapshot);
@@ -47,7 +45,7 @@ public sealed class IdempotentOperationsInspectTests : TestBase
         var context = new IdempotencyTestContext();
 
         // when
-        var act = async () => await context.Operations.InspectAsync(" ", AbortToken);
+        var act = async () => await _Inspector(context).InspectAsync(" ", AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentException>();
@@ -67,22 +65,23 @@ public sealed class IdempotentOperationsInspectTests : TestBase
         context.Options.PurgeBatchSize = 50;
 
         // when
-        var description = context.Operations.Describe();
+        var description = _Inspector(context).Describe();
 
         // then
         description
             .Should()
             .Be(
-                new IdempotencyStoreDescription(
-                    "Headless.Idempotency.PostgreSql",
-                    "headless.records",
-                    TimeSpan.FromHours(3),
-                    context.Options.DefaultLeaseDuration,
-                    context.Options.MinimumLeaseDuration,
-                    context.Options.MaximumLeaseDuration,
-                    TimeSpan.FromMinutes(10),
-                    50
-                )
+                new IdempotencyStoreDescription
+                {
+                    Provider = "Headless.Idempotency.PostgreSql",
+                    Location = "headless.records",
+                    DefaultRetention = TimeSpan.FromHours(3),
+                    DefaultLeaseDuration = context.Options.DefaultLeaseDuration,
+                    MinimumLeaseDuration = context.Options.MinimumLeaseDuration,
+                    MaximumLeaseDuration = context.Options.MaximumLeaseDuration,
+                    PurgeInterval = TimeSpan.FromMinutes(10),
+                    PurgeBatchSize = 50,
+                }
             );
     }
 
@@ -95,7 +94,7 @@ public sealed class IdempotentOperationsInspectTests : TestBase
         context.Options.PurgeInterval = TimeSpan.FromMinutes(10);
 
         // when
-        var description = context.Operations.Describe();
+        var description = _Inspector(context).Describe();
 
         // then - its entries expire in the cache, so a schedule would describe work that never happens
         description.PurgeInterval.Should().BeNull();
@@ -122,5 +121,10 @@ public sealed class IdempotentOperationsInspectTests : TestBase
             .Select(static p => Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType)
             .Should()
             .NotContain(payloadTypes);
+    }
+
+    private static IdempotencyInspector _Inspector(IdempotencyTestContext context)
+    {
+        return new IdempotencyInspector(context.Store, context.Resolver);
     }
 }

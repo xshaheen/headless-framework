@@ -278,29 +278,4 @@ internal sealed class IdempotentOperations(
 
         return store.GetResultAsync(recordKey, cancellationToken);
     }
-
-    public ValueTask<IdempotencyRecordSnapshot?> InspectAsync(string key, CancellationToken cancellationToken = default)
-    {
-        var recordKey = resolver.ResolvePeek(key);
-
-        // The same lock-free read as PeekAsync: no owned unit, no record lock, no write.
-        return store.InspectAsync(recordKey, cancellationToken);
-    }
-
-    public IdempotencyStoreDescription Describe()
-    {
-        var options = resolver.CurrentOptions;
-        var info = store.Info;
-
-        return new IdempotencyStoreDescription(
-            info.Provider,
-            info.Location,
-            options.DefaultRetention,
-            options.DefaultLeaseDuration,
-            options.MinimumLeaseDuration,
-            options.MaximumLeaseDuration,
-            info.PurgeDeletesRecords ? options.PurgeInterval : null,
-            options.PurgeBatchSize
-        );
-    }
 }

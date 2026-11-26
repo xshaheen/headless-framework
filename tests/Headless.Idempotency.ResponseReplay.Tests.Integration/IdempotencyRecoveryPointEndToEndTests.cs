@@ -308,19 +308,6 @@ internal sealed class LosingCompletionSwitch
         {
             return inner.GetResultAsync(key, cancellationToken);
         }
-
-        public ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
-            string key,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return inner.InspectAsync(key, cancellationToken);
-        }
-
-        public IdempotencyStoreDescription Describe()
-        {
-            return inner.Describe();
-        }
     }
 }
 
