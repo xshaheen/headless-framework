@@ -49,7 +49,7 @@ public interface IFeatureManager
     );
 
     /// <summary>Gets the effective values of a set of features in one call.</summary>
-    /// <param name="featureNames">The feature names to resolve.</param>
+    /// <param name="featureNames">The feature names to resolve. Duplicate names resolve once.</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>
     /// A dictionary keyed by feature name, resolved through the full provider chain exactly as
@@ -59,7 +59,7 @@ public interface IFeatureManager
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="featureNames"/> is <see langword="null"/>.</exception>
     Task<Dictionary<string, FeatureValue>> GetAllAsync(
-        IReadOnlySet<string> featureNames,
+        IReadOnlyCollection<string> featureNames,
         CancellationToken cancellationToken = default
     );
 

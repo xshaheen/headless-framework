@@ -34,7 +34,7 @@ public sealed class SettingsSnapshotTests : TestBase
 
         _settingManager
             .GetAllAsync(
-                Arg.Any<HashSet<string>>(),
+                Arg.Any<IReadOnlyCollection<string>>(),
                 SettingValueProviderNames.Global,
                 null,
                 true,
@@ -43,7 +43,7 @@ public sealed class SettingsSnapshotTests : TestBase
             .Returns(call =>
                 _readFailure is not null
                     ? Task.FromException<IReadOnlyList<SettingValue>>(_readFailure)
-                    : _ReadStoredAsync(call.Arg<HashSet<string>>())
+                    : _ReadStoredAsync(call.Arg<IReadOnlyCollection<string>>())
             );
 
         _definitionManager
@@ -759,7 +759,7 @@ public sealed class SettingsSnapshotTests : TestBase
 
     #endregion
 
-    private async Task<IReadOnlyList<SettingValue>> _ReadStoredAsync(HashSet<string> names)
+    private async Task<IReadOnlyList<SettingValue>> _ReadStoredAsync(IReadOnlyCollection<string> names)
     {
         Interlocked.Increment(ref _reads);
         var inFlight = Interlocked.Increment(ref _readsInFlight);

@@ -199,6 +199,38 @@ public sealed class FeatureManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_a_name_array_with_duplicates_like_the_equivalent_set()
+    {
+        // given
+        var provider = Substitute.For<IFeatureValueProvider>();
+        provider.Name.Returns("Store");
+        _valueProviderManager.ValueProviders.Returns([provider]);
+        _definitionManager
+            .GetFeaturesAsync(AbortToken)
+            .Returns([new FeatureDefinition("Feature1"), new FeatureDefinition("Feature2")]);
+        provider
+            .GetAllAsync(Arg.Any<FeatureDefinition[]>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(static callInfo =>
+                [.. callInfo.ArgAt<FeatureDefinition[]>(0).Select(static d => new FeatureValue(d.Name, "on"))]
+            );
+
+        var fromSet = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "Feature1", "Feature2" },
+            AbortToken
+        );
+        provider.ClearReceivedCalls();
+
+        // when
+        var fromArray = await _sut.GetAllAsync(new[] { "Feature1", "Feature2", "Feature1" }, AbortToken);
+
+        // then - the duplicate folds into one entry and the provider is asked about each feature once
+        fromArray.Should().BeEquivalentTo(fromSet);
+        await provider
+            .Received(1)
+            .GetAllAsync(Arg.Is<FeatureDefinition[]>(static definitions => definitions.Length == 2), null, AbortToken);
+    }
+
+    [Fact]
     public async Task should_return_empty_without_reading_definitions_when_batch_read_is_empty()
     {
         // when

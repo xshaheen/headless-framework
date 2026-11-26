@@ -332,7 +332,7 @@ public sealed class TenantOnboardingService(IFeatureManager features)
 ### API and behavior
 
 - `IFeatureManager.GetAsync(name, …)` returns a `FeatureValue` with the resolved string value and the `FeatureValueProvider` that supplied it.
-- `IFeatureManager.GetAllAsync(IReadOnlySet<string> featureNames)` resolves a set of names through the full chain in one call and returns a `Dictionary<string, FeatureValue>`. A feature with no value maps to a `FeatureValue` whose `Value` is `null`. Undefined names are omitted. Each provider is asked once for the whole set, so prefer it over a loop of `GetAsync`.
+- `IFeatureManager.GetAllAsync(IReadOnlyCollection<string> featureNames)` resolves a list, array, or set of names through the full chain in one call and returns a `Dictionary<string, FeatureValue>`. A feature with no value maps to a `FeatureValue` whose `Value` is `null`. Undefined names are omitted. Each provider is asked once for the whole set, so prefer it over a loop of `GetAsync`.
 - `GetAllAsync(providerName, …)`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, and `GetAllDefaultAsync` read one provider's values and return `IReadOnlyList<FeatureValue>`.
 - Extension members on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`. The multi-name `IsEnabledAsync(requiresAll, featureNames)` and `EnsureEnabledAsync(requiresAll, featureNames)` read every name in one `GetAllAsync` call.
 - `EnsureEnabledAsync` throws `ConflictException` for a disabled feature. The Headless exception handler returns it as 409 with error code `g:feature_currently_not_available`.

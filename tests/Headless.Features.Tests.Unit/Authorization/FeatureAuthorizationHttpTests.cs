@@ -578,10 +578,10 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
                 return new FeatureValue(name, value, Provider: null);
             });
         featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>())
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                var names = call.ArgAt<IReadOnlySet<string>>(0);
+                var names = call.ArgAt<IReadOnlyCollection<string>>(0);
 
                 return names.ToDictionary(
                     name => name,

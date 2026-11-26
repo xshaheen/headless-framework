@@ -162,7 +162,7 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
         var settingManager = Substitute.For<ISettingManager>();
         settingManager
             .GetAllAsync(
-                Arg.Any<HashSet<string>>(),
+                Arg.Any<IReadOnlyCollection<string>>(),
                 SettingValueProviderNames.Global,
                 null,
                 true,

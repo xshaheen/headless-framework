@@ -29,9 +29,9 @@ public sealed class ClientVisibleFeaturesReaderTests : TestBase
         var hidden = new FeatureDefinition("Billing.Internal") { IsVisibleToClients = false };
         _definitionManager.GetFeaturesAsync(AbortToken).Returns([visible, hidden]);
         _featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), AbortToken)
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken)
             .Returns(call =>
-                call.Arg<IReadOnlySet<string>>()
+                call.Arg<IReadOnlyCollection<string>>()
                     .ToDictionary(name => name, name => new FeatureValue(name, "true", null), StringComparer.Ordinal)
             );
 
@@ -45,7 +45,9 @@ public sealed class ClientVisibleFeaturesReaderTests : TestBase
         await _featureManager
             .Received(1)
             .GetAllAsync(
-                Arg.Is<IReadOnlySet<string>>(names => names.SetEquals(new[] { "Reports.Export" })),
+                Arg.Is<IReadOnlyCollection<string>>(names =>
+                    names.ToHashSet(StringComparer.Ordinal).SetEquals(new[] { "Reports.Export" })
+                ),
                 AbortToken
             );
     }
@@ -63,7 +65,7 @@ public sealed class ClientVisibleFeaturesReaderTests : TestBase
         ClaimsPrincipal? principalDuringRead = null;
         string? tenantDuringRead = null;
         _featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), AbortToken)
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken)
             .Returns(_ =>
             {
                 principalDuringRead = _principalAccessor.Principal;

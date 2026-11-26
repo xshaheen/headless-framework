@@ -29,7 +29,7 @@ internal sealed class ClientVisibleFeaturesReader(
         var names = definitions
             .Where(definition => definition.IsVisibleToClients)
             .Select(definition => definition.Name)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToArray();
 
         var values = await featureManager.GetAllAsync(names, cancellationToken).ConfigureAwait(false);
 

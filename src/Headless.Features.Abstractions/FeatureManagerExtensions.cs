@@ -65,9 +65,7 @@ public static class FeatureManagerExtensions
             // per feature. A defined name always appears in the batch (a feature with no value carries a null
             // value), so an absent name is not defined: GetAsync then reproduces the manager's not-defined
             // error for it, as the per-name loop did, rather than silently treating it as disabled.
-            var values = await featureManager
-                .GetAllAsync(featureNames.ToHashSet(StringComparer.Ordinal), cancellationToken)
-                .ConfigureAwait(false);
+            var values = await featureManager.GetAllAsync(featureNames, cancellationToken).ConfigureAwait(false);
 
             return await featureManager
                 .IsEnabledAsync(requiresAll, featureNames, values, cancellationToken)
@@ -76,7 +74,7 @@ public static class FeatureManagerExtensions
 
         /// <summary>
         /// Checks the <paramref name="requiresAll"/> policy against values already read with
-        /// <see cref="IFeatureManager.GetAllAsync(IReadOnlySet{string}, CancellationToken)"/>, so a caller holding
+        /// <see cref="IFeatureManager.GetAllAsync(IReadOnlyCollection{string}, CancellationToken)"/>, so a caller holding
         /// several feature checks can read every name once and evaluate each check from the same values.
         /// </summary>
         /// <param name="requiresAll">Whether every feature must be enabled, or at least one.</param>
@@ -217,9 +215,7 @@ public static class FeatureManagerExtensions
             // per feature. A defined name always appears in the batch (a feature with no value carries a null
             // value), so an absent name is not defined: GetAsync then reproduces the manager's not-defined
             // error for it, as the per-name loop did, rather than silently treating it as disabled.
-            var values = await featureManager
-                .GetAllAsync(featureNames.ToHashSet(StringComparer.Ordinal), cancellationToken)
-                .ConfigureAwait(false);
+            var values = await featureManager.GetAllAsync(featureNames, cancellationToken).ConfigureAwait(false);
 
             // Names are evaluated and parsed in order with the same short-circuit points as before: a value
             // after the decision is never parsed, so an invalid boolean there still goes unreported.

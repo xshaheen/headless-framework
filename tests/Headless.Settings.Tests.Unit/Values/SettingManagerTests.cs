@@ -352,6 +352,69 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_a_name_list_with_duplicates_like_the_equivalent_set()
+    {
+        // given
+        List<SettingDefinition> definitions =
+        [
+            new("Setting1", defaultValue: "default1"),
+            new("Setting2", defaultValue: "default2"),
+        ];
+
+        var provider = new FakeSettingValueProvider { Name = "Provider1" };
+        provider.SetValue("Setting1", "value1");
+        provider.SetValue("Setting2", "value2");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        var fromSet = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "Setting1", "Setting2" },
+            AbortToken
+        );
+        var setReads = provider.GetAllCallCount;
+
+        // when
+        var fromList = await _sut.GetAllAsync(new List<string> { "Setting1", "Setting2", "Setting1" }, AbortToken);
+
+        // then - one provider read per call, and the duplicate folds into one entry
+        fromList.Should().BeEquivalentTo(fromSet);
+        provider.GetAllCallCount.Should().Be(setReads * 2);
+    }
+
+    [Fact]
+    public async Task should_read_a_name_array_with_duplicates_within_a_provider_like_the_equivalent_set()
+    {
+        // given
+        const string providerName = "Provider1";
+        List<SettingDefinition> definitions = [new("Setting1", isInherited: true), new("Setting2", isInherited: true)];
+
+        var provider = new FakeSettingValueProvider { Name = providerName };
+        provider.SetValue("Setting1", "value1");
+        provider.SetValue("Setting2", "value2");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
+        _valueProviderManager.Providers.Returns([provider]);
+
+        var fromSet = await _sut.GetAllAsync(
+            new HashSet<string>(StringComparer.Ordinal) { "Setting1" },
+            providerName,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var fromArray = await _sut.GetAllAsync(
+            new[] { "Setting1", "Setting1" },
+            providerName,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        fromArray.Should().ContainSingle();
+        fromArray.Should().BeEquivalentTo(fromSet);
+    }
+
+    [Fact]
     public async Task should_prefer_stored_value_over_default_in_batch()
     {
         // given — providers are exposed highest priority first, defaults last

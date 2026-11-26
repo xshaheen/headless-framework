@@ -62,18 +62,20 @@ public sealed class FeatureManager(
 
     /// <inheritdoc/>
     public async Task<Dictionary<string, FeatureValue>> GetAllAsync(
-        IReadOnlySet<string> featureNames,
+        IReadOnlyCollection<string> featureNames,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(featureNames);
 
-        var result = new Dictionary<string, FeatureValue>(featureNames.Count, StringComparer.Ordinal);
-
         if (featureNames.Count == 0)
         {
-            return result;
+            return new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
         }
+
+        // Matching against an ordinal set keeps the definition filter linear and folds duplicate names.
+        var requestedNames = featureNames.ToHashSet(StringComparer.Ordinal);
+        var result = new Dictionary<string, FeatureValue>(requestedNames.Count, StringComparer.Ordinal);
 
         // One definition read for the whole set instead of a FindAsync per name.
         var definitions = await definitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
@@ -83,7 +85,7 @@ public sealed class FeatureManager(
         // built-in provider resolves a batch read in one cache round-trip, so the previous per-definition
         // walk cost one round-trip per feature per provider. Providers are ordered highest priority first,
         // so the first non-null value wins and lower providers are asked only about the still-unresolved names.
-        var pending = definitions.Where(d => featureNames.Contains(d.Name)).ToList();
+        var pending = definitions.Where(d => requestedNames.Contains(d.Name)).ToList();
         var processedNames = new HashSet<string>(StringComparer.Ordinal);
         var chain = providers.ToArray();
         var cached = await _ReadCachedChainAsync(
