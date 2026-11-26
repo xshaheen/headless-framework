@@ -338,7 +338,7 @@ public interface ILeaseStore
     /// <paramref name="filter" /> matches, each stopping at <paramref name="cap" />.
     /// </summary>
     /// <param name="filter">The leases to count; already validated. Its state keeps only that state's count.</param>
-    /// <param name="cap">The cap of each count; positive.</param>
+    /// <param name="cap">The cap of each count; positive and below <see cref="int.MaxValue" />.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The capped counts.</returns>
     ValueTask<FencedLeaseCounts> CountAsync(

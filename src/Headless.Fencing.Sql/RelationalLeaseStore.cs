@@ -856,17 +856,18 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         var row = new LeaseRow(generation, state, expiresAt, takeoverCount, holder);
         var status = state == FencingTable.Active && live ? LeaseFenceStatus.Current : _Rejection(key, row, generation);
 
-        return new LeaseSnapshot(
-            key.ToLease(generation),
-            status,
-            expiresAt,
-            holder,
-            takeoverCount,
-            grantedAt,
-            endedAt,
-            progressSize,
-            progressContract
-        );
+        return new LeaseSnapshot
+        {
+            Lease = key.ToLease(generation),
+            Status = status,
+            ExpiresAt = expiresAt,
+            Holder = holder,
+            TakeoverCount = takeoverCount,
+            GrantedAt = grantedAt,
+            EndedAt = endedAt,
+            ProgressSizeBytes = progressSize,
+            ProgressContract = progressContract,
+        };
     }
 
     private void _RequireCallerConnection(DbConnection connection, DbTransaction? transaction)
@@ -981,7 +982,8 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     )
     {
         Argument.IsNotNull(filter);
-        Argument.IsPositive(cap);
+        // The statement reads one row past the cap, so the cap must leave room for it.
+        Argument.IsInclusiveBetween(cap, 1, int.MaxValue - 1);
 
         var sql = _countSql.GetOrAdd(_ShapeOf(filter, after: false), _RenderCount);
 
@@ -1070,10 +1072,10 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     private string _RenderCount(ListShape shape)
     {
         var t = _t;
-        var order = string.Join(", ", t.KeyColumns);
 
         // Each state is counted by its own capped subquery, so one capped state never hides another's exact count,
-        // and all three judge expiry by the one clock read the statement makes.
+        // and all three judge expiry by the one clock read the statement makes. The subquery stops after cap + 1
+        // matching rows, but a rare state can still make the database scan many rows of the others to find them.
         string count(FencedLeaseStateFilter state, string name)
         {
             if (shape.State != FencedLeaseStateFilter.All && shape.State != state)
@@ -1084,8 +1086,12 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             var conditions = _FilterConditions(shape);
             conditions.Add(_StateCondition(state)!);
 
-            return $"(SELECT COUNT(*) FROM (SELECT 1 AS one_row FROM {_dialect.ReadWithoutWaiting(t.Table)}"
-                + $"{_Where(conditions)} ORDER BY {order} {_dialect.Limit("Cap")}) AS {name})";
+            var rows = _storage.ReadDialect.FirstRows(
+                $"FROM {_dialect.ReadWithoutWaiting(t.Table)}{_Where(conditions)}",
+                "Cap"
+            );
+
+            return $"(SELECT COUNT(*) FROM ({rows}) AS {name})";
         }
 
         return _dialect.Render(

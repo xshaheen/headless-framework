@@ -50,14 +50,11 @@ internal sealed class FencedLeaseInspector(ILeaseStore store) : IFencedLeaseInsp
 
     public async ValueTask<FencedLeaseCounts> CountAsync(
         FencedLeaseQuery query,
-        int cap = LeaseCount.DefaultCap,
         CancellationToken cancellationToken = default
     )
     {
         var filter = LeaseRequestResolver.ResolveQuery(query);
-        // The store reads one lease past the cap, so the cap must leave room for it.
-        Argument.IsInclusiveBetween(cap, 1, int.MaxValue - 1);
 
-        return await store.CountAsync(filter, cap, cancellationToken).ConfigureAwait(false);
+        return await store.CountAsync(filter, LeaseCount.DefaultCap, cancellationToken).ConfigureAwait(false);
     }
 }

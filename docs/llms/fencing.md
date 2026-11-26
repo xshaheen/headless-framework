@@ -201,7 +201,7 @@ A grant can pass `LeaseGrantOptions` (`Takeover`, `Holder`). Each grant that acq
 
 ### Current attempt and revoke
 
-`GetCurrentAsync(kind, resource)` reads the key's row with one clocked statement and no lock. It returns `null` when the key has no row. Otherwise it returns a `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, TakeoverCount, GrantedAt, EndedAt, ProgressSizeBytes, ProgressContract)` that judges the row's own generation by the database clock: `Current` (active and unexpired, so `IsLive` is true), `Expired`, `Settled`, `Released`, `Abandoned`, or `Revoked`, never `Stale`. The tenant comes from `ICurrentTenant`, as for a grant. A per-request check drops the request when the attempt is not live. `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` runs the same statement on the caller's connection, under the same rules as `GetStatusAsync(lease, connection, …)`.
+`GetCurrentAsync(kind, resource)` reads the key's row with one clocked statement and no lock. It returns `null` when the key has no row. Otherwise it returns a `LeaseSnapshot` (`Lease`, `Status`, `ExpiresAt`, `Holder`, `TakeoverCount`, `GrantedAt`, `EndedAt`, `ProgressSizeBytes`, `ProgressContract`) that judges the row's own generation by the database clock: `Current` (active and unexpired, so `IsLive` is true), `Expired`, `Settled`, `Released`, `Abandoned`, or `Revoked`, never `Stale`. The tenant comes from `ICurrentTenant`, as for a grant. A per-request check drops the request when the attempt is not live. `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` runs the same statement on the caller's connection, under the same rules as `GetStatusAsync(lease, connection, …)`.
 
 `RevokeAsync(kind, resource)` ends the key's active attempt, live or expired, as `Revoked`, its own state, so a reader can tell an attempt that code outside it stopped from one its holder gave up. It runs one fenced transition on its own transaction and returns the lease it ended, or `null` when no attempt is active (no row, or a row already ended). Like a release, it resets the takeover count and clears the progress, and it keeps the holder. After a revoke, the revoked generation gets these answers:
 
@@ -245,8 +245,8 @@ var page = await inspector.ListAsync(
     pageSize: 50,
     ct);
 
-var counts = await inspector.CountAsync(new FencedLeaseQuery { Kind = "exports" }, cap: 10_000, ct);
-var kinds = await inspector.ListKindsAsync(ct);                       // for a kind filter
+var counts = await inspector.CountAsync(new FencedLeaseQuery { Kind = "exports" }, ct);
+var kinds = await inspector.ListKindsAsync(ct);                       // for a kind filter; cache it briefly
 var one = await inspector.GetAsync(tenantId: "acme", "exports", "order-42", ct);
 ```
 
@@ -254,8 +254,8 @@ var one = await inspector.GetAsync(tenantId: "acme", "exports", "order-42", ct);
 - **State.** `FencedLeaseStateFilter` is `All`, `Live` (active and unexpired), `Expired` (active past its expiry, waiting for a takeover or a sweep), or `Ended` (settled, released, abandoned, or revoked, the rows `PurgeAsync` deletes). `Live`, `Expired`, and `Ended` partition the rows. The database clock decides `Live` against `Expired` when the statement runs; the caller's clock never does. Each `LeaseSnapshot` says the same through `Status`, `IsLive`, `IsExpired`, and `IsEnded`.
 - **Order and paging.** Leases list by tenant (the host scope first), kind, and resource, each ordinal. The position is the lease key, which no write changes, so a page never repeats or skips a lease that changed state since the last page. `pageSize` is 1 to `FencedLeasePage.MaxPageSize` (500); `page.Next` is `null` on the last page.
 - **Resource prefix.** `ResourcePrefix` matches case-sensitively and literally on every provider: `%`, `_`, `[`, `*`, and `?` are ordinary characters. It may end in white space (`"report "`) but not start with it. An empty prefix matches every resource.
-- **Counts.** `CountAsync(query, cap = LeaseCount.DefaultCap)` (`cap` from 1 to `int.MaxValue - 1`) returns `FencedLeaseCounts(Live, Expired, Ended)` and `Total`, each a `LeaseCount(Count, Capped)`, from one statement on one clock instant. Each state stops at `cap` on its own, so a capped `Live` never hides an exact `Ended`. `Total` is their sum and is `Capped` when any part is. A query `State` other than `All` keeps only that state's count. The number of kinds is `ListKindsAsync().Count`.
-- **Kinds.** `ListKindsAsync()` returns every kind with at least one row, of any tenant or state, in ordinal order. A kind whose rows were all purged disappears.
+- **Counts.** `CountAsync(query)` returns `FencedLeaseCounts(Live, Expired, Ended)` and `Total`, each a `LeaseCount(Count, Capped)`, from one statement on one clock instant. Each state stops at `LeaseCount.DefaultCap` (10,000) on its own, so a capped `Live` never hides an exact `Ended`. A state stops reading after one row past the cap, but the database may still scan many rows of other states to find a rare one, so a count over a large table is not free. `Total` is their sum and is `Capped` when any part is. A query `State` other than `All` keeps only that state's count. The number of kinds is `ListKindsAsync().Count`.
+- **Kinds.** `ListKindsAsync()` returns every kind with at least one row, of any tenant or state, in ordinal order. A kind whose rows were all purged disappears. It runs a `DISTINCT` over the whole lease table, so a dashboard caches the result for a short time (say a minute) instead of calling it on every page load or keystroke.
 - **Progress.** A snapshot carries `ProgressSizeBytes` and `ProgressContract`, never the bytes. Show the size and contract; the payload stays in the store, and only a takeover grant returns it.
 - **Holder.** A snapshot carries the `Holder` the grant stored, or `null` when the grant named none.
 - **Locking.** Every call is one statement with no transaction and no row lock, so it never delays a grant, fence, or sweep. On SQL Server a list or count skips a row another transaction holds locked (`READPAST`), so it can miss a lease being written at that moment. Invalid arguments (a `null` query, a page size out of range, an undefined state, an empty tenant id, a kind or resource no lease can have) throw before any statement runs.
@@ -369,7 +369,7 @@ A relational provider must sit on the database enlisted units run on; lease rows
 
 ## Headless.Fencing.Abstractions
 
-Consumer contracts: `IFencedLeases`, `IFencedLeaseInspector`, `FencedLease`, the grant/renewal/settlement/sweep result types, `StaleLeaseException`, and the `unit.Leases` accessor.
+Consumer contracts: `IFencedLeases`, `FencedLease`, the grant/renewal/settlement/sweep result types, `StaleLeaseException`, and the `unit.Leases` accessor.
 
 ### Setup
 
@@ -386,8 +386,7 @@ Reference it from code that grants, renews, or fences leases. Registration lives
 - `IFencedLeases`: `GrantAsync(kind, resource, duration, ct)`, `GrantAsync(kind, resource, duration, takeover, ct)`, and `GrantAsync(kind, resource, duration, options, ct)` → `LeaseGrantResult` (`Status`: `Granted` | `Held` | `Takeover` | `Expired`; `Lease`, `ExpiresAt`, `HolderGeneration`, `PreviousGeneration`, `TakeoverCount`, `Progress`, `IsAcquired`). `LeaseTakeover` is `Allowed` (the default: take an expired attempt over) or `AfterSweep` (answer `Expired` until a sweep, settlement, release, or revoke ends it); an undefined value throws `InvalidEnumArgumentException`. `LeaseGrantOptions` carries `Takeover` (default `Allowed`) and `Holder`; a null `options` throws `ArgumentNullException`. `GetCurrentAsync(kind, resource, ct)` and `GetCurrentAsync(kind, resource, connection, transaction = null, ct)` → `LeaseSnapshot?`. `RevokeAsync(kind, resource, ct)` → `FencedLease?`. `GetStatusAsync(lease, ct)` → `LeaseFenceStatus` (`Current` | `Stale` | `Expired` | `Settled` | `Released` | `Abandoned` | `Revoked`), read without a lock; `GetStatusAsync(lease, connection, transaction = null, ct)` → the same, on the caller's `DbConnection`. `RenewAsync(lease, duration, ct)` and `RenewAsync(lease, duration, progress, ct)` → `LeaseRenewalResult` (`Status`: `Renewed` | `Expired` | `Stale` | `Settled` | `Released` | `Abandoned` | `Revoked`; `ExpiresAt`; `IsRenewed`). `SettleAsync` / `ReleaseAsync(lease, ct)` → `LeaseSettlementStatus` (`Settled` | `Released` | `Stale` | `Expired` | `Abandoned` | `Revoked`); both are idempotent for the same generation. `SweepExpiredAsync(kind, handler, limit, ct)` → `LeaseSweepResult(Handled, Failures)`, where `Failures` are `LeaseSweepFailure(Lease, Exception)`. `PurgeAsync(kind, olderThan, ct)` → the row count deleted.
 - `FencedLease(TenantId, Kind, Resource, Generation)`: a plain record, safe to persist or hand to another process; `ExpiredLease` adds `ExpiresAt`, `TakeoverCount`, and `Progress` for the value a sweep hands its handler.
 - `LeaseProgress(payload, contract)` copies the payload and exposes `Payload` (`ReadOnlyMemory<byte>`) and `Contract`. See [Progress and resume](#progress-and-resume).
-- `LeaseSnapshot(Lease, Status, ExpiresAt, Holder, TakeoverCount, GrantedAt, EndedAt, ProgressSizeBytes, ProgressContract)` adds `IsLive`, `IsExpired`, and `IsEnded`. It never carries progress bytes. See [Holder](#holder) and [Current attempt and revoke](#current-attempt-and-revoke).
-- `IFencedLeaseInspector`: `ListAsync(query, after, pageSize, ct)` → `FencedLeasePage(Items, Next)`, `GetAsync(tenantId, kind, resource, ct)` → `LeaseSnapshot?`, `ListKindsAsync(ct)` → `IReadOnlyList<string>`, and `CountAsync(query, cap = LeaseCount.DefaultCap, ct)` → `FencedLeaseCounts`. `FencedLeaseQuery` carries `Tenant` (`LeaseTenantFilter`), `Kind`, `ResourcePrefix`, and `State` (`FencedLeaseStateFilter`); `FencedLeasePosition(TenantId, Kind, Resource)` is the page cursor. See [Inspect leases](#inspect-leases).
+- `LeaseSnapshot` has `required init` properties `Lease`, `Status`, `ExpiresAt`, `Holder`, `TakeoverCount`, `GrantedAt`, `EndedAt`, `ProgressSizeBytes`, and `ProgressContract`, and adds `IsLive`, `IsExpired`, and `IsEnded`. It never carries progress bytes. See [Holder](#holder) and [Current attempt and revoke](#current-attempt-and-revoke).
 - `unit.Leases` (namespace `Headless.UnitOfWork`) returns a `UnitOfWorkLeases` bound to the unit; repeated reads on one unit return the same instance. It mirrors `IFencedLeases` (grant with no options, a `LeaseTakeover`, or `LeaseGrantOptions`; renew, settle, release) plus `FenceAsync(lease, ct)`, which throws `StaleLeaseException` rather than returning a status, and `ClaimExpiredAsync(kind, after = null, ct)` → `ExpiredLease?`, one sweep claim inside the unit.
 - `unit.Leases` throws `InvalidOperationException` naming `AddHeadlessFencing` when no provider registered the feature.
 - Leases on a consumer's own row: `FencedRow<TKey>`, `FencedRowGrantResult<TKey>`, `RowLeaseState`, `RowLeaseSnapshot`, `RowLeaseTransition<TStatus>`, and the pure `RowLeaseRules` (`Grant`, `Renew`, `Settle`, `Release`, `Revoke`, `Judge`, `AbandonIfExpired`; every decision that depends on expiry takes an explicit `now`). See [Lease on your own row](#lease-on-your-own-row).
@@ -396,7 +395,7 @@ Reference it from code that grants, renews, or fences leases. Registration lives
 
 ## Headless.Fencing
 
-Registration, key resolution, and the provider seam.
+Registration, key resolution, the read-only lease inspector, and the provider seam.
 
 ### Setup
 
@@ -419,6 +418,7 @@ Applications reach it through a provider package; call `AddHeadlessFencing` as s
 
 - `AddHeadlessFencing` requires exactly one `Use…` provider call and throws when there are none, several, or it is called twice.
 - It registers `IFencedLeases`, `IFencedLeaseInspector`, and `IUnitOfWorkLeases` as singletons. When the host registered no `ICurrentTenant`, it registers the async-local one, so `ICurrentTenant.Change(...)` changes the tenant a grant sees.
+- `IFencedLeaseInspector`: `ListAsync(query, after, pageSize, ct)` → `FencedLeasePage(Items, Next)`, `GetAsync(tenantId, kind, resource, ct)` → `LeaseSnapshot?`, `ListKindsAsync(ct)` → `IReadOnlyList<string>`, and `CountAsync(query, ct)` → `FencedLeaseCounts`. `FencedLeaseQuery` carries `Tenant` (`LeaseTenantFilter`), `Kind`, `ResourcePrefix`, and `State` (`FencedLeaseStateFilter`); `FencedLeasePosition(TenantId, Kind, Resource)` is the page cursor. See [Inspect leases](#inspect-leases).
 - `ILeaseStore` is the provider seam. Applications do not call it; see [For store authors](#for-store-authors).
 - The relational providers share one lease store; see [Headless.Fencing.Sql](#headlessfencingsql).
 

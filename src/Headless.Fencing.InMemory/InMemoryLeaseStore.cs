@@ -552,17 +552,18 @@ internal sealed class InMemoryLeaseStore(
     private static LeaseSnapshot _Snapshot(LeaseKey key, InMemoryLease row, DateTimeOffset now)
     {
         // The progress bytes stay in the store: an operator view gets their size and contract only.
-        return new LeaseSnapshot(
-            key.ToLease(row.Generation),
-            _Classify(row, row.Generation, now),
-            row.ExpiresAt,
-            row.Holder,
-            row.TakeoverCount,
-            row.GrantedAt,
-            row.EndedAt,
-            row.Progress?.Payload.Length,
-            row.Progress?.Contract
-        );
+        return new LeaseSnapshot
+        {
+            Lease = key.ToLease(row.Generation),
+            Status = _Classify(row, row.Generation, now),
+            ExpiresAt = row.ExpiresAt,
+            Holder = row.Holder,
+            TakeoverCount = row.TakeoverCount,
+            GrantedAt = row.GrantedAt,
+            EndedAt = row.EndedAt,
+            ProgressSizeBytes = row.Progress?.Payload.Length,
+            ProgressContract = row.Progress?.Contract,
+        };
     }
 
     #endregion

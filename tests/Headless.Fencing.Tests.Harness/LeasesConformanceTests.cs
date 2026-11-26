@@ -5,6 +5,7 @@ using System.Data;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Tests;
@@ -1955,15 +1956,22 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
             AbortToken
         );
 
-        var capped = await host.Inspector.CountAsync(new FencedLeaseQuery { Kind = kind }, cap: 2, AbortToken);
+        // The inspector always counts to LeaseCount.DefaultCap; the provider's store takes any cap, so a small one
+        // proves each state stops on its own without seeding ten thousand leases.
+        var store = host.Services.GetRequiredService<ILeaseStore>();
+        var filter = new LeaseListFilter(TenantId: null, kind, ResourcePrefix: null, FencedLeaseStateFilter.All);
+        var capped = await store.CountAsync(filter, cap: 2, AbortToken);
 
         capped.Live.Should().Be(new LeaseCount(2, Capped: true));
         capped.Expired.Should().Be(new LeaseCount(0, Capped: false));
         capped.Ended.Should().Be(new LeaseCount(2, Capped: false), "a capped live count never hides the ended count");
         capped.Total.Should().Be(new LeaseCount(4, Capped: true));
 
-        var exact = await host.Inspector.CountAsync(new FencedLeaseQuery { Kind = kind }, cap: 3, AbortToken);
+        var exact = await store.CountAsync(filter, cap: 3, AbortToken);
         exact.Live.Should().Be(new LeaseCount(3, Capped: false));
+
+        var byInspector = await host.Inspector.CountAsync(new FencedLeaseQuery { Kind = kind }, AbortToken);
+        byInspector.Total.Should().Be(new LeaseCount(5, Capped: false));
     }
 
     public virtual async Task should_refuse_an_invalid_inspection_before_reading()
@@ -2011,14 +2019,6 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
             .Awaiting(async () => await host.Inspector.GetAsync("", "k", "r", AbortToken))
             .Should()
             .ThrowAsync<ArgumentException>();
-        await FluentActions
-            .Awaiting(async () => await host.Inspector.CountAsync(query, cap: 0, AbortToken))
-            .Should()
-            .ThrowAsync<ArgumentOutOfRangeException>();
-        await FluentActions
-            .Awaiting(async () => await host.Inspector.CountAsync(query, cap: int.MaxValue, AbortToken))
-            .Should()
-            .ThrowAsync<ArgumentOutOfRangeException>("the store reads one lease past the cap");
         await FluentActions
             .Awaiting(async () =>
                 await host.Inspector.ListAsync(query with { ResourcePrefix = " r" }, null, 10, AbortToken)

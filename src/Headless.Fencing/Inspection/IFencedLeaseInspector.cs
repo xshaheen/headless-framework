@@ -79,25 +79,18 @@ public interface IFencedLeaseInspector
 
     /// <summary>
     /// Counts the leases <paramref name="query" /> matches by state (live, expired, ended), each stopping at
-    /// <paramref name="cap" />, in one statement judged on one database clock instant.
+    /// <see cref="LeaseCount.DefaultCap" />, in one statement judged on one database clock instant.
     /// </summary>
     /// <remarks>
-    /// The query's <see cref="FencedLeaseQuery.State" /> keeps only that state's count; the others are zero. The store
-    /// reads at most one lease past the cap per state, so a count costs no more than the cap.
+    /// The query's <see cref="FencedLeaseQuery.State" /> keeps only that state's count; the others are zero. Each
+    /// state stops returning rows after one past the cap, which proves the count is capped. The database may still
+    /// scan rows of other states to find those, so counting a rare state over a large table is not free.
     /// </remarks>
     /// <param name="query">The leases to count.</param>
-    /// <param name="cap">The cap of each count.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
     /// <returns>The capped counts.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="query" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentException">A filter names a tenant, kind, or resource no lease can have.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="cap" /> is not positive, or is <see cref="int.MaxValue" />.
-    /// </exception>
     /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">The query's state is not a defined value.</exception>
-    ValueTask<FencedLeaseCounts> CountAsync(
-        FencedLeaseQuery query,
-        int cap = LeaseCount.DefaultCap,
-        CancellationToken cancellationToken = default
-    );
+    ValueTask<FencedLeaseCounts> CountAsync(FencedLeaseQuery query, CancellationToken cancellationToken = default);
 }
