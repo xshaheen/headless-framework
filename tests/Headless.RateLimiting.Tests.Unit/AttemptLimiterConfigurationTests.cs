@@ -2,6 +2,7 @@
 
 using Headless.RateLimiting;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -9,6 +10,96 @@ namespace Tests;
 
 public sealed class AttemptLimiterConfigurationTests : TestBase
 {
+    private static readonly string _SubjectKey = Convert.ToBase64String(new byte[32]);
+
+    [Fact]
+    public void should_expose_the_purposes_declared_in_code()
+    {
+        // given
+        var quota = new AttemptQuota(5, TimeSpan.FromMinutes(15));
+        var services = new ServiceCollection();
+        services.AddAttemptLimiter(options =>
+        {
+            options.SubjectKey = _SubjectKey;
+            options.Purposes["sign-in.password"] = quota;
+            options.Purposes["password-reset:email"] = new AttemptQuota(3, TimeSpan.FromHours(1));
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var purposes = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>().Value.Purposes;
+
+        // then
+        purposes.Keys.Should().BeEquivalentTo("sign-in.password", "password-reset:email");
+        purposes["sign-in.password"].Should().Be(quota);
+    }
+
+    [Fact]
+    public void should_bind_declared_purposes_from_configuration()
+    {
+        // given
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["SubjectKey"] = _SubjectKey,
+                    ["Purposes:otp.verify:Limit"] = "5",
+                    ["Purposes:otp.verify:Window"] = "00:10:00",
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddAttemptLimiter(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var purposes = provider.GetRequiredService<IOptions<AttemptLimiterOptions>>().Value.Purposes;
+
+        // then
+        purposes.Should().ContainKey("otp.verify");
+        purposes["otp.verify"].Should().Be(new AttemptQuota(5, TimeSpan.FromMinutes(10)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_refuse_a_blank_declared_purpose(string purpose)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddAttemptLimiter(options =>
+        {
+            options.SubjectKey = _SubjectKey;
+            options.Purposes[purpose] = new AttemptQuota(5, TimeSpan.FromMinutes(1));
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<AttemptLimiterOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*must not be blank*");
+    }
+
+    [Fact]
+    public void should_refuse_a_declared_purpose_without_a_quota()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddAttemptLimiter(options =>
+        {
+            options.SubjectKey = _SubjectKey;
+            options.Purposes["otp.verify"] = null!;
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<AttemptLimiterOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*needs a quota*");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not base64!")]

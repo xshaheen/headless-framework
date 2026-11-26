@@ -27,6 +27,10 @@ The framework ships no edge limiter: which endpoints get which limits, and who c
 - Call `ResetAsync` only after the guarded state change is committed, such as after a verification code is consumed. Resetting earlier lets a caller replay a half-finished verification without limit.
 - Do not catch and ignore cache exceptions from `AcquireAsync`. They propagate so the guarded operation fails closed.
 - Pass the quota on every call. Read it from options or settings each time rather than caching an `AttemptQuota` for the process lifetime; a changed limit then applies on the next attempt.
+- Declare every purpose and its quota in `AttemptLimiterOptions.Purposes`, and read the quota from there when you acquire. An operator screen then lists the same purposes and quotas the flows enforce.
+- To inspect a budget, call `PeekAsync`, never `AcquireAsync`. `AcquireAsync` charges an attempt even when you only want to look.
+- Expose `ResetAsync(purpose, subject, quota)` only behind operator authorization, and audit each call with the purpose and the fingerprint. It lifts brute-force protection for that subject until the window ends. In application flows, reset with `ResetAsync(attempt)` instead.
+- Show or log a subject's `AttemptSubjectFingerprinter.Compute(purpose, subject)` result, never the subject. Do not reimplement the HMAC: the fingerprinter is the derivation the counter keys use.
 - Load `SubjectKey` from a secret store. Rotating it starts every budget over.
 - At the HTTP edge, call `options.UseHeadlessProblemDetails()` inside `AddRateLimiter`. Without it, a rejection is ASP.NET Core's default 503 with no `Retry-After` header and no `g:rate_limit_exceeded` code.
 - Place `app.UseRateLimiter()` after `UseAuthentication()`, so a partition can read claims, and before `UseAuthorization()`, `UseHeadlessTenancy()`, and `UseHeadlessHttpIdempotency()`, so unauthenticated floods and idempotent replays are counted. When the app calls `UseRouting()` itself, put the limiter after it; partitions keyed by endpoint metadata need the selected endpoint.
@@ -53,6 +57,10 @@ Replicas read their own clocks. Right at a window boundary, a replica whose cloc
 ### Every attempt is charged
 
 `AcquireAsync` increments before it compares, and it counts refused attempts too. A caller who keeps guessing past the limit does not earn allowance back by failing, and concurrent attempts across replicas cannot both take the last permit.
+
+### Inspecting and lifting a budget
+
+`PeekAsync(purpose, subject, quota)` reads the current window's counter and charges nothing. It returns an `AttemptSnapshot`. `ResetAsync(purpose, subject, quota)` deletes the current window's counter, so the next attempt counts from one. Both find the counter the same way `AcquireAsync` does, from the purpose, the fingerprint, and the quota's window. Pass the quota the flow acquires with: a different `Window` selects a different counter, so the read finds nothing.
 
 ## HTTP Edge Limits
 
@@ -183,7 +191,7 @@ public sealed class SendLoginCodeHandler(IAttemptLimiter limiter, ISmsSender sms
 }
 ```
 
-**Verify:** the host start throws `MissingRequiredServiceException` when the cache the limiter counts in is not registered, and throws `OptionsValidationException` when `SubjectKey` is not base64 for at least 32 bytes. In a test, call `AcquireAsync` `limit + 1` times with one purpose and subject: the last result has `IsAllowed` `false` and `Remaining` 0. An unreachable store does not fail the start; the first attempt throws `AttemptLimiterUnavailableException`.
+**Verify:** the host start throws `MissingRequiredServiceException` when the cache the limiter counts in is not registered, and throws `OptionsValidationException` when `SubjectKey` is not base64 for at least 32 bytes or a declared purpose is blank. In a test, call `AcquireAsync` `limit + 1` times with one purpose and subject: the last result has `IsAllowed` `false` and `Remaining` 0. An unreachable store does not fail the start; the first attempt throws `AttemptLimiterUnavailableException`.
 
 For a verification flow, keep the result and reset once the code is consumed:
 
@@ -196,6 +204,55 @@ attempt.ThrowIfRejected();
 await limiter.ResetAsync(attempt, cancellationToken);
 ```
 
+Declare the purposes the app uses, then look a subject up and lift a lockout from an operator endpoint:
+
+```csharp
+builder.Services.AddAttemptLimiter(options =>
+{
+    options.SubjectKey = builder.Configuration["AttemptLimiter:SubjectKey"]!;
+    options.Purposes["sign-in.password"] = new AttemptQuota(limit: 5, window: TimeSpan.FromMinutes(15));
+    options.Purposes["otp.verify"] = new AttemptQuota(limit: 5, window: TimeSpan.FromMinutes(10));
+});
+```
+
+```json
+{
+  "AttemptLimiter": {
+    "Purposes": {
+      "password-reset": { "Limit": 3, "Window": "01:00:00" }
+    }
+  }
+}
+```
+
+```csharp
+public sealed class AttemptBudgetOperator(IAttemptLimiter limiter, IOptions<AttemptLimiterOptions> options)
+{
+    public async Task<AttemptSnapshot?> LookUpAsync(string purpose, string subject, CancellationToken cancellationToken)
+    {
+        if (!options.Value.Purposes.TryGetValue(purpose, out var quota))
+        {
+            return null; // Map to 404 or 400 at the HTTP boundary.
+        }
+
+        return await limiter.PeekAsync(purpose, subject, quota, cancellationToken);
+    }
+
+    // Call only for an authorized operator, and write an audit record with the purpose and snapshot fingerprint.
+    public async Task<bool?> LiftAsync(string purpose, string subject, CancellationToken cancellationToken)
+    {
+        if (!options.Value.Purposes.TryGetValue(purpose, out var quota))
+        {
+            return null; // Map to 404 or 400 at the HTTP boundary.
+        }
+
+        return await limiter.ResetAsync(purpose, subject, quota, cancellationToken);
+    }
+}
+```
+
+**Verify:** in a test, acquire `limit + 1` times, then `PeekAsync` returns `IsLockedOut` `true` and `Count` `limit + 1`. A second `PeekAsync` returns the same count. After `ResetAsync(purpose, subject, quota)` returns `true`, the next `AcquireAsync` has `Count` 1.
+
 ### Configuration
 
 | Option | Default | Meaning |
@@ -203,6 +260,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 | `SubjectKey` | required | Base64 secret of at least 32 bytes. Subjects are HMAC-SHA256'd with it before they reach a cache key. |
 | `KeyPrefix` | `attempts` | First segment of every counter key. Change it when applications share one cache. Environments that share one cache need no change: the cache puts the host-wide `Headless:Prefix` in front of every key ([Isolation prefix](utilities.md#isolation-prefix)). |
 | `CacheName` | `null` | Named cache instance (`setup.AddNamed(name, ...)`) that holds the counters; `null` uses the registered `IRemoteCache` when there is one, otherwise the default `ICache`. An empty or blank name fails options validation. |
+| `Purposes` | empty | The purposes the app acquires with and each one's `AttemptQuota`, keyed by purpose with ordinal comparison. Informational: the limiter still accepts an undeclared purpose. Configuration binds each entry's `Limit` and `Window`. A purpose containing `:` cannot be a configuration key, so declare it in code. A blank purpose or a missing quota fails options validation, and an invalid `Limit` or `Window` fails when the options bind. |
 
 ### Design and runtime behavior
 
@@ -212,5 +270,9 @@ await limiter.ResetAsync(attempt, cancellationToken);
 - Cache keys have the shape `{KeyPrefix}:v1:{purpose}:{windowSeconds}:{windowNumber}:{fingerprint}`. The fingerprint is a base64url HMAC of the purpose and subject, so the same subject yields unrelated fingerprints under different purposes.
 - With `CacheName` `null` on a hybrid host (`AddRedisTier` plus `UseHybrid`), the counters go straight to the registered `IRemoteCache`, not through the hybrid, so an attempt adds no local-tier write or invalidation broadcast. A hybrid whose remote tier is only a named instance (`RemoteCacheName`) registers no `IRemoteCache`, so the limiter counts through the hybrid. Set `CacheName` to the remote instance's name to skip it.
 - The startup check looks only at the registration: the default `ICache` when `CacheName` is `null`, otherwise the keyed `ICache` under that name. It makes no round trip to the store. A missing registration throws `MissingRequiredServiceException` naming the `AddNamed` call to add.
-- A cache failure in `AcquireAsync` or `ResetAsync` throws `AttemptLimiterUnavailableException` (`Purpose`, and the store's exception as `InnerException`). Its message names only the purpose, never the server or the counter key, so you can return it as is. It derives from `Headless.ServiceUnavailableException`, so with `Headless.Api` problem details registered it maps to 503 with `Cache-Control: no-store` and no `Retry-After`. The caller's own cancellation still surfaces as `OperationCanceledException`.
-- `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. A custom `IAttemptLimiter` puts its own reset state in the token.
+- `AttemptSnapshot` reports `Purpose`, `Fingerprint`, `Count` (refused attempts included, so it can exceed `Limit`), `Limit`, `Remaining`, `IsLockedOut` (`Count >= Limit`, so the next attempt is refused), `WindowStartsAt`, `WindowEndsAt`, and `RetryAfter`. It never carries the subject.
+- `PeekAsync` is a plain read. It creates no counter for a subject with no attempts, and it does not move the counter's expiry. When the counters go through a hybrid cache (no `IRemoteCache` and no `CacheName`), a peek can read this replica's local copy and lag an attempt made on another replica until the invalidation arrives. The hybrid also turns a failed remote read into a miss, so the peek reports `Count` 0 instead of throwing, and it reports a remote removal it could only queue for replay as done, so `ResetAsync` returns `true` before the lockout is lifted. Set `CacheName` to the remote instance before you expose peek or reset to an operator.
+- `ResetAsync(purpose, subject, quota)` removes only the current window's counter and returns `false` when there was none. Earlier windows have already closed.
+- `AttemptSubjectFingerprinter` is registered as a singleton. `Compute(purpose, subject)` returns the 43-character base64url HMAC-SHA256 that ends every counter key. The same subject has a different fingerprint under each purpose, and rotating `SubjectKey` changes every fingerprint.
+- A cache failure in `AcquireAsync`, `PeekAsync`, or either `ResetAsync` throws `AttemptLimiterUnavailableException` (`Purpose`, and the store's exception as `InnerException`). Its message names only the purpose, never the server or the counter key, so you can return it as is. It derives from `Headless.ServiceUnavailableException`, so with `Headless.Api` problem details registered it maps to 503 with `Cache-Control: no-store` and no `Retry-After`. The caller's own cancellation still surfaces as `OperationCanceledException`.
+- `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. Stub `PeekAsync` the same way with `new AttemptSnapshot(...)`. A custom `IAttemptLimiter` implements all four members and puts its own reset state in the token.
