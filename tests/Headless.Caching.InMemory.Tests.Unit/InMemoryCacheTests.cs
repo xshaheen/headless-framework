@@ -81,6 +81,7 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(DateTime?),
                 typeof(DateTime?),
                 typeof(long),
+                typeof(long),
             ],
             modifiers: null
         );
@@ -106,6 +107,7 @@ public sealed class InMemoryCacheTests : TestBase
             null,
             null,
             -1L,
+            0L,
         ]);
 #pragma warning disable REFL009 // ConcurrentDictionary indexer is reached through runtime reflection.
         memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
