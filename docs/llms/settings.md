@@ -73,7 +73,7 @@ The built-in providers, from lowest to highest priority:
 | `Tenant` | the stored value for the current tenant, or the tenant id you pass | yes |
 | `User` | the stored value for the current user, or the user id you pass | yes |
 
-`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A read that names a provider starts at that provider and falls back to every provider below it.
+`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A read that names a provider starts at that provider and falls back to every provider below it. An empty string is a value, not a gap: a configuration source added later that sets `Settings:<name>` to `""` overrides an earlier source, also through `AddConfiguration` (chained configuration), and `GetAsync` returns `""` instead of the definition's `DefaultValue`. To fall back, remove the key instead of setting it to `""`.
 
 Place a custom provider with one of two calls. Both work whether they run before or after `AddHeadlessSettings`:
 

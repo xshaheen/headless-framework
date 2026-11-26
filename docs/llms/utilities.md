@@ -902,6 +902,8 @@ services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("Ap
 
 **Verify:** with an invalid value, the host start and `dotnet MyApp.dll describe` both fail with an `OptionsValidationException` that names the failed rule.
 
+An empty string in configuration is a value: a source added later that sets a key to `""` overrides an earlier source, also through `AddConfiguration`, so the bound property becomes `""` and a `NotEmpty` rule fails the start. Remove the key to keep the earlier value.
+
 In a trimmed or native AOT application, use the `Action<TOptions>` overloads. The overloads that bind an `IConfiguration` (`Configure*`, `GetOptions`, `GetRequired`) or validate with data annotations carry `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so the compiler warns at the call site.
 
 ### Service registration helpers
@@ -932,6 +934,7 @@ services.TryDecorateKeyedWith<IService>("reports", (inner, sp) => new LoggingSer
 - A decorator that returns a different instance owns disposing the inner one, because the container tracks only what the factory returns.
 - Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed.
 - `TryDecorateKeyedWith` does not decorate a `KeyedService.AnyKey` registration.
+- Disposing a scope or the provider disposes every tracked service even when one throws. One failure rethrows as it is; two or more throw one `AggregateException` with each failure in `InnerExceptions`. Catch both shapes around `Dispose` or `DisposeAsync`, because a `catch` for a service's own exception type misses the aggregate.
 
 ---
 
