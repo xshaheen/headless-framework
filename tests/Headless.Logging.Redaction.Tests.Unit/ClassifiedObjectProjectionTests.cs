@@ -461,6 +461,161 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     }
 
     [Fact]
+    public void should_print_a_placeholder_when_a_value_text_throws_inside_a_projection()
+    {
+        // given: a record with a classified member beside a value whose ToString throws
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Profile}", new Profile(_Email, new Exploding()));
+
+        // then: the whole value is withheld, and the entry is still logged
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw {typeof(Profile)} (redaction failed: InvalidOperationException)");
+    }
+
+    [Fact]
+    public void should_print_a_placeholder_when_a_classified_name_holds_a_sequence_that_throws()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(
+            sink,
+            static setup => setup.ClassifyProperty("Rows", HeadlessDataClassifications.Private)
+        );
+
+        // when
+        _Logger(provider).LogInformation("Saw {Rows}", new ThrowingSequence());
+
+        // then
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw {typeof(ThrowingSequence)} (redaction failed: InvalidOperationException)");
+    }
+
+    [Fact]
+    public void should_not_run_the_factory_of_a_lazy_value()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var created = 0;
+        var next = new Lazy<Customer>(() =>
+        {
+            created++;
+
+            return new Customer(_Email, "gold");
+        });
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Pending}", new Pending(next));
+
+        // then
+        created.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be($"Saw Pending {{ Next = {next.GetType()} }}");
+    }
+
+    [Fact]
+    public void should_not_read_the_navigations_of_an_entity_that_loads_them_lazily()
+    {
+        // given: an entity shaped the way EF Core injects its lazy loader, whose navigation getter runs a query
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var order = new LazyOrder();
+
+        // when
+        _Logger(provider).LogInformation("Saw {@Order}", order);
+
+        // then
+        order.Loads.Should().Be(0);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Be("Saw " + typeof(LazyOrder));
+    }
+
+    [Fact]
+    public void should_run_each_getter_once_per_log_call()
+    {
+        // given: a classified member two levels down, below a getter each level re-checks
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var tracker = new Tracker();
+
+        // when
+        _Logger(provider).LogInformation("Saw {Outer}", new Outer(new Inner(tracker, _Email)));
+
+        // then
+        tracker.Reads.Should().Be(1);
+        sink.Entries.Should()
+            .ContainSingle()
+            .Which.Text.Should()
+            .Be($"Saw Outer {{ Inner = Inner {{ Tracker = {typeof(Tracker)}, Email = ***** }} }}");
+    }
+
+    [Fact]
+    public void should_stop_reading_values_past_the_budget_of_one_log_call()
+    {
+        // given: 100 branches of 100 values each, none classified, each value read through a getter
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var tally = new Tally();
+        List<object> branches = [];
+
+        for (var i = 0; i < 100; i++)
+        {
+            List<object> leaves = [];
+
+            for (var j = 0; j < 100; j++)
+            {
+                leaves.Add(new Counted(tally));
+            }
+
+            branches.Add(new Branch(leaves));
+        }
+
+        // when
+        _Logger(provider).LogInformation("Saw {Tree}", new Branch(branches));
+
+        // then: the walk gave up well before reading every value, and the unread part prints as type names
+        tally.Reads.Should().BeLessThan(5_000);
+        sink.Entries.Should().ContainSingle().Which.Text.Should().Contain(typeof(List<object>).ToString());
+    }
+
+    [Fact]
+    public void should_cut_the_text_of_one_projection_at_the_budget()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var body = new string('x', 40_000);
+
+        // when
+        _Logger(provider).LogInformation("Saw {Note}", new Note(_Email, body));
+
+        // then
+        var text = sink.Entries.Should().ContainSingle().Subject.Properties["Note"].Should().BeOfType<string>().Subject;
+        text.Should().HaveLength((32 * 1024) + "...".Length);
+        text.Should().StartWith("Note { Email = *****, Body = xxx").And.EndWith("x...");
+    }
+
+    [Fact]
+    public void should_let_an_out_of_memory_failure_through()
+    {
+        // given
+        using var sink = new CapturingProvider();
+        using var provider = _Build(sink);
+        var logger = _Logger(provider);
+
+        // when
+        var log = () => logger.LogInformation("Saw {Batch}", new Batch(new StarvedCollection()));
+
+        // then
+        log.Should().Throw<OutOfMemoryException>();
+    }
+
+    [Fact]
     public void should_pass_a_collection_of_unclassified_values_through_as_the_same_instance()
     {
         // given: a collection can be read again, so the provider keeps the original value
@@ -689,15 +844,20 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
     private static ILogger _Logger(IServiceProvider provider) =>
         provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
 
-    private static ServiceProvider _Build(CapturingProvider sink)
+    private static ServiceProvider _Build(
+        CapturingProvider sink,
+        Action<HeadlessRedactionSetupBuilder>? configure = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.ClearProviders().AddProvider(sink));
         services.AddHeadlessRedaction(setup =>
+        {
             setup.ConfigureRedaction(static redaction =>
                 redaction.SetRedactor<StarRedactor>(new DataClassificationSet(HeadlessDataClassifications.Private))
-            )
-        );
+            );
+            configure?.Invoke(setup);
+        });
 
         return services.BuildServiceProvider();
     }
@@ -773,6 +933,89 @@ public sealed partial class ClassifiedObjectProjectionTests : TestBase
         public required string Email { get; init; }
 
         public string Broken => throw new InvalidOperationException("boom");
+    }
+
+    public sealed record Profile([property: PrivateData] string Email, Exploding Badge);
+
+    public sealed class Exploding
+    {
+#pragma warning disable CA1065 // The fixture is a broken type on purpose: the test proves its throwing ToString cannot fail a log call.
+        public override string ToString() => throw new InvalidOperationException("The badge cannot be printed.");
+#pragma warning restore CA1065
+    }
+
+    public sealed record Pending(Lazy<Customer> Next);
+
+    // Shaped like an EF Core entity that takes the lazy-loading delegate through its constructor.
+    public sealed class LazyOrder
+    {
+#pragma warning disable CA1823, RCS1213 // Never called: it marks the entity the way EF Core's constructor injection does.
+        private readonly Action<object, string> _lazyLoader = static (_, _) => { };
+#pragma warning restore CA1823, RCS1213
+
+        public int Loads { get; private set; }
+
+        public Customer Customer
+        {
+            get
+            {
+                Loads++;
+
+                return new Customer(_Email, "gold");
+            }
+        }
+    }
+
+    public sealed record Outer(Inner Inner);
+
+    public sealed record Inner(Tracker Tracker, [property: PrivateData] string Email);
+
+    public sealed class Tracker
+    {
+        public int Reads { get; private set; }
+
+        public object Value
+        {
+            get
+            {
+                Reads++;
+
+                return "tracked";
+            }
+        }
+    }
+
+    public sealed record Branch(List<object> Children);
+
+    public sealed class Tally
+    {
+        public int Reads { get; set; }
+    }
+
+    public sealed class Counted(Tally tally)
+    {
+        public object Value
+        {
+            get
+            {
+                tally.Reads++;
+
+                return "leaf";
+            }
+        }
+    }
+
+    public sealed record Note([property: PrivateData] string Email, string Body);
+
+    public sealed class StarvedCollection : IReadOnlyCollection<object>
+    {
+        public int Count => 1;
+
+#pragma warning disable MA0012 // The test proves an out-of-memory failure is never swallowed, so it must raise one.
+        public IEnumerator<object> GetEnumerator() => throw new OutOfMemoryException();
+#pragma warning restore MA0012
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     public sealed record Store(IEnumerable<Customer> Rows);

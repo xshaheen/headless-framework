@@ -43,6 +43,14 @@ namespace Headless.Logging.Internal;
 /// <c>DbUpdateException</c>'s entries lead into graphs a provider never prints. A getter or an enumerator that throws
 /// prints a message naming the exception type and never fails the log call.
 /// </para>
+/// <para>
+/// Some types are never walked because reading their members has effects: a task's <c>Result</c> blocks, a
+/// <c>Lazy&lt;T&gt;</c>'s <c>Value</c> runs its factory, a cancellation token's <c>WaitHandle</c> allocates, and an EF Core
+/// context, an entry, or a lazy-loading entity runs queries from its getters. They print as their type name. Each getter
+/// runs at most once per log call, and one log call reads a bounded number of values and prints a bounded amount of text;
+/// past either budget a value prints as its type name. Anything else that throws during the walk turns the whole value into
+/// a placeholder naming the exception type.
+/// </para>
 /// </remarks>
 internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvider)
 {
@@ -52,6 +60,13 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     private const int _MaxElements = 100;
 
     private const string _Truncated = "...";
+
+    // One log call looks at this many values at most, so a wide graph costs a bounded walk rather than one that grows
+    // with the product of its collection sizes.
+    private const int _MaxVisits = 4096;
+
+    // One log call prints at most this much text; a value reached past it prints as its type name.
+    private const int _MaxChars = 32 * 1024;
 
     // Reflection metadata does not depend on the redactor provider, so it is shared across instances.
     private static readonly ConcurrentDictionary<Type, TypeShape> _Shapes = new();
@@ -101,13 +116,24 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         try
         {
-            if (!expand && !_Needs(value, 0, walk.Seen, projecting: null, walk.Reads))
+            if (!expand && !_Needs(value, 0, walk, inProjection: false))
             {
                 return false;
             }
 
             _Project(value, captured, 0, walk);
-            projection = walk.Builder.ToString();
+            var builder = walk.Builder;
+
+            // A single long member can overshoot the budget between checks; the text is cut there.
+            projection = builder.Length > _MaxChars ? builder.ToString(0, _MaxChars) + _Truncated : builder.ToString();
+
+            return true;
+        }
+#pragma warning disable CA1031 // A log call is the boundary: a value whose ToString, redactor, or metadata throws is replaced, never rethrown into the caller.
+        catch (Exception ex) when (RedactionFailure.IsContained(ex))
+#pragma warning restore CA1031
+        {
+            projection = RedactionFailure.Text(value, ex);
 
             return true;
         }
@@ -126,23 +152,16 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     /// <summary>Whether <paramref name="value"/> reaches a classified member.</summary>
     /// <param name="value">The value to look at.</param>
     /// <param name="depth">How far below the logged value it sits.</param>
-    /// <param name="seen">
-    /// The instances this walk already looked at. One met again adds nothing: the walk stops at the first classified
-    /// member or the depth cap, so a finished visit found neither, and an unfinished one is still being looked at
-    /// higher up.
+    /// <param name="walk">
+    /// The log call's walk. Its <see cref="Walk.Seen"/> set holds the instances this check already looked at: one met
+    /// again adds nothing, because the check stops at the first classified member or the depth cap, so a finished visit
+    /// found neither, and an unfinished one is still being looked at higher up.
     /// </param>
-    /// <param name="projecting">
-    /// The instances being projected around this value. One of them reached again does need projection here: printing
-    /// this value raw would print that instance raw.
+    /// <param name="inProjection">
+    /// The check runs inside a projection. An instance being projected around this value, reached again, does need
+    /// projection here: printing this value raw would print that instance raw.
     /// </param>
-    /// <param name="reads">The elements of each sequence this log call already read.</param>
-    private static bool _Needs(
-        object value,
-        int depth,
-        HashSet<object> seen,
-        HashSet<object>? projecting,
-        SequenceReads reads
-    )
+    private static bool _Needs(object value, int depth, Walk walk, bool inProjection)
     {
         var shape = _GetShape(value.GetType());
 
@@ -161,20 +180,26 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return true;
         }
 
-        if (projecting?.Contains(value) == true)
+        if (inProjection && walk.Projecting.Contains(value))
         {
             return true;
         }
 
-        if (!seen.Add(value))
+        if (!walk.Seen.Add(value))
         {
             return false;
+        }
+
+        // Past the budget nothing more is looked at, so the value may hold a classified member.
+        if (!walk.TrySpend())
+        {
+            return true;
         }
 
         if (shape.Kind == ShapeKind.Sequence)
         {
             // An enumerator that threw left elements unread, which may hold a classified member.
-            if (reads.Read((IEnumerable)value) is not { } items)
+            if (walk.Reads.Read((IEnumerable)value) is not { } items)
             {
                 return true;
             }
@@ -187,7 +212,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
             foreach (var item in items)
             {
-                if (item is not null && _Needs(item, depth + 1, seen, projecting, reads))
+                if (item is not null && _Needs(item, depth + 1, walk, inProjection))
                 {
                     return true;
                 }
@@ -203,9 +228,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 return true;
             }
 
-            if (!member.StaticallySafe && _TryGet(member.Member, value, out var nested) && nested is not null)
+            if (!member.StaticallySafe && _TryGet(member.Member, value, walk, out var nested) && nested is not null)
             {
-                if (_Needs(nested, depth + 1, seen, projecting, reads))
+                if (_Needs(nested, depth + 1, walk, inProjection))
                 {
                     return true;
                 }
@@ -303,7 +328,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             first = false;
             builder.Append(member.Member.Name).Append(" = ");
 
-            if (!_TryGet(member.Member, value, out var memberValue))
+            if (!_TryGet(member.Member, value, walk, out var memberValue))
             {
                 builder.Append(memberValue);
                 continue;
@@ -350,9 +375,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return;
         }
 
-        // Below the depth cap a value is not walked: a classified type is still redacted whole, and anything else
-        // prints as its type name, never through a ToString that could print a classified member.
-        if (depth > _MaxDepth && kind != ShapeKind.TypeClassified)
+        // Below the depth cap or past the budget a value is not walked: a classified type is still redacted whole, and
+        // anything else prints as its type name, never through a ToString that could print a classified member.
+        if ((depth > _MaxDepth || walk.Exhausted) && kind != ShapeKind.TypeClassified)
         {
             builder.Append(value.GetType().ToString());
 
@@ -366,7 +391,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     {
         walk.Seen.Clear();
 
-        return _Needs(value, depth, walk.Seen, walk.Projecting, walk.Reads);
+        return _Needs(value, depth, walk, inProjection: true);
     }
 
     // Logging renders a hole with the invariant culture; a span-formattable value is written straight into the builder.
@@ -443,8 +468,28 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     private static string _EnumeratorThrew(SequenceReads reads, object sequence) =>
         "The enumerator threw an exception: " + reads.Failure(sequence);
 
+    // A getter runs once per log call: the check and the projection see the same value, and a re-check of a subtree
+    // does not run its getters again.
+    private static bool _TryGet(MemberInfo member, object instance, Walk walk, out object? value)
+    {
+        var getters = walk.Getters;
+        var key = new GetterKey(instance, member);
+
+        if (getters.TryGetValue(key, out var read))
+        {
+            value = read.Value;
+
+            return read.Succeeded;
+        }
+
+        var succeeded = _Invoke(member, instance, out value);
+        getters[key] = new GetterRead(succeeded, value);
+
+        return succeeded;
+    }
+
     // A throwing getter becomes a value naming the exception type, so one bad member does not fail the log call.
-    private static bool _TryGet(MemberInfo member, object instance, out object? value)
+    private static bool _Invoke(MemberInfo member, object instance, out object? value)
     {
         try
         {
@@ -485,6 +530,11 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             return new TypeShape(ShapeKind.TypeClassified, typeClassifications, [], IsRecord: false);
         }
 
+        if (WalkLeaves.IsLeaf(type))
+        {
+            return TypeShape.Opaque;
+        }
+
         // Marked before any edge is followed, so a type reached again through its own element or member type ends the
         // walk instead of recursing; only the call that marked it unmarks it.
         var marked = inProgress.Add(type);
@@ -521,12 +571,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 return TypeShape.Safe;
             }
 
-            return new TypeShape(
-                _IsMaterialized(type) ? ShapeKind.Sequence : ShapeKind.Opaque,
-                TypeClassifications: null,
-                [],
-                IsRecord: false
-            );
+            return _IsMaterialized(type)
+                ? new TypeShape(ShapeKind.Sequence, TypeClassifications: null, [], IsRecord: false)
+                : TypeShape.Opaque;
         }
 
         var members = new List<MemberShape>();
@@ -645,6 +692,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         // Its Directory, Parent, and Root chain reaches the depth cap, and reading its members stats the file on every
         // log call; the provider prints the path it was created with.
         || typeof(FileSystemInfo).IsAssignableFrom(type)
+        // It holds no data of its own, and reading its WaitHandle allocates an event the token then keeps.
+        || type == typeof(CancellationToken)
         || (Nullable.GetUnderlyingType(type) is { } underlying && _IsScalar(underlying));
 
     // A logged Type, MethodInfo, or Assembly is a runtime subclass (RuntimeType, RuntimeMethodInfo, RuntimeAssembly), so
@@ -810,7 +859,10 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         /// <summary>A materialized collection, read once per log call.</summary>
         Sequence,
 
-        /// <summary>A sequence that is not a collection; it is never enumerated and prints as its type name.</summary>
+        /// <summary>
+        /// A sequence that is not a collection, or a type whose members have effects; it is never read and prints as its
+        /// type name.
+        /// </summary>
         Opaque,
         Members,
     }
@@ -824,6 +876,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
     {
         public static readonly TypeShape Safe = new(ShapeKind.Safe, TypeClassifications: null, [], IsRecord: false);
 
+        public static readonly TypeShape Opaque = new(ShapeKind.Opaque, TypeClassifications: null, [], IsRecord: false);
+
         /// <summary>
         /// A value captured as <c>{@Name}</c> prints its members: the type has some, and its ToString would print
         /// only its name.
@@ -833,6 +887,21 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
     // The elements a collection gave, or the name of the exception its enumerator threw.
     private readonly record struct SequenceRead(List<object?>? Items, string? Failure);
+
+    // One getter of one instance. The instance is compared by reference: a record's own Equals walks its members.
+    private readonly struct GetterKey(object instance, MemberInfo member) : IEquatable<GetterKey>
+    {
+        private readonly object _instance = instance;
+        private readonly MemberInfo _member = member;
+
+        public bool Equals(GetterKey other) => ReferenceEquals(_instance, other._instance) && _member == other._member;
+
+        public override bool Equals(object? obj) => obj is GetterKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(RuntimeHelpers.GetHashCode(_instance), _member);
+    }
+
+    private readonly record struct GetterRead(bool Succeeded, object? Value);
 
     // A public property or a public instance field.
     private sealed record MemberShape(MemberInfo Member, DataClassificationSet? Classifications, bool StaticallySafe);
@@ -881,7 +950,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
                 }
             }
 #pragma warning disable CA1031 // A log call is the boundary: whatever a collection's enumerator throws, the entry still logs with a placeholder.
-            catch (Exception ex)
+            catch (Exception ex) when (RedactionFailure.IsContained(ex))
 #pragma warning restore CA1031
             {
                 return new SequenceRead(Items: null, ex.GetType().Name);
@@ -913,7 +982,27 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         public SequenceReads Reads { get; } = new();
 
+        public Dictionary<GetterKey, GetterRead> Getters { get; } = [];
+
         public StringBuilder Builder { get; } = new();
+
+        private int _visits;
+
+        /// <summary>Whether the log call spent its budget of values or text.</summary>
+        public bool Exhausted => _visits >= _MaxVisits || Builder.Length >= _MaxChars;
+
+        /// <summary>Counts one more value looked at; returns whether the budget allowed it.</summary>
+        public bool TrySpend()
+        {
+            if (Exhausted)
+            {
+                return false;
+            }
+
+            _visits++;
+
+            return true;
+        }
 
         /// <summary>Clears every reference the walk held; returns whether it is small enough to keep.</summary>
         public bool TryReset()
@@ -921,11 +1010,14 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
             Seen.Clear();
             Projecting.Clear();
             Reads.Clear();
+            Getters.Clear();
             Builder.Clear();
+            _visits = 0;
 
             return Seen.EnsureCapacity(0) <= _MaxKeptInstances
                 && Projecting.EnsureCapacity(0) <= _MaxKeptInstances
                 && Reads.Capacity <= _MaxKeptInstances
+                && Getters.EnsureCapacity(0) <= _MaxKeptInstances
                 && Builder.Capacity <= _MaxKeptChars;
         }
     }
