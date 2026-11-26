@@ -158,6 +158,11 @@ public static class SetupSequencesSqlite
                 sp.GetRequiredService<TimeProvider>(),
                 guardIncrementOverflow: true
             ));
+            services.TryAddSingleton<ISequenceCounterReader>(sp => new RelationalSequenceCounterReader(
+                SqliteDialect.Instance,
+                sp.GetRequiredService<IOptions<SqliteSequencesOptions>>().Value,
+                sp.GetRequiredService<TimeProvider>()
+            ));
         }
     }
 }

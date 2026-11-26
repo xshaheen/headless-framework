@@ -160,6 +160,14 @@ public static class SetupSequencesSqlServer
                 sp.GetRequiredService<TimeProvider>(),
                 autocommitIncrement: SqlServerSequenceIncrement.Autocommit
             ));
+            services.TryAddSingleton<ISequenceCounterReader>(sp => new RelationalSequenceCounterReader(
+                SqlServerDialect.Instance,
+                sp.GetRequiredService<IOptions<SqlServerSequencesOptions>>().Value,
+                sp.GetRequiredService<TimeProvider>(),
+                // LOWER folds non-ASCII letters too; TRANSLATE under the binary key collation maps A-Z alone.
+                foldAsciiCase: static column =>
+                    $"TRANSLATE({column}, N'ABCDEFGHIJKLMNOPQRSTUVWXYZ', N'abcdefghijklmnopqrstuvwxyz')"
+            ));
         }
     }
 }
