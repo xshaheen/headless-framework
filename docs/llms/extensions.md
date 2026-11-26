@@ -306,7 +306,7 @@ var amount = new MoneyAmount(9.875m).GetRounded(); // 9.88 (MidpointRounding.ToE
 - **Results:** `ApiResult`, `ApiResult<T>`, `Result<TValue, TError>`, `Result<TError>`, the `ApiResultError` hierarchy, `ErrorDescriptor`, `ApiResultErrorBuilder`, and `ApiResultErrorCodes`. `Match`, `Map`, and `Bind` have `…Async` forms, including overloads that pass your cancellation token to the delegate.
 - **Generated primitives** (`IPrimitive<T>`): `UserId`, `AccountId`, `MoneyAmount`, `Month` (1 to 12), and `PhoneNumber`.
 - **Value objects:** `Money`, `GeoCoordinate` and `FullGeoCoordinate` (range-checked latitude and longitude, Haversine distance), `Range<T>` (inclusive and exclusive containment, overlap), `PreferredLocale`, and `TimeUnit` (duration strings).
-- **Paging:** `IndexPageRequest` and `IndexPage<T>` (offset), `ContinuationPageRequest` and `ContinuationPage<T>` (cursor), each with `Select` and `Where` projection; `PageMetadata`, `OrderBy`, `IHasOrderByRequest`, and `IHasMultiOrderByRequest`.
+- **Paging:** `IndexPageRequest` (a sealed request with required `Index` and `Size`, so JSON and model binding create it directly) and `IndexPage<T>` (offset), `ContinuationPageRequest` (a base class: derive your query from it) and `ContinuationPage<T>` (cursor), each with `Select` and `Where` projection; `PageMetadata`, `OrderBy`, `IHasOrderByRequest`, and `IHasMultiOrderByRequest`.
 - **Other:** `ExtraProperties` and `IHasExtraProperties`, `Locales` and `LocaleAttribute`, `AsyncEvent<T>`, `NameValue` and `NameValue<T>`, `File` and `Image`, and `TenantInformation`.
 
 ### Configuration
