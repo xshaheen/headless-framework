@@ -18,6 +18,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -235,11 +236,18 @@ def package_version_changes(base: str, file: str) -> set[str] | None:
 
 def resolved_packages(project: Project) -> set[str] | None:
     """Every package id the project's lock file resolves, directly or transitively, or None without a lock file."""
-    lock = REPO_ROOT / project.directory / "packages.lock.json"
+    packages = _lock_packages(project.directory.as_posix())
+    return set(packages) if packages is not None else None
+
+
+# Cached because module keys read the same lock files once per test module that compiles them.
+@functools.cache
+def _lock_packages(directory: str) -> frozenset[str] | None:
+    lock = REPO_ROOT / directory / "packages.lock.json"
     if not lock.is_file():
         return None
     data = json.loads(lock.read_text(encoding="utf-8"))
-    return {package.lower() for frameworks in data.get("dependencies", {}).values() for package in frameworks}
+    return frozenset(package.lower() for frameworks in data.get("dependencies", {}).values() for package in frameworks)
 
 
 def select_affected(
@@ -613,8 +621,17 @@ CATEGORIES = {
 }
 
 
-# Inputs every proof stage reads whatever the selection: the gate recipes, the proof tooling, and the build-wide files.
-INPUT_KEY_REPO_PATHS = ("Makefile", "scripts", "eng", "headless-framework.slnx", *sorted(GLOBAL_FILES))
+# Inputs every proof stage reads whatever the selection: the build-wide files and the shared build files under eng/.
+# The gate's own code (Makefile, scripts/) is not hashed. Most changes to it only speed a gate up or reword its output,
+# and hashing it made every such merge to main invalidate every open branch's proof. A tooling change that can turn a
+# verdict bumps PROOF_GATE_VERSION in the Makefile instead, which salts every key.
+INPUT_KEY_REPO_PATHS = ("eng", *sorted(GLOBAL_FILES))
+SOLUTION_FILE = "headless-framework.slnx"
+TEST_DISCIPLINE_BASELINE = "eng/test-discipline-baseline.txt"
+# Read only by check-layering, which no proof runs, or keyed per entry by digest_shared_inputs, so another branch's
+# entry in them leaves this proof valid. eng/expected-packages.txt stays in the key: a unit test compares the messaging
+# rows of that manifest with a project file, so its pass depends on the manifest.
+INPUT_KEY_EXCLUDED_FILES = {"eng/namespace-baseline.txt", TEST_DISCIPLINE_BASELINE}
 
 
 def build_closure(starts: list[str], projects: dict[str, Project]) -> set[str]:
@@ -640,6 +657,84 @@ def closure_input_paths(closure: set[str], projects: dict[str, Project]) -> set[
         for parent in project.directory.parents:
             paths.update((parent / name).as_posix() for name in SCOPED_BUILD_FILES)
     return paths
+
+
+def input_blobs(paths: set[str]) -> dict[str, str]:
+    """file_blobs for a key: drops the files digest_shared_inputs hashes per entry, and every central package file,
+    which digest_shared_inputs hashes narrowed to the packages the closure resolves."""
+    return {
+        file: blob
+        for file, blob in file_blobs(paths).items()
+        if file not in INPUT_KEY_EXCLUDED_FILES and PurePosixPath(file).name != "Directory.Packages.props"
+    }
+
+
+@functools.cache
+def _solution_entries() -> frozenset[str]:
+    return frozenset(solution_projects(REPO_ROOT / SOLUTION_FILE)) if (REPO_ROOT / SOLUTION_FILE).is_file() else frozenset()
+
+
+@functools.cache
+def _baseline_entries() -> tuple[str, ...]:
+    path = REPO_ROOT / TEST_DISCIPLINE_BASELINE
+    if not path.is_file():
+        return ()
+    return tuple(line for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#"))
+
+
+@functools.cache
+def _central_packages(file: str) -> tuple[str, str, dict[str, list[tuple[tuple[str, ...], str]]] | None]:
+    """A central package file's content hash, everything but its plain version entries, and its version map; the last
+    two are empty and None when the file does not parse, so the caller keys on the whole file."""
+    raw = (REPO_ROOT / file).read_bytes()
+    parsed = _canonical_props(raw.decode("utf-8", errors="replace"))
+    if parsed is None:
+        return hashlib.sha256(raw).hexdigest(), "", None
+    return hashlib.sha256(raw).hexdigest(), json.dumps(parsed[0]), parsed[1]
+
+
+def digest_shared_inputs(digest: "hashlib._Hash", closure: set[str], projects: dict[str, Project]) -> None:
+    """Hash the parts of the repository-wide files that reach CLOSURE.
+
+    The solution counts only for its entries of closure projects: a project added elsewhere builds nothing here. The
+    test-discipline baseline counts only for files under a closure project. A central package file counts whole for
+    everything but its plain <PackageVersion> entries, and for those only the packages a closure project's lock file
+    resolves; a closure project under it without a lock file keeps the whole file, because nothing says what it uses.
+    A version bump another branch needs therefore leaves this proof valid, as it already leaves `affected` alone.
+    """
+    entries = _solution_entries()
+    for key in sorted(closure):
+        if key in entries:
+            digest.update(f"solution\0{key}\n".encode())
+    directories = tuple(f"{projects[key].directory.as_posix()}/" for key in closure)
+    for line in _baseline_entries():
+        path = line.split(" ", 2)[-1]
+        if path.startswith(directories):
+            digest.update(f"baseline\0{line}\n".encode())
+    props = sorted(
+        {
+            (parent / "Directory.Packages.props").as_posix()
+            for key in closure
+            for parent in projects[key].directory.parents
+            if (REPO_ROOT / parent / "Directory.Packages.props").is_file()
+        }
+    )
+    for file in props:
+        whole, rest, versions = _central_packages(file)
+        scope = PurePosixPath(file).parent
+        resolved: set[str] | None = set()
+        for key in closure:
+            if scope == PurePosixPath(".") or scope in projects[key].path.parents:
+                packages = resolved_packages(projects[key])
+                if packages is None:
+                    resolved = None
+                    break
+                resolved.update(packages)
+        if versions is None or resolved is None:
+            digest.update(f"props\0{file}\0{whole}\n".encode())
+            continue
+        narrowed = {package: versions[package] for package in sorted(resolved & versions.keys())}
+        digest.update(f"props\0{file}\0{rest}\0{json.dumps(narrowed, sort_keys=True)}\n".encode())
 
 
 def file_blobs(paths: set[str]) -> dict[str, str]:
@@ -702,12 +797,14 @@ def input_key(out_dir: Path, projects: dict[str, Project], salt: str) -> str:
         for category in ("build_projects", "unit_tests", "integration_tests", "integration_unit_tests")
         for item in affected.get(category, [])
     ]
-    blobs = file_blobs(closure_input_paths(build_closure(starts, projects), projects))
+    closure = build_closure(starts, projects)
+    blobs = input_blobs(closure_input_paths(closure, projects))
     digest = hashlib.sha256()
     digest.update(salt.encode())
     selection = {key: value for key, value in affected.items() if key != "base"}
     digest.update(json.dumps(selection, sort_keys=True).encode())
     digest_files(digest, blobs)
+    digest_shared_inputs(digest, closure, projects)
     digest_test_settings(digest)
     merge_base = git_lines("merge-base", affected["base"], "HEAD")[0]
     patch = subprocess.run(
@@ -747,17 +844,22 @@ def docker_projects(out_dir: Path, projects: dict[str, Project]) -> list[str]:
     return needing
 
 
+# Every test module a gate may run: verify-affected runs unit_tests, test-affected-integration the integration lists.
+MODULE_KEY_CATEGORIES = ("unit_tests", "integration_tests", "integration_unit_tests")
+
+
 def module_keys(out_dir: Path, projects: dict[str, Project], salt: str) -> dict[str, str]:
-    """Hash, per selected integration and integration-unit test module, the inputs its own pass or fail depends on.
+    """Hash, per selected test module, the inputs its own pass or fail depends on.
 
     Unlike input_key, a module key leaves out the branch's patch and the rest of the selection: a module compiles and
     runs only its ProjectReference closure, so a review fix in another package leaves its key, and an earlier pass of
     it, valid. The changed-line coverage gate, which does read the patch, is computed fresh on every run.
     """
     affected = json.loads((out_dir / "affected.json").read_text(encoding="utf-8"))
-    modules = sorted({m for c in ("integration_tests", "integration_unit_tests") for m in affected.get(c, []) if m in projects})
-    paths_by_module = {module: closure_input_paths(build_closure([module], projects), projects) for module in modules}
-    blobs = file_blobs(set().union(*paths_by_module.values())) if modules else {}
+    modules = sorted({m for c in MODULE_KEY_CATEGORIES for m in affected.get(c, []) if m in projects})
+    closures = {module: build_closure([module], projects) for module in modules}
+    paths_by_module = {module: closure_input_paths(closures[module], projects) for module in modules}
+    blobs = input_blobs(set().union(*paths_by_module.values())) if modules else {}
     keys: dict[str, str] = {}
     for module, paths in paths_by_module.items():
         owned = {
@@ -768,6 +870,7 @@ def module_keys(out_dir: Path, projects: dict[str, Project], salt: str) -> dict[
         digest = hashlib.sha256()
         digest.update(f"{salt}\0{module}\n".encode())
         digest_files(digest, owned)
+        digest_shared_inputs(digest, closures[module], projects)
         digest_test_settings(digest)
         keys[module] = digest.hexdigest()
     return keys

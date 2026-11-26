@@ -306,10 +306,11 @@ AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
 			find "$$run/unit-tests" "$$run/integration-tests" "$$run/coverage-reused" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
 		else status=1; fi; \
 	fi;
-# Per-module reuse (test-affected-integration only). The whole-bundle reuse above needs every input to match, the
-# branch's patch included, so any review fix used to rerun every selected module. Each integration and integration-unit
-# module also gets a key over its own ProjectReference closure; a module whose key matches a module that passed in an
-# earlier integration bundle does not run again, and its TRX and coverage are carried into this bundle. The keys are
+# Per-module reuse (verify-affected and test-affected-integration). The whole-bundle reuse above needs every input to
+# match, the branch's patch included, so a review fix, or a rebase onto a main that changed one package, used to rerun
+# every selected module. Each unit, integration, and integration-unit module also gets a key over its own
+# ProjectReference closure; a module whose key matches a module that passed in an earlier bundle of the same gate does
+# not run again, and its TRX and coverage are carried into this bundle. The build and analyzer stages still run. The keys are
 # always written so this run's results can be reused later; PROOF_REUSE=false runs every module.
 AFFECTED_MODULE_REUSE_STAGE = $(GRAPH) module-keys --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)" || true; \
 	if [ "$(PROOF_REUSE)" = true ]; then $(PROOF) reuse-modules --dir "$$run" --root "$${run%/*}" --coverage "$$coverage" || true; fi;
@@ -333,10 +334,15 @@ AFFECTED_DASHBOARD_STAGE = $(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); \
 	done <<< "$$(changed_dashboards)";
 # A gate whose inputs match an earlier passing bundle of its kind reuses that bundle instead of running again, so a
 # message-only amend or a rebase onto a main that touched nothing the selection builds costs seconds, not a gate run.
-# The key (scripts/project-graph.py input-key) hashes the build closure's files, the build-wide files, the branch's
-# patch, the selection, and the settings below; any change to one runs every stage. PROOF_REUSE=false always runs.
+# The key (scripts/project-graph.py input-key) hashes the build closure's files, the build-wide files, the closure's
+# entries in the solution, the test-discipline baseline and the central package versions, the branch's patch, the
+# selection, and the settings below; any change to one runs every stage. PROOF_REUSE=false always runs.
 PROOF_REUSE ?= true
-PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,$(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
+# The gate's own code (this file, scripts/) is not in the key, so a tooling change that only speeds a gate up or rewords
+# its output leaves every open branch's proof valid. Bump this when a tooling change can turn a verdict: a new or
+# stricter stage, or a fix to a stage that passed what it should have failed. The bump reruns every gate once.
+PROOF_GATE_VERSION = 1
+PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,gate-v$(PROOF_GATE_VERSION) $(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
 # Sets `key` for the bundle in `run`, then exits the recipe with the reused bundle's report when one matches.
 PROOF_REUSE_STAGE = key="$$($(GRAPH) input-key --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)")" || key=""; \
 	if [ "$(PROOF_REUSE)" = true ] && $(PROOF) reuse --dir "$$run" --root "$${run%/*}" --key "$$key"; then $(PROOF_REPORT) "$$run"; exit 0; fi;
@@ -1267,6 +1273,7 @@ verify-affected: ## Format-check the changed files, then build and analyze the a
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
+	$(AFFECTED_MODULE_REUSE_STAGE) \
 	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_TEST_DISCIPLINE_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
