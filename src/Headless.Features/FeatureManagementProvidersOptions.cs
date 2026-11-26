@@ -24,9 +24,13 @@ public sealed class FeatureManagementProvidersOptions
 
     /// <summary>
     /// Ordered list of <see cref="IFeatureValueReadProvider"/> implementation types consulted when resolving a
-    /// feature's effective value for a given subject.
+    /// feature's effective value for a given subject, lowest priority first.
     /// </summary>
-    public TypeList<IFeatureValueReadProvider> ValueProviders { get; } = [];
+    /// <remarks>
+    /// The list starts with the built-in chain (DefaultValue, Edition, Tenant), so a <c>Configure</c> callback sees
+    /// it whether it was registered before or after <c>AddHeadlessFeatures</c>.
+    /// </remarks>
+    public TypeList<IFeatureValueReadProvider> ValueProviders { get; } = _CreateBuiltInChain();
 
     /// <summary>
     /// Names of features that have been removed from the application and should be deleted from the dynamic store
@@ -39,4 +43,14 @@ public sealed class FeatureManagementProvidersOptions
     /// store (along with all their features) on the next save.
     /// </summary>
     public HashSet<string> DeletedFeatureGroups { get; } = [];
+
+    private static TypeList<IFeatureValueReadProvider> _CreateBuiltInChain()
+    {
+        var providers = new TypeList<IFeatureValueReadProvider>();
+        providers.Add<DefaultValueFeatureValueProvider>();
+        providers.Add<EditionFeatureValueProvider>();
+        providers.Add<TenantFeatureValueProvider>();
+
+        return providers;
+    }
 }
