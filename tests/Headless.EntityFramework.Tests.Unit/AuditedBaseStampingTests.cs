@@ -8,6 +8,7 @@ using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 
@@ -45,6 +46,85 @@ public sealed class AuditedBaseStampingTests : TestBase
         saved.CreatedById.Should().Be(_currentUser.UserId);
         saved.UpdatedAt.Should().BeNull();
         saved.UpdatedById.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Rows))]
+    public async Task should_leave_creator_null_and_stamp_created_at_when_created_by_id_stamp_skipped(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var skipped = _Create(kind);
+        var stamped = _Create(kind);
+        db.Add(skipped).SkipCreatedByIdStamp();
+        db.Add(stamped);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var savedSkipped = await harness.ReloadAsync(skipped);
+        savedSkipped.CreatedAt.Should().Be(_Start);
+        savedSkipped.CreatedById.Should().BeNull();
+        var savedStamped = await harness.ReloadAsync(stamped);
+        savedStamped.CreatedById.Should().Be(_currentUser.UserId, "the mark leaves other entities of the save alone");
+    }
+
+    [Fact]
+    public async Task should_keep_explicit_creator_when_created_by_id_stamp_skipped()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" };
+        var entry = db.Add(entity).SkipCreatedByIdStamp();
+        entry.Property(x => x.CreatedById).CurrentValue = (UserId)"importer-of-record";
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.CreatedById.Should().Be((UserId)"importer-of-record");
+    }
+
+    [Fact]
+    public async Task should_stamp_updater_when_created_by_id_stamp_skipped_entity_modified()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" };
+        db.Add(entity).SkipCreatedByIdStamp();
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // when
+        entity.Rename("renamed");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.CreatedById.Should().BeNull();
+        saved.UpdatedById.Should().Be(_currentUser.UserId, "the mark covers only the creator");
+    }
+
+    [Fact]
+    public void should_throw_when_created_by_id_stamp_skipped_for_entity_without_creator()
+    {
+        // given
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        using var db = new ModelOnlyDbContext(
+            new DbContextOptionsBuilder<ModelOnlyDbContext>().UseSqlite(connection).Options
+        );
+        var entry = db.Add(new UnauditedRow { Id = Guid.CreateVersion7() });
+
+        // when
+        var act = () => entry.SkipCreatedByIdStamp();
+
+        // then
+        act.Should().Throw<ArgumentException>().WithParameterName("entry");
     }
 
     [Theory]
@@ -526,5 +606,15 @@ public sealed class AuditedBaseStampingTests : TestBase
     public sealed class TestAccount
     {
         public required UserId Id { get; init; }
+    }
+
+    public sealed class UnauditedRow
+    {
+        public required Guid Id { get; init; }
+    }
+
+    private sealed class ModelOnlyDbContext(DbContextOptions options) : DbContext(options)
+    {
+        public DbSet<UnauditedRow> Rows => Set<UnauditedRow>();
     }
 }

@@ -16,7 +16,8 @@ namespace Headless.EntityFramework;
 /// <remarks>
 /// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
-/// anonymous). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
+/// anonymous or the entity was marked with
+/// <see cref="HeadlessEntityEntryExtensions.SkipCreatedByIdStamp{TEntry}"/>). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
 /// on an <c>IsDeleted</c> transition it stamps the matching delete or restore fields. Fields of the opposite
 /// transition are kept as history. A non-null value the save already set explicitly (for example through a
 /// transition method) wins over the stamp. An update or transition with no actor, given or resolved from
@@ -73,6 +74,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         var byAccount = entry.Entity as ICreateAudit<AccountId>;
 
         if (byUser is null && byAccount is null)
+        {
+            return;
+        }
+
+        if (HeadlessCreatedByIdStampSkips.Contains(entry.Entity))
         {
             return;
         }

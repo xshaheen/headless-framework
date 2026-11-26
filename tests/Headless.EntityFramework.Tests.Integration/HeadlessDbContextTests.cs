@@ -4,6 +4,7 @@ using Headless.Testing.Order;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
 
@@ -76,6 +77,41 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         createdMessage.Entity.Should().Be(entity);
         var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
+    }
+
+    [Fact]
+    public async Task should_commit_null_creator_for_skipped_entity_and_stamp_user_for_others_when_unit_of_work_commits()
+    {
+        // given
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
+        var imported = new TestEntity { Name = "imported", TenantId = "T1" };
+        var authored = new TestEntity { Name = "authored", TenantId = "T1" };
+
+        // when
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (_, ct) =>
+            {
+                db.Tests.Add(imported).SkipCreatedByIdStamp();
+                db.Tests.Add(authored);
+                await db.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        await using var readScope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var readDb = readScope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var rows = await readDb
+            .Tests.IgnoreQueryFilters()
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Name, StringComparer.Ordinal, AbortToken);
+        rows["imported"].CreatedById.Should().BeNull();
+        // PostgreSQL keeps microseconds, so the stored time drops the clock's last tick.
+        rows["imported"].CreatedAt.Should().BeCloseTo(fixture.Now, TimeSpan.FromMilliseconds(1));
+        rows["authored"].CreatedById.Should().Be(fixture.UserId);
     }
 
     [Fact]
