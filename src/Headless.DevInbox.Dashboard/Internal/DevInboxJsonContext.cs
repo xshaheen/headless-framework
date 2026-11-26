@@ -17,6 +17,7 @@ namespace Headless.DevInbox.Dashboard.Internal;
 [JsonSerializable(typeof(DevInboxEmailDetail))]
 [JsonSerializable(typeof(DevInboxSmsDetail))]
 [JsonSerializable(typeof(DevInboxPushDetail))]
+[JsonSerializable(typeof(DevInboxClearFilter))]
 internal sealed partial class DevInboxJsonContext : JsonSerializerContext;
 
 /// <summary>One channel the host configured: its kind (<c>email</c>, <c>sms</c>, <c>push</c>) and store capacity.</summary>

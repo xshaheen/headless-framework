@@ -8,25 +8,37 @@ namespace Headless.DevInbox.Dashboard;
 
 /// <summary>
 /// The Dev inbox dashboard module: the emails, SMS, and push notifications a Development host captured instead of
-/// sending, one channel per capture store the host registered, with sidebar counts and id lookup.
+/// sending, one channel per capture store the host registered, with sidebar counts, id lookup, live changes, and
+/// Delete and Clear commands.
 /// </summary>
 /// <remarks>
 /// Its object kinds are <c>email</c>, <c>sms</c>, and <c>push</c>. A channel whose store the host did not register
 /// serves no count, resolves nothing, and answers its routes with <c>404</c> <c>channel_unconfigured</c>.
 /// </remarks>
-internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, IDashboardObjectResolver
+internal sealed class DevInboxModule
+    : IDashboardModule,
+        IDashboardCountSource,
+        IDashboardObjectResolver,
+        IDashboardChangeSource,
+        IDashboardCommandSource,
+        IDashboardOperationRunner
 {
     private readonly DevInboxChannels _channels;
     private readonly DevInboxEndpoints _endpoints;
     private readonly EmailContentEndpoints _content;
+    private readonly DevInboxCommands _commands;
+    private readonly DevInboxChangeSource _changes;
 
-    public DevInboxModule(DevInboxStores stores)
+    public DevInboxModule(DevInboxStores stores, IDashboardEventPublisher publisher)
     {
         Argument.IsNotNull(stores);
+        Argument.IsNotNull(publisher);
 
         _channels = new DevInboxChannels(stores);
         _endpoints = new DevInboxEndpoints(_channels);
         _content = new EmailContentEndpoints(_channels.Email);
+        _commands = new DevInboxCommands(Id, _channels, publisher);
+        _changes = new DevInboxChangeSource(Id, _channels);
     }
 
     public string Id => DevInboxDashboardOptions.ModuleId;
@@ -34,6 +46,9 @@ internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, 
     public string DisplayName => "Dev inbox";
 
     public DashboardModuleAssets Assets { get; } = DevInboxAssets.Create();
+
+    /// <summary>Delete and Clear for each configured channel; an unconfigured channel offers neither.</summary>
+    public IReadOnlyList<DashboardCommand> Commands => _commands.Commands;
 
     public void MapEndpoints(DashboardModuleEndpoints endpoints)
     {
@@ -77,5 +92,57 @@ internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, 
         ];
 
         return Task.FromResult(found);
+    }
+
+    public Task<string> GetStartCursorAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_changes.StartCursor());
+    }
+
+    public Task<DashboardChangeBatch> ReadChangesAsync(string cursor, CancellationToken cancellationToken)
+    {
+        Argument.IsNotNull(cursor);
+
+        return Task.FromResult(_changes.ReadChanges(cursor));
+    }
+
+    public Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedCommandsAsync(
+        DashboardAllowedCommandsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.GetAllowedAsync(request.Targets);
+    }
+
+    public Task<DashboardCommandResult> ExecuteAsync(
+        DashboardCommandRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.ExecuteAsync(request);
+    }
+
+    public Task<DashboardOperationScope> PrepareAsync(
+        DashboardOperationScopeRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.PrepareAsync(request);
+    }
+
+    public Task<DashboardOperationChunk> RunChunkAsync(
+        DashboardOperationChunkRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _commands.RunChunkAsync(request);
     }
 }

@@ -88,7 +88,10 @@ public static class SetupDevInboxDashboard
 
         // The shell may build the module while it maps endpoints, before startup validation runs, so the module's
         // factory refuses the same hosts.
-        services.TryAddSingleton(static provider => new DevInboxModule(DevInboxStores.Resolve(provider)));
+        services.TryAddSingleton(static provider => new DevInboxModule(
+            DevInboxStores.Resolve(provider),
+            provider.GetRequiredService<IDashboardEventPublisher>()
+        ));
 
         return dashboard.AddModule<DevInboxModule, DevInboxDashboardOptions>(DevInboxDashboardOptions.ModuleId);
     }
