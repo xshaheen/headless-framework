@@ -11,11 +11,12 @@
     "src/Headless.Dashboard/wwwroot/packages/vite",
     "src/Headless.Dashboard/wwwroot/apps/shell",
     "src/Headless.Jobs.Dashboard/wwwroot",
-    "src/Headless.Messaging.Dashboard/wwwroot"
+    "src/Headless.Messaging.Dashboard/wwwroot",
+    "src/Headless.RateLimiting.Dashboard/wwwroot"
   ],
   "scripts": {
-    "format": "prettier --write src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot",
-    "format:check": "prettier --check src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot"
+    "format": "prettier --write src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot src/Headless.RateLimiting.Dashboard/wwwroot",
+    "format:check": "prettier --check src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot src/Headless.RateLimiting.Dashboard/wwwroot"
   },
   "devDependencies": {
     "prettier": "3.10.1"
