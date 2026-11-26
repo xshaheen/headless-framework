@@ -30,8 +30,11 @@ public static class SetupLogging
         /// The console writes one JSON object per entry outside Development and one text line inside it, both with UTC
         /// timestamps and scopes. Every entry carries <c>deployment.environment</c>, <c>service.name</c>,
         /// <c>service.version</c>, <c>process.pid</c>, <c>thread.id</c>, <c>MachineName</c>, <c>ProcessName</c>,
-        /// <c>CommitHash</c>, and the trace and span IDs of the current span. Levels come from <c>Logging:LogLevel</c>
-        /// and reload at run time.
+        /// <c>CommitHash</c>, and the trace and span IDs of the current span. An entry written while a message consumer
+        /// or a job runs also carries <c>CausationTraceId</c>, the trace id of the span that published or scheduled the
+        /// work. An entry written while a tenant is ambient carries <c>TenantId</c> (<c>TenantTelemetryOptions</c> renames
+        /// or turns it off) once, also when its template already has a <c>{TenantId}</c> hole. Levels come from
+        /// <c>Logging:LogLevel</c> and reload at run time.
         /// </para>
         /// <para>
         /// Enrichment uses Microsoft's log enrichment, so an enricher of your own goes in with
@@ -90,6 +93,8 @@ public static class SetupLogging
                 application.BuildVersion = true;
             });
             builder.Services.AddStaticLogEnricher<HostLogEnricher>();
+            builder.Services.AddLogEnricher<CausationLogEnricher>();
+            builder.Services.AddLogEnricher<TenantLogEnricher>();
 
             // Last, so the redacting factory wraps Microsoft's enriching one.
             builder.Services.AddHeadlessRedaction();

@@ -42,6 +42,7 @@ catch (Exception exception)
 - Do not add `AddJsonConsole()` or `AddSimpleConsole()` yourself. `AddHeadlessLogging` configures the console the default host already registered. Pin the format with `HeadlessLoggingOptions.ConsoleFormat`, or `HeadlessServiceDefaultsOptions.Logging` under `AddHeadless()`.
 - Set log levels in the `Logging:LogLevel` configuration section. They reload at run time. `Serilog:MinimumLevel` is not read.
 - Add a field to every entry with your own `ILogEnricher` (`services.AddLogEnricher<T>()`), or `IStaticLogEnricher` (`services.AddStaticLogEnricher<T>()`) for a value fixed per process. Do not push it with `BeginScope` in middleware. Enricher values pass through `ClassifyProperty` names like any property.
+- To find the consumer and job entries a request caused, query its trace id in `CausationTraceId` as well as in `TraceId`. A job runs in a trace of its own, and a consumer's own trace is not always the publisher's, so `TraceId` alone misses them. Do not add a consume or job middleware that opens a `BeginScope` with the trace id: `AddHeadlessLogging()` already adds the field.
 - Wrap `Build()` and `RunAsync()` in a `try` with `HeadlessBootstrapLogger.Create()` in a `using`, so a configuration or DI failure is logged. Dispose it before the process exits: disposing flushes the console.
 - To keep personal data and secrets out of logs, mark members with `[SecretData]`, `[PrivateData]`, or `[IdentifierData]`. For a value logged through a plain `{Email}` hole, set by an enricher, or written by a library, use `ClassifyProperty("Email", ...)`.
 - To read an object's members in the log, capture it with `{@Value}` or log a `record`. Classified members show redacted. Without `@`, a class prints its `ToString()`, and a class that has a classified member prints only its type name, so a `ToString()` override cannot print a member.
@@ -132,7 +133,11 @@ Fields on every entry:
 | `MachineName`, `ProcessName`, `CommitHash` | The host, and the entry assembly's commit |
 | `TraceId`, `SpanId` | The current `Activity`, as a scope |
 
+Every entry written while a tenant is ambient gets `TenantId` once, on every provider, also when its template already has a `{TenantId}` hole. A message consumer and a job attempt run under their tenant, so their entries carry it on a console-only host. `TenantTelemetryOptions` renames it or turns it off. The tenant adds no allocation to a `[LoggerMessage]`, `LoggerMessage.Define`, or message-template call site. An entry a log buffer holds (`AddGlobalBuffer`) is enriched when it is buffered and keeps one `TenantId` when the buffer flushes. See [multi-tenancy observability](multi-tenancy/observability.md#observability).
+
 An API host under `AddHeadless()` also gets `UserId`, `AccountId`, `CorrelationId`, `ClientIp`, `UserAgent`, `XClientVersion`, and `ApiVersion` on every entry written during a request. See [api.md](api.md#headlessapiservicedefaults).
+
+Every entry written while a message consumer or a job runs gets `CausationTraceId`: the 32-hex trace id of the span that published the message or scheduled the job, read from the stored `traceparent` and carried on `CausalScope.CausationTraceId`. A worker loop of your own that opens `CausalScope.Begin(correlationId, causationId, causationTraceId)` gets the field the same way. To follow one request into the consumer and job lines it caused, query `TraceId = <id> OR CausationTraceId = <id>`. A message or job that stored no trace context gets no field. See [messaging observability](messaging/observability.md#log-correlation) and [jobs trace linking](jobs/operations.md#trace-linking).
 
 Field names an earlier Serilog profile wrote, and where each value is now:
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Context;
 using Headless.UnitOfWork;
@@ -82,11 +83,13 @@ internal sealed class ConsumeMiddlewarePipeline(
         var previousConsumeContext = consumeContextAccessor?.Current;
         // Work the handler starts outside Messaging, such as a scheduled job, a domain event, or an audit row, joins
         // the consumed message's correlation, caused by this subscriber's received row. An every-instance delivery
-        // stores no received row, so its cause is the message itself.
+        // stores no received row, so its cause is the message itself. The publisher's trace id rides along so log
+        // entries written here can be found by the request that published the message.
         var storageId = context.MediumMessage.StorageId;
         var causalScope = CausalScope.Begin(
             consumeContext.CorrelationId,
-            storageId == Guid.Empty ? consumeContext.MessageId : storageId.ToString("D")
+            storageId == Guid.Empty ? consumeContext.MessageId : storageId.ToString("D"),
+            PublisherTraceId(originHeaders)
         );
 
         try
@@ -395,6 +398,17 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
 
         return false;
+    }
+
+    // The header comes off the wire, so only a well-formed W3C value counts; anything else is treated as absent.
+    internal static ActivityTraceId PublisherTraceId(IDictionary<string, string?> headers)
+    {
+        return
+            headers.TryGetValue(Headers.TraceParent, out var traceParent)
+            && traceParent is not null
+            && ActivityContext.TryParse(traceParent, traceState: null, out var parsed)
+            ? parsed.TraceId
+            : default;
     }
 }
 

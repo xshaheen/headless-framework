@@ -269,11 +269,7 @@ public static class SetupApi
             {
                 logging.IncludeFormattedMessage = true;
                 logging.IncludeScopes = true;
-                // Added before the user hook and UseOtlpExporter so every exporter sees the tenant attribute.
-                logging.AddProcessor(sp => new TenantLogRecordProcessor(
-                    sp.GetRequiredService<ICurrentTenant>(),
-                    sp.GetRequiredService<IOptions<TenantTelemetryOptions>>().Value
-                ));
+                // The tenant attribute comes from AddHeadlessLogging's enrichment, which every provider sees.
                 options.OpenTelemetry.ConfigureLogging?.Invoke(logging);
             });
 

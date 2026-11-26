@@ -838,12 +838,14 @@ internal sealed class JobsExecutionTaskHandler
                             // disposes (a unit of work that flushes an aggregate or an audit row) still joins the job.
                             // The shared scope lets Messaging, domain events, and audit rows written by the job join
                             // its correlation. A run with no stored correlation is its own root, as it is for the jobs
-                            // it schedules.
+                            // it schedules. The scheduler's trace id rides along because the run's own span starts a
+                            // new trace, so its log entries can still be found by the request that scheduled it.
                             using var causalScope = JobCausalContext.Enter(jobFunctionContext);
                             var runId = jobFunctionContext.Id.ToString("D");
                             using var sharedCausalScope = CausalScope.Begin(
                                 jobFunctionContext.CorrelationId ?? runId,
-                                runId
+                                runId,
+                                JobTraceParent.GetTraceId(context.TraceParent)
                             );
                             await using (var scope = _serviceProvider.CreateAsyncScope())
                             {
