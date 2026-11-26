@@ -117,7 +117,8 @@ public sealed class HeadlessBlobsTenancyBuilder
         var scope = new TenantBlobScope(
             options.Strategy,
             options.ContainerPrefix,
-            provider.GetRequiredService<ICurrentTenant>()
+            provider.GetRequiredService<ICurrentTenant>(),
+            (inner as IBlobNamingNormalizerSource)?.NamingNormalizer
         );
 
         return inner is IPresignedUrlBlobStorage

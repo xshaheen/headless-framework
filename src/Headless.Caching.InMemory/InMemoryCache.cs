@@ -31,6 +31,7 @@ public sealed class InMemoryCache
     : IInMemoryCache,
         IFactoryCacheStore,
         ISeedableTagMarkerCache,
+        IHybridTagHistory,
         IBufferCache,
         IDisposable
 {
@@ -41,7 +42,8 @@ public sealed class InMemoryCache
     private readonly AsyncLock _lock = new();
     private readonly Lock _tagHistoryGate = new();
     private int _tagHistoryUsers;
-    private bool _retainSeededTagHistory;
+    private IDurableTagMarkerReader? _durableTagMarkerReader;
+    private bool _durableTagMarkerReaderConfigured;
     private readonly FactoryCacheCoordinator _coordinator;
     private readonly CacheEventsHub _events;
     private readonly string _cacheName;
@@ -1746,7 +1748,7 @@ public sealed class InMemoryCache
         lock (_tagHistoryGate)
         {
             var state = CurrentState;
-            if (!_retainSeededTagHistory && _tagHistoryUsers == 0 && state.MaxObservedEntryLifetimeTicks == 0)
+            if (!state.HasSeededTagHistory && _tagHistoryUsers == 0 && state.MaxObservedEntryLifetimeTicks == 0)
             {
                 // No tagged entry has been published and no producer can publish an older snapshot.
                 // Remember only the timestamp needed to reject backdated manual writes.
@@ -1811,11 +1813,14 @@ public sealed class InMemoryCache
         // entries' CreatedAt (the cross-node clock-skew trap). Never lower a marker we already know to be newer.
         lock (_tagHistoryGate)
         {
-            // A Hybrid peer can still promote an older L2 frame after the marker is seeded. Keep the
-            // exact marker history because L2 may not yet have the notification's durable marker.
-            _retainSeededTagHistory = true;
-            _RaiseTagMarker(CurrentState, tag, invalidatedAt.UtcDateTime);
+            // A peer can still promote an older frame until L2 durably observes this tag. Each seed
+            // is pinned separately, so a pending marker cannot prevent unrelated history from pruning.
+            var state = CurrentState;
+            state.HasSeededTagHistory = true;
+            _RaiseTagMarker(state, tag, invalidatedAt.UtcDateTime, awaitingDurability: true);
         }
+
+        _ScheduleMaintenance(_timeProvider.GetUtcNow().UtcDateTime.Ticks);
     }
 
     /// <inheritdoc />
@@ -1873,9 +1878,14 @@ public sealed class InMemoryCache
         return ValueTask.CompletedTask;
     }
 
-    private static void _RaiseTagMarker(CacheState state, string tag, DateTime at)
+    private static void _RaiseTagMarker(CacheState state, string tag, DateTime at, bool awaitingDurability = false)
     {
-        state.TagMarkers.AddOrUpdate(tag, at, (_, existing) => at > existing ? at : existing);
+        if (state.TagMarkers.TryGetValue(tag, out var existing) && existing.InvalidatedAt >= at)
+        {
+            return;
+        }
+
+        state.TagMarkers[tag] = new TagMarker(at, awaitingDurability || existing.AwaitingDurability);
         state.NewestTagMarkerTicks = Math.Max(state.NewestTagMarkerTicks, at.Ticks);
     }
 
@@ -1889,7 +1899,11 @@ public sealed class InMemoryCache
             {
                 if (state.TagMarkers.TryGetValue(tag, out var marker))
                 {
-                    newestTicks = Math.Max(newestTicks, marker.Ticks);
+                    var markerTicks = CacheTagInvalidation.FloorMarkerTicks(
+                        marker.InvalidatedAt.Ticks,
+                        entry.TagTimestampResolutionTicks
+                    );
+                    newestTicks = Math.Max(newestTicks, markerTicks);
                 }
             }
         }
@@ -2090,7 +2104,7 @@ public sealed class InMemoryCache
 
         if (existingEntry.IsExpired)
         {
-            _RemoveExpiredKey(state, key);
+            _TryRemoveExpiredEntry(state, key, existingEntry);
             return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
         }
 
@@ -2136,6 +2150,7 @@ public sealed class InMemoryCache
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
                 CreatedAt = existingEntry.CreatedAt,
+                TagTimestampResolutionTicks = existingEntry.TagTimestampResolutionTicks,
                 ThrottledUntil = existingEntry.ThrottledUntil,
                 Tags = existingEntry.Tags,
                 ConcurrencyStamp = existingEntry.ConcurrencyStamp,
@@ -2207,17 +2222,15 @@ public sealed class InMemoryCache
             {
                 var state = CurrentState;
 
-                if (
-                    entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp
-                    && state.Entries.TryGetValue(key, out var existingEntry)
-                    && !string.Equals(existingEntry.ConcurrencyStamp, expiredExpectedStamp, StringComparison.Ordinal)
-                )
+                if (entry.ExpectedConcurrencyStamp is not { } expiredExpectedStamp)
                 {
-                    return false;
+                    _RemoveExpiredKey(state, key);
+                    return true;
                 }
 
-                _RemoveExpiredKey(state, key);
-                return true;
+                return state.Entries.TryGetValue(key, out var existingEntry)
+                    && string.Equals(existingEntry.ConcurrencyStamp, expiredExpectedStamp, StringComparison.Ordinal)
+                    && _TryRemoveExpiredEntry(state, key, existingEntry);
             }
 
             var entrySize = _CalculateEntrySize(entry.Value);
@@ -2241,7 +2254,8 @@ public sealed class InMemoryCache
                 etag: entry.ETag,
                 lastModifiedAt: entry.LastModifiedAt,
                 createdAt: entry.CreatedAt,
-                throttledUntil: entry.ThrottledUntil
+                throttledUntil: entry.ThrottledUntil,
+                tagTimestampResolutionTicks: entry.TagTimestampResolutionTicks
             );
 
             if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
@@ -2264,10 +2278,11 @@ public sealed class InMemoryCache
     {
         lock (_tagHistoryGate)
         {
+            var state = CurrentState;
             if (
-                !_retainSeededTagHistory
+                !state.HasSeededTagHistory
                 && !entry.IsFactoryWrite
-                && (entry.CreatedAt?.Ticks ?? 0) < CurrentState.DiscardedTagHistoryBeforeTicks
+                && (entry.CreatedAt?.Ticks ?? 0) < state.DiscardedTagHistoryBeforeTicks
             )
             {
                 return false;
@@ -2284,13 +2299,32 @@ public sealed class InMemoryCache
         {
             _tagHistoryUsers += starting ? 1 : -1;
 
-            if (!starting && _tagHistoryUsers == 0 && !_retainSeededTagHistory)
+            if (!starting && _tagHistoryUsers == 0)
             {
                 var state = CurrentState;
-                if (state.MaxObservedEntryLifetimeTicks == 0)
+                if (!state.HasSeededTagHistory && state.MaxObservedEntryLifetimeTicks == 0)
                 {
                     _DiscardIdleTagHistory(state);
                 }
+            }
+        }
+    }
+
+    void IHybridTagHistory.TrackPublication(bool starting) => _TrackTagHistoryUse(starting);
+
+    void IHybridTagHistory.SetDurableMarkerReader(IDurableTagMarkerReader? reader)
+    {
+        lock (_tagHistoryGate)
+        {
+            // Proof from one L2 says nothing about older entries on a different L2 sharing this L1.
+            if (!_durableTagMarkerReaderConfigured)
+            {
+                _durableTagMarkerReader = reader;
+                _durableTagMarkerReaderConfigured = true;
+            }
+            else if (!ReferenceEquals(_durableTagMarkerReader, reader))
+            {
+                _durableTagMarkerReader = null;
             }
         }
     }
@@ -2372,40 +2406,98 @@ public sealed class InMemoryCache
     // cannot outlive the observed lifetime bound, so it is guaranteed gone once now >= M + maxObservedEntryLifetime,
     // i.e. M <= now - maxObservedEntryLifetime. Active publications may still introduce a longer lifetime,
     // so recheck the bound under the same lock as tagged-write admission before each removal.
-    private void _PruneStaleTagMarkers(CacheState state, long nowTicks)
+    private async ValueTask _PruneStaleTagMarkersAsync(CacheState state, long nowTicks)
     {
+        IDurableTagMarkerReader? reader;
         lock (_tagHistoryGate)
         {
-            if (_retainSeededTagHistory || _tagHistoryUsers != 0)
+            if (_tagHistoryUsers != 0)
             {
                 return;
             }
 
-            if (state.MaxObservedEntryLifetimeTicks == 0)
+            if (!state.HasSeededTagHistory && state.MaxObservedEntryLifetimeTicks == 0)
             {
                 _DiscardIdleTagHistory(state);
                 return;
             }
+
+            reader = _durableTagMarkerReader;
         }
 
-        foreach (var (tag, marker) in state.TagMarkers)
+        List<KeyValuePair<string, TagMarker>>? pending = null;
+        foreach (var pair in state.TagMarkers)
         {
             lock (_tagHistoryGate)
             {
-                var maxLifetimeTicks = state.MaxObservedEntryLifetimeTicks;
-                if (_retainSeededTagHistory || _tagHistoryUsers != 0 || nowTicks <= maxLifetimeTicks)
+                if (_tagHistoryUsers != 0)
                 {
                     return;
                 }
 
-                if (
-                    marker.Ticks <= nowTicks - maxLifetimeTicks
-                    && state.TagMarkers.TryRemove(new KeyValuePair<string, DateTime>(tag, marker))
-                )
+                if (!_CanPruneMarker(state, pair.Value, nowTicks))
                 {
-                    state.DiscardedTagHistoryBeforeTicks = Math.Max(state.DiscardedTagHistoryBeforeTicks, marker.Ticks);
+                    continue;
+                }
+
+                if (!pair.Value.AwaitingDurability)
+                {
+                    _PruneMarker(state, pair);
+                }
+                else if (reader is not null)
+                {
+                    (pending ??= []).Add(pair);
                 }
             }
+        }
+
+        if (reader is null || pending is null)
+        {
+            return;
+        }
+
+        var durableMarkers = await reader
+            .ReadDurableTagMarkersAsync(pending.ConvertAll(static pair => pair.Key), _disposedCts.Token)
+            .ConfigureAwait(false);
+
+        lock (_tagHistoryGate)
+        {
+            if (_tagHistoryUsers != 0 || !ReferenceEquals(_durableTagMarkerReader, reader))
+            {
+                return;
+            }
+
+            foreach (var pair in pending)
+            {
+                if (
+                    durableMarkers.TryGetValue(pair.Key, out var durableMarker)
+                    // The precise marker still covers resident local values until their retention elapses.
+                    // Once that is true, L2 only needs to cover what its own frame timestamps can distinguish.
+                    && durableMarker.Ticks
+                        >= CacheTagInvalidation.FloorMarkerTicks(
+                            pair.Value.InvalidatedAt.Ticks,
+                            reader.TagTimestampResolutionTicks
+                        )
+                    && _CanPruneMarker(state, pair.Value, nowTicks)
+                )
+                {
+                    _PruneMarker(state, pair);
+                }
+            }
+        }
+    }
+
+    private static bool _CanPruneMarker(CacheState state, TagMarker marker, long nowTicks) =>
+        marker.InvalidatedAt.Ticks <= nowTicks - state.MaxObservedEntryLifetimeTicks;
+
+    private static void _PruneMarker(CacheState state, KeyValuePair<string, TagMarker> pair)
+    {
+        if (state.TagMarkers.TryRemove(pair) && !state.HasSeededTagHistory)
+        {
+            state.DiscardedTagHistoryBeforeTicks = Math.Max(
+                state.DiscardedTagHistoryBeforeTicks,
+                pair.Value.InvalidatedAt.Ticks
+            );
         }
     }
 
@@ -2413,7 +2505,7 @@ public sealed class InMemoryCache
     {
         if (!state.TagMarkers.IsEmpty)
         {
-            state.TagMarkers = new ConcurrentDictionary<string, DateTime>(StringComparer.Ordinal);
+            state.TagMarkers = new ConcurrentDictionary<string, TagMarker>(StringComparer.Ordinal);
             state.DiscardedTagHistoryBeforeTicks = Math.Max(
                 state.DiscardedTagHistoryBeforeTicks,
                 state.NewestTagMarkerTicks
@@ -2464,27 +2556,29 @@ public sealed class InMemoryCache
     {
         if (state.Entries.TryRemove(key, out var removedEntry))
         {
-            _OnEntryRemoved(state, removedEntry);
-
-            // Lazy read-path reap: the eviction metric intentionally omits this, but the per-key event is more
-            // complete. Gate on the specific event so the strip substring is built only when observed.
-            if (_events.HasEvictionSubscribers)
-            {
-                _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
-            }
+            _OnExpiredEntryRemoved(state, key, removedEntry);
         }
     }
 
-    private void _TryRemoveExpiredEntry(CacheState state, string key, CacheEntry entry)
+    private bool _TryRemoveExpiredEntry(CacheState state, string key, CacheEntry entry)
     {
-        if (state.Entries.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+        if (!state.Entries.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
         {
-            _OnEntryRemoved(state, entry);
+            return false;
+        }
 
-            if (_events.HasEvictionSubscribers)
-            {
-                _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
-            }
+        _OnExpiredEntryRemoved(state, key, entry);
+        return true;
+    }
+
+    private void _OnExpiredEntryRemoved(CacheState state, string key, CacheEntry entry)
+    {
+        _OnEntryRemoved(state, entry);
+
+        // Lazy reaps omit the eviction metric. Gate the per-key event so the prefix is stripped only when observed.
+        if (_events.HasEvictionSubscribers)
+        {
+            _events.OnEviction(_CallerKey(key), CacheEvictionReason.Expired);
         }
     }
 
@@ -2869,7 +2963,7 @@ public sealed class InMemoryCache
                 // Prune the tag-marker store on every maintenance pass, independently of entry expiry or memory
                 // pressure) so distinct-tag growth is bounded even when the live-entry set itself stays small — the
                 // realistic #546 case where _CompactAsync would never fire.
-                _PruneStaleTagMarkers(state, nowTicks);
+                await _PruneStaleTagMarkersAsync(state, nowTicks).ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -2994,6 +3088,8 @@ public sealed class InMemoryCache
 
     #endregion
 
+    private readonly record struct TagMarker(DateTime InvalidatedAt, bool AwaitingDurability);
+
     private sealed class CacheState
     {
         private long _maxObservedEntryLifetimeTicks;
@@ -3007,11 +3103,12 @@ public sealed class InMemoryCache
         // Family-2 logical tag-version invalidation: tag -> last-invalidation UTC marker. RemoveByTagAsync bumps the
         // marker (O(1), no member enumeration); reads treat an entry as invalidated when its CreatedAt predates the
         // newest applicable marker (CacheTagInvalidation.IsInvalidated). The maintenance sweep prunes markers old
-        // enough that every entry they could invalidate is guaranteed physically gone (see _PruneStaleTagMarkers),
+        // enough that every entry they could invalidate is guaranteed physically gone.
         // bounding growth without ever resurrecting still-live pre-marker data (#546).
-        public ConcurrentDictionary<string, DateTime> TagMarkers { get; set; } = new(StringComparer.Ordinal);
+        public ConcurrentDictionary<string, TagMarker> TagMarkers { get; set; } = new(StringComparer.Ordinal);
         public long NewestTagMarkerTicks { get; set; }
         public long DiscardedTagHistoryBeforeTicks { get; set; }
+        public bool HasSeededTagHistory { get; set; }
 
         // Largest physical lifetime (PhysicalExpiresAt - CreatedAt, in ticks) of any tagged entry in this generation.
         // A per-tag marker (T,M) can invalidate only tagged-T entries born before M, and such an entry is
@@ -3128,7 +3225,8 @@ public sealed class InMemoryCache
             DateTime? lastModifiedAt = null,
             DateTime? createdAt = null,
             DateTime? throttledUntil = null,
-            long nowTicksOverride = -1
+            long nowTicksOverride = -1,
+            long tagTimestampResolutionTicks = 0
         )
         {
             _timeProvider = timeProvider;
@@ -3151,6 +3249,7 @@ public sealed class InMemoryCache
             ETag = etag;
             LastModifiedAt = lastModifiedAt;
             CreatedAt = createdAt;
+            TagTimestampResolutionTicks = tagTimestampResolutionTicks;
             ThrottledUntil = throttledUntil;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
@@ -3182,6 +3281,7 @@ public sealed class InMemoryCache
             // the only callers are a sliding re-arm (sliding entries are never throttled) and a logical expire,
             // which must send the next factory read to the factory.
             CreatedAt = prototype.CreatedAt;
+            TagTimestampResolutionTicks = prototype.TagTimestampResolutionTicks;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -3211,6 +3311,8 @@ public sealed class InMemoryCache
         internal DateTime? LastModifiedAt { get; }
 
         internal DateTime? CreatedAt { get; }
+
+        internal long TagTimestampResolutionTicks { get; }
 
         internal DateTime? ThrottledUntil { get; }
 

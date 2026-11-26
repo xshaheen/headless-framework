@@ -46,6 +46,9 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
+    // Promotion and same-value restamps keep the birth timestamp resolution of the original frame.
+    internal long TagTimestampResolutionTicks { get; init; }
+
     /// <summary>
     /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. The
     /// coordinator sets it only on the fail-safe throttle restamp, to the restamp's logical expiration; any other

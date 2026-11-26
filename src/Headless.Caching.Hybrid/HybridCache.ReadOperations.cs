@@ -109,6 +109,7 @@ public sealed partial class HybridCache
         // tag metadata, so it would seed a tagless L1 entry that RemoveByTagAsync could never invalidate (stale).
         if (l2Cache is IFactoryCacheStore l2Store && LocalCache is IFactoryCacheStore l1Store)
         {
+            using var tagPublication = _TrackTagPublication();
             var l1Generation = _CaptureL1Generation(key);
 
             var l2EntryRead = await _ReadFromL2Async(
@@ -333,6 +334,7 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        using var tagPublication = _TrackTagPublication();
         // One bulk read under a single _ReadFromL2Async wrapper (matching the native bulk read's one circuit/timeout
         // boundary) so the whole batch degrades together to the partial L1 result on fault/timeout. The store
         // returns entries position-aligned with missedKeys so the freshness/seed loop below can index them directly,

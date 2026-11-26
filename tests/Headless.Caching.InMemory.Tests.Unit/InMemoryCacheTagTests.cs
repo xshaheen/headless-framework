@@ -345,6 +345,23 @@ public sealed class InMemoryCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_prune_expired_local_markers_while_an_unconfirmed_seed_is_retained()
+    {
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.MaxValue });
+        cache.SeedTagMarker("pending", _timeProvider.GetUtcNow());
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(1), Tags = ["local"] };
+        await cache.UpsertEntryAsync("key", "value", options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync("local", AbortToken);
+        _GetTagMarkerCount(cache).Should().Be(2);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await _RunMaintenanceAsync(cache);
+
+        _GetTagMarkerCount(cache).Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_serve_tag_invalidated_reserve_as_stale_via_factory()
     {
         using var cache = _CreateCache();

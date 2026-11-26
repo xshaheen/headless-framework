@@ -19,13 +19,12 @@ namespace Headless.UnitOfWork;
 /// Disposing without completing rolls the resource back, runs the <see cref="OnFailed" /> callbacks (their
 /// faults are logged, never propagated), and disposes scope-local state. An explicit
 /// <see cref="RollbackAsync" /> does the same and is idempotent; it is also how the owner of an observed-mode
-/// transaction reports its own rollback. A dispose after a terminal state is a no-op.
+/// transaction reports its own rollback. A dispose after completion or rollback has been claimed is a no-op.
 /// </para>
 /// <para>
 /// Registrations (<see cref="OnCompleted" />, <see cref="OnFailed" />, <see cref="GetOrAdd{TState}" />) are
-/// accepted only while the unit is <see cref="UnitOfWorkState.Active" />; after the terminal state they throw
-/// <see cref="InvalidOperationException" />. Every member throws <see cref="ObjectDisposedException" />
-/// after the handle is disposed.
+/// accepted only while the unit is <see cref="UnitOfWorkState.Active" />. A registration after completion or
+/// rollback has been claimed throws <see cref="InvalidOperationException" />.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -35,8 +34,7 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     UnitOfWorkState State { get; }
 
     /// <summary>
-    /// Gets the failure that terminated the unit, or <see langword="null" /> while it is
-    /// <see cref="UnitOfWorkState.Active" /> or after a successful completion.
+    /// Gets the failure that terminated the unit, or <see langword="null" /> while the unit is in any other state.
     /// </summary>
     UnitOfWorkFailure? Failure { get; }
 
@@ -55,8 +53,7 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// Callbacks are process-local: they run once, in registration order, after the outcome is durable, with no
     /// cancellation token, and are not recovered after a crash — durable delivery comes from rows committed
     /// inside the transaction plus the consumer's recovery sweep; a callback is only the fast path. Deregister
-    /// by disposing the returned handle while the unit is still active. Registration after a terminal state
-    /// throws.
+    /// by disposing the returned handle while the unit is still active.
     /// </remarks>
     /// <param name="work">The callback to invoke after the unit completes.</param>
     /// <returns>A handle whose disposal deregisters the callback while the unit is still active.</returns>
@@ -72,7 +69,7 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// The justified use case is releasing a non-transactional resource reserved in anticipation of commit. The
     /// callback receives the <see cref="UnitOfWorkFailure" /> carrying the reason. Callback faults are logged
     /// and never propagated — the failure path must not be blocked by its own cleanup. Deregister by disposing
-    /// the returned handle while the unit is still active. Registration after a terminal state throws.
+    /// the returned handle while the unit is still active.
     /// </remarks>
     /// <param name="work">The callback to invoke with the failure once the unit fails.</param>
     /// <returns>A handle whose disposal deregisters the callback while the unit is still active.</returns>
@@ -148,15 +145,19 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// committing.
     /// </summary>
     /// <remarks>
+    /// The unit enters <see cref="UnitOfWorkState.Completing" /> when this call claims it. It rejects new
+    /// registrations while the provider commit and resource cleanup settle.
+    /// <para>
     /// There is no cancellation on the drain: once the outcome is durable the drain runs to completion —
     /// cancelling it would abandon committed work. A callback fault propagates after the drain but leaves the
     /// unit <see cref="UnitOfWorkState.Completed" />. A commit fault transitions the unit to
     /// <see cref="UnitOfWorkState.Failed" /> before the exception propagates.
+    /// </para>
     /// </remarks>
     /// <param name="cancellationToken">Propagates the caller's cancellation to the resource commit.</param>
     /// <returns>A task that completes when the drain (if any) has finished.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The unit already completed or already failed.
+    /// The unit is already completing, completed, or failed.
     /// </exception>
     ValueTask CompleteAsync(CancellationToken cancellationToken = default);
 

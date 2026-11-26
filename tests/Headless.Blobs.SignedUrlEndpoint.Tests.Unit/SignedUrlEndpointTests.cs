@@ -418,6 +418,30 @@ public sealed class SignedUrlEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task should_refuse_unstable_logical_container_when_minting_tenant_url()
+    {
+        await using var app = await SignedUrlTestApp.StartAsync(
+            AbortToken,
+            configureBuilder: builder =>
+                builder.AddHeadlessTenancy(tenancy =>
+                    tenancy.Blobs(blobs =>
+                        blobs.ScopeByTenant(options => options.Strategy = TenantBlobScopingStrategy.ContainerPerTenant)
+                    )
+                )
+        );
+        using var tenant = app.App.Services.GetRequiredService<ICurrentTenant>().Change("acme");
+        var presigned = _Presigned(app.DefaultStorage);
+        var location = new BlobLocation("daily:2026", "report.txt");
+
+        var mint = () =>
+            presigned
+                .GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(15), cancellationToken: AbortToken)
+                .AsTask();
+
+        await mint.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task should_land_a_signed_upload_under_the_minting_tenant_when_the_store_is_tenant_scoped()
     {
         // given

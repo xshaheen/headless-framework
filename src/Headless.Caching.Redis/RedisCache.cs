@@ -43,6 +43,7 @@ public sealed class RedisCache(
     CacheEventsConfig? eventsConfig = null
 )
     : IRemoteCache,
+        IDurableTagMarkerReader,
         IFactoryCacheStore,
         ISnapshotSlidingCacheStore,
         ISeedableTagMarkerCache,
@@ -134,6 +135,14 @@ public sealed class RedisCache(
     private long _nativeFlushGeneration = long.MinValue;
     private const long _MarkerAbsent = long.MinValue;
 
+    private static readonly Lazy<RedisKey> _CountModeKey = new(() =>
+        (RedisKey)$"{RedisNativeGenerationKey.ForKey(_RemoveMarkerSuffix, slot: -1)}:count-mode"
+    );
+
+    private static readonly RedisValue _CountFixedMetadata = "fixed";
+    private static readonly RedisValue _CountVariableMetadata = "variable";
+    private static readonly TimeSpan _CountFixedMetadataLifetime = TimeSpan.FromMinutes(1);
+
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions { get; } = cacheOptions.DefaultEntryOptions;
 
@@ -169,14 +178,24 @@ public sealed class RedisCache(
     private int _topology = _TopologyUnknown;
     private readonly IDatabase _database = cacheOptions.ConnectionMultiplexer.GetDatabase();
 
-    private readonly Lazy<(RedisKey[] Read, RedisKey[] Write)> _nativeFlushKeys = new(() =>
-    {
-        var marker = (RedisKey)string.Concat(cacheOptions.KeyPrefix, _RemoveMarkerSuffix);
-        var generation = RedisNativeGenerationKey.ForKey(marker, cacheOptions.ConnectionMultiplexer.HashSlot(marker));
-        // The generation key's synthetic hash tag keeps the origin hash in the same slot.
-        var origins = (RedisKey)$"{generation}:origins";
-        return ([marker, generation], [marker, generation, origins]);
-    });
+    private readonly Lazy<(RedisKey[] Read, RedisKey[] ReadBeforeMutation, RedisKey[] Write)> _nativeFlushKeys = new(
+        () =>
+        {
+            var marker = (RedisKey)string.Concat(cacheOptions.KeyPrefix, _RemoveMarkerSuffix);
+            var generation = RedisNativeGenerationKey.ForKey(
+                marker,
+                cacheOptions.ConnectionMultiplexer.HashSlot(marker)
+            );
+            // The generation key's synthetic hash tag keeps the origin hash in the same slot.
+            var origins = (RedisKey)$"{generation}:origins";
+            RedisKey[] read = [marker, generation];
+            // The unprefixed flush and count indicators share a cluster slot, so native writes can sample both at once.
+            var readBeforeMutation = string.IsNullOrEmpty(cacheOptions.KeyPrefix)
+                ? [marker, generation, _CountModeKey.Value]
+                : read;
+            return (read, readBeforeMutation, [marker, generation, origins]);
+        }
+    );
 
     private bool IsCluster
     {
@@ -1005,7 +1024,7 @@ public sealed class RedisCache(
 
         if (nativeIndexes is not null)
         {
-            await _DropFlushedNativeValuesAsync(redisKeys, rawValues, nativeIndexes, cancellationToken)
+            await _RefreshNativeSnapshotsAsync(redisKeys, rawValues, decodedFrames, nativeIndexes, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -1180,7 +1199,7 @@ public sealed class RedisCache(
 
         if (nativeIndexes is not null)
         {
-            await _DropFlushedNativeValuesAsync(redisKeys, rawValues, nativeIndexes, cancellationToken)
+            await _RefreshNativeSnapshotsAsync(redisKeys, rawValues, decodedFrames, nativeIndexes, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -1404,56 +1423,83 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var endpoints = cacheOptions.ConnectionMultiplexer.GetEndPoints();
+        var primaries = new List<IServer>(endpoints.Length);
+        foreach (var endpoint in endpoints)
+        {
+            var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
+            if (!server.IsReplica)
+            {
+                primaries.Add(server);
+            }
+        }
 
-        if (endpoints.Length is 0)
+        if (primaries.Count == 0)
         {
             return 0;
         }
 
         var usePrefix = !string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(_keyPrefix);
-        var tasks = new List<Task<long>>(endpoints.Length);
-
-        if (
-            usePrefix || !(await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false)).IsNullOrEmpty
-        )
+        if (usePrefix)
         {
-            const int chunkSize = 2500;
             var pattern = _PrefixPattern(prefix);
-
-            foreach (var endpoint in endpoints)
-            {
-                var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
-
-                if (server.IsReplica)
-                {
-                    continue;
-                }
-
-                tasks.Add(_CountKeysByPatternAsync(server, pattern, _keyPrefix.Length, chunkSize, cancellationToken));
-            }
+            var counts = await Task.WhenAll(
+                    primaries.Select(server => _CountKeysByPatternAsync(server, pattern, cancellationToken))
+                )
+                .ConfigureAwait(false);
+            return counts.Sum(count => count.Entries);
         }
-        else
+
+        RedisKey[] knownMetadataKeys = [_GetClearMarkerKey(), _CountModeKey.Value, .. _nativeFlushKeys.Value.Write];
+        var mode = await _ReadCountModeAsync().ConfigureAwait(false);
+        if (mode == _CountFixedMetadata)
         {
-            foreach (var endpoint in endpoints)
+            var metadataBefore = await _ReadFixedMetadataAsync(knownMetadataKeys).ConfigureAwait(false);
+            var sizes = await Task.WhenAll(primaries.Select(_SafeDatabaseSizeAsync)).ConfigureAwait(false);
+            var metadataAfter = await _ReadFixedMetadataAsync(knownMetadataKeys).ConfigureAwait(false);
+
+            // A writer arms scan mode before introducing variable metadata. A flush can also change fixed keys
+            // during DBSIZE, so accept the fast count only while both checks agree.
+            mode = await _ReadCountModeAsync().ConfigureAwait(false);
+            var count = sizes.Sum() - metadataAfter.Count(exists => exists);
+            if (mode == _CountFixedMetadata && count >= 0 && metadataBefore.AsSpan().SequenceEqual(metadataAfter))
             {
-                var server = cacheOptions.ConnectionMultiplexer.GetServer(endpoint);
-
-                if (server.IsReplica)
-                {
-                    continue;
-                }
-
-                tasks.Add(_SafeDatabaseSizeAsync(server));
+                return count;
             }
         }
 
-        if (tasks.Count is 0)
+        // An absent indicator leaves old metadata ambiguous, including data surviving an upgrade or a lost
+        // indicator. Classify during the exact scan. A concurrent writer can only move this mode to variable.
+        var results = await Task.WhenAll(
+                primaries.Select(server =>
+                    _CountKeysByPatternAsync(server, "*", cancellationToken, mode.IsNull ? knownMetadataKeys : null)
+                )
+            )
+            .ConfigureAwait(false);
+        if (mode.IsNull)
         {
-            return 0;
+            var classified = results.Any(result => result.HasVariableMetadata)
+                ? _CountVariableMetadata
+                : _CountFixedMetadata;
+            try
+            {
+                await _database
+                    .StringSetAsync(
+                        _CountModeKey.Value,
+                        classified,
+                        expiry: classified == _CountFixedMetadata ? _CountFixedMetadataLifetime : null,
+                        when: When.NotExists,
+                        flags: CommandFlags.DemandMaster
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (RedisException exception)
+            {
+                // A reader without SET permission can still return the exact scan result.
+                _logger.LogUnableToCacheCountMode(exception);
+            }
         }
 
-        var counts = await Task.WhenAll(tasks).ConfigureAwait(false);
-        return counts.Sum();
+        return results.Sum(result => result.Entries);
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
@@ -1474,23 +1520,16 @@ public sealed class RedisCache(
 
         try
         {
-            var frame = RedisCacheEntryFrame.DecodeMemory(lease.Memory);
+            var snapshot = await _ReadSnapshotAsync(prefixedKey, lease.Memory, cacheOptions.ReadMode, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is not { } current)
+            {
+                return null;
+            }
 
+            var frame = current.Frame;
             if (!frame.IsFramed)
             {
-                if (
-                    !await _IsNativeValueCurrentAsync(
-                            prefixedKey,
-                            lease.Memory,
-                            cacheOptions.ReadMode,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false)
-                )
-                {
-                    return null;
-                }
-
                 // Raw values carry no logical expiration, so use the server TTL.
                 return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
             }
@@ -1548,9 +1587,15 @@ public sealed class RedisCache(
 
         try
         {
-            ReadOnlyMemory<byte> raw = lease.Memory;
+            var snapshot = await _ReadSnapshotAsync(redisKey, lease.Memory, cacheOptions.ReadMode, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is not { } current)
+            {
+                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
+            }
+
+            var (raw, frame) = current;
             var now = timeProvider.GetUtcNow().UtcDateTime;
-            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
 
             if (frame.IsFramed)
             {
@@ -1622,14 +1667,6 @@ public sealed class RedisCache(
 
             // Non-framed (legacy/raw) entry: value is present but carries no logical expiry metadata.
             // Fall back to the live server TTL for the expiration component.
-            if (
-                !await _IsNativeValueCurrentAsync(redisKey, raw, cacheOptions.ReadMode, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
-            }
-
             var legacyValue = _IsNullSentinel(raw.Span)
                 ? CacheValue<T>.Null
                 : new CacheValue<T>(_DeserializeValueSegment<T>(raw), hasValue: true);
@@ -2045,6 +2082,47 @@ public sealed class RedisCache(
         _RaiseTagMarker(tag, ms, ticks);
     }
 
+    long IDurableTagMarkerReader.TagTimestampResolutionTicks => TimeSpan.TicksPerMillisecond;
+
+    async ValueTask<IReadOnlyDictionary<string, DateTime>> IDurableTagMarkerReader.ReadDurableTagMarkersAsync(
+        IReadOnlyList<string> tags,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A confirmation can retire the L1 marker only when ordinary L2 reads also consult the primary.
+        if (tags.Count == 0 || cacheOptions.ReadMode is CommandFlags.PreferReplica or CommandFlags.DemandReplica)
+        {
+            return ReadOnlyDictionary<string, DateTime>.Empty;
+        }
+
+        var keys = new RedisKey[tags.Count];
+        for (var i = 0; i < tags.Count; i++)
+        {
+            keys[i] = _GetTagMarkerKey(tags[i]);
+        }
+
+        var values = await _BulkStringGetOrderedAsync(keys, CommandFlags.DemandMaster).ConfigureAwait(false);
+        var ticks = _StopwatchTicks();
+        var confirmed = new Dictionary<string, DateTime>(tags.Count, StringComparer.Ordinal);
+
+        for (var i = 0; i < tags.Count; i++)
+        {
+            var ms = _ParseMarkerMs(values[i]);
+            if (ms == _MarkerAbsent)
+            {
+                continue;
+            }
+
+            _RaiseTagMarker(tags[i], ms, ticks);
+            confirmed[tags[i]] = RedisCacheEntryFrame.FromUnixTimeMilliseconds(ms);
+        }
+
+        _PruneMarkerCacheIfDue();
+        return confirmed.AsReadOnly();
+    }
+
     /// <inheritdoc />
     public void SeedClearMarker(DateTimeOffset invalidatedAt)
     {
@@ -2075,6 +2153,8 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
+        await _RequireCountScanAsync().ConfigureAwait(false);
+
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         await _RaiseDurableMarkerAsync((RedisKey)_GetTagMarkerKey(tag), ms, cancellationToken).ConfigureAwait(false);
         SeedTagMarker(tag, invalidatedAt);
@@ -2087,6 +2167,11 @@ public sealed class RedisCache(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_keyPrefix.Length != 0)
+        {
+            await _RequireCountScanAsync().ConfigureAwait(false);
+        }
 
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         await _RaiseDurableMarkerAsync((RedisKey)_GetClearMarkerKey(), ms, cancellationToken).ConfigureAwait(false);
@@ -2129,6 +2214,12 @@ public sealed class RedisCache(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_keyPrefix.Length != 0)
+        {
+            // Prefixed flush markers add hidden generation/origin keys outside the fixed unprefixed marker set.
+            await _RequireCountScanAsync().ConfigureAwait(false);
+        }
 
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         var generation = await _database
@@ -2310,7 +2401,8 @@ public sealed class RedisCache(
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var redisKey = (RedisKey)_GetKey(key);
-        var generation = await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false);
+        var generation = await _ReadNativeFlushGenerationAsync(cancellationToken, mayWriteNativeMetadata: true)
+            .ConfigureAwait(false);
 
         return await scriptsLoader
             .EvaluateAsync(
@@ -2329,14 +2421,18 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<RedisValue> _ReadNativeFlushGenerationAsync(CancellationToken cancellationToken)
+    private async ValueTask<RedisValue> _ReadNativeFlushGenerationAsync(
+        CancellationToken cancellationToken,
+        bool mayWriteNativeMetadata = false
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // The global marker can be in a different cluster slot. Read it on the primary before running the
         // same-slot data and metadata command so a flush completed on another node cannot be missed.
+        var (read, readBeforeMutation, _) = _nativeFlushKeys.Value;
         var markers = await _database
-            .StringGetAsync(_nativeFlushKeys.Value.Read, CommandFlags.DemandMaster)
+            .StringGetAsync(mayWriteNativeMetadata ? readBeforeMutation : read, CommandFlags.DemandMaster)
             .ConfigureAwait(false);
         _removeMarkerMs.InterlockedRaiseTo(_ParseMarkerMs(markers[0]));
         if (long.TryParse((string?)markers[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var native))
@@ -2345,6 +2441,12 @@ public sealed class RedisCache(
         }
 
         var generation = KnownNativeFlushGeneration;
+        if (mayWriteNativeMetadata && generation != _MarkerAbsent)
+        {
+            var countMode = markers.Length > 2 ? markers[2] : (RedisValue?)null;
+            await _RequireCountScanAsync(countMode).ConfigureAwait(false);
+        }
+
         return generation == _MarkerAbsent ? RedisValue.EmptyString : generation;
     }
 
@@ -2537,11 +2639,12 @@ public sealed class RedisCache(
     // hash-tag braces, so distinct keys hash to arbitrary cluster slots — a single flat MGET across them fails
     // with CROSSSLOT on Redis Cluster; split per slot there (manual Dictionary grouping avoids LINQ Lookup
     // allocation + per-group materialization). Non-cluster (and single-key) stays one flat MGET.
-    private async Task<RedisValue[]> _BulkStringGetOrderedAsync(RedisKey[] redisKeys)
+    private async Task<RedisValue[]> _BulkStringGetOrderedAsync(RedisKey[] redisKeys, CommandFlags? readMode = null)
     {
+        var flags = readMode ?? cacheOptions.ReadMode;
         if (!IsCluster || redisKeys.Length <= 1)
         {
-            return await _database.StringGetAsync(redisKeys, cacheOptions.ReadMode).ConfigureAwait(false);
+            return await _database.StringGetAsync(redisKeys, flags).ConfigureAwait(false);
         }
 
         var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Length];
@@ -2568,7 +2671,7 @@ public sealed class RedisCache(
             }
 
             buckets[slotReads.Count] = bucket;
-            slotReads.Add(() => _database.StringGetAsync(slotKeys, cacheOptions.ReadMode));
+            slotReads.Add(() => _database.StringGetAsync(slotKeys, flags));
         }
 
         var slotValues = await Task.WhenAllBoundedAsync(slotReads, _MaxInFlightSlotCommands).ConfigureAwait(false);
@@ -2856,9 +2959,14 @@ public sealed class RedisCache(
 
         try
         {
-            ReadOnlyMemory<byte> raw = lease.Memory;
-            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+            var snapshot = await _ReadSnapshotAsync(redisKey, lease.Memory, cacheOptions.ReadMode, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is not { } current)
+            {
+                return CacheValue<T>.NoValue;
+            }
 
+            var (raw, frame) = current;
             if (frame.IsFramed)
             {
                 var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -2895,14 +3003,6 @@ public sealed class RedisCache(
 
                 var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
                 return new CacheValue<T>(framedValue, hasValue: true);
-            }
-
-            if (
-                !await _IsNativeValueCurrentAsync(redisKey, raw, cacheOptions.ReadMode, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                return CacheValue<T>.NoValue;
             }
 
             if (_IsNullSentinel(raw.Span))
@@ -2952,9 +3052,14 @@ public sealed class RedisCache(
 
         try
         {
-            ReadOnlyMemory<byte> raw = lease.Memory;
-            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+            var snapshot = await _ReadSnapshotAsync(redisKey, lease.Memory, cacheOptions.ReadMode, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is not { } current)
+            {
+                return false;
+            }
 
+            var (raw, frame) = current;
             if (frame.IsFramed)
             {
                 var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -2990,11 +3095,7 @@ public sealed class RedisCache(
             }
 
             // Legacy non-framed entry: the whole stored value is the raw payload.
-            if (
-                _IsNullSentinel(raw.Span)
-                || !await _IsNativeValueCurrentAsync(redisKey, raw, cacheOptions.ReadMode, cancellationToken)
-                    .ConfigureAwait(false)
-            )
+            if (_IsNullSentinel(raw.Span))
             {
                 return false;
             }
@@ -3563,20 +3664,19 @@ public sealed class RedisCache(
 
         try
         {
-            ReadOnlyMemory<byte> raw = lease.Memory;
-            var now = timeProvider.GetUtcNow().UtcDateTime;
-            var frame = RedisCacheEntryFrame.DecodeMemory(raw);
-
-            if (
-                !frame.IsFramed
-                && !await _IsNativeValueCurrentAsync(redisKey, raw, cacheOptions.ReadMode, cancellationToken)
-                    .ConfigureAwait(false)
-            )
+            var snapshot = await _ReadSnapshotAsync(redisKey, lease.Memory, cacheOptions.ReadMode, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot is not { } current)
             {
                 return CacheStoreEntry<T>.NotFound;
             }
 
-            return await _BuildStoreEntryFromDecodedAsync<T>(raw, frame, now).ConfigureAwait(false);
+            return await _BuildStoreEntryFromDecodedAsync<T>(
+                    current.Raw,
+                    current.Frame,
+                    timeProvider.GetUtcNow().UtcDateTime
+                )
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -3651,7 +3751,14 @@ public sealed class RedisCache(
 
         if (nativeIndexes is not null)
         {
-            await _DropFlushedNativeValuesAsync(redisKeys, rawValues, nativeIndexes, cancellationToken)
+            await _RefreshNativeSnapshotsAsync(
+                    redisKeys,
+                    rawValues,
+                    decodedFrames,
+                    nativeIndexes,
+                    cancellationToken,
+                    rawBytes
+                )
                 .ConfigureAwait(false);
         }
 
@@ -3753,6 +3860,7 @@ public sealed class RedisCache(
                 ETag = frame.ETag,
                 LastModifiedAt = frame.LastModifiedAt,
                 CreatedAt = frame.CreatedAt,
+                TagTimestampResolutionTicks = TimeSpan.TicksPerMillisecond,
                 ThrottledUntil = frame.ThrottledUntil,
                 Tags = frame.Tags,
                 ConcurrencyStamp = concurrencyStamp,
@@ -3817,11 +3925,16 @@ public sealed class RedisCache(
         CancellationToken cancellationToken
     )
     {
-        var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+        var snapshot = await _ReadSnapshotAsync(redisKey, raw, readMode, cancellationToken).ConfigureAwait(false);
+        if (snapshot is not { } current)
+        {
+            return false;
+        }
 
+        var frame = current.Frame;
         if (!frame.IsFramed)
         {
-            return await _IsNativeValueCurrentAsync(redisKey, raw, readMode, cancellationToken).ConfigureAwait(false);
+            return true;
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -3847,24 +3960,53 @@ public sealed class RedisCache(
         CancellationToken cancellationToken
     )
     {
+        var snapshot = await _ReadNativeSnapshotAsync(redisKey, expectedValue, readMode, cancellationToken)
+            .ConfigureAwait(false);
+        return snapshot is { } current && current.Raw.Span.SequenceEqual(expectedValue.Span);
+    }
+
+    private readonly record struct ReadSnapshot(ReadOnlyMemory<byte> Raw, RedisCacheEntryFrame.DecodedFrame Frame);
+
+    private ValueTask<ReadSnapshot?> _ReadSnapshotAsync(
+        RedisKey redisKey,
+        ReadOnlyMemory<byte> raw,
+        CommandFlags readMode,
+        CancellationToken cancellationToken
+    )
+    {
+        var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+        return frame.IsFramed
+            ? ValueTask.FromResult<ReadSnapshot?>(new ReadSnapshot(raw, frame))
+            : _ReadNativeSnapshotAsync(redisKey, raw, readMode, cancellationToken);
+    }
+
+    private async ValueTask<ReadSnapshot?> _ReadNativeSnapshotAsync(
+        RedisKey redisKey,
+        ReadOnlyMemory<byte> initialValue,
+        CommandFlags readMode,
+        CancellationToken cancellationToken
+    )
+    {
         var flushGeneration = await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false);
 
         if (flushGeneration.IsNullOrEmpty)
         {
-            return true;
+            return new ReadSnapshot(initialValue, RedisCacheEntryFrame.DecodedFrame.Unframed);
         }
 
         var snapshot = await _database
             .StringGetAsync([redisKey, _NativeGenerationKey(redisKey)], readMode)
             .ConfigureAwait(false);
-        return _MatchesNativeGeneration(snapshot[0], snapshot[1], expectedValue, (long)flushGeneration);
+        return _DecodeNativeSnapshot(snapshot[0], snapshot[1], (long)flushGeneration);
     }
 
-    private async ValueTask _DropFlushedNativeValuesAsync(
+    private async ValueTask _RefreshNativeSnapshotsAsync(
         IReadOnlyList<RedisKey> redisKeys,
         RedisValue[] rawValues,
+        RedisCacheEntryFrame.DecodedFrame?[] decodedFrames,
         List<int> nativeIndexes,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        ReadOnlyMemory<byte>[]? rawBytes = null
     )
     {
         var flushGeneration = await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false);
@@ -3889,38 +4031,43 @@ public sealed class RedisCache(
         for (var i = 0; i < nativeIndexes.Count; i++)
         {
             var index = nativeIndexes[i];
-
-            if (
-                !_MatchesNativeGeneration(
-                    snapshots[2 * i],
-                    snapshots[(2 * i) + 1],
-                    (ReadOnlyMemory<byte>)rawValues[index],
-                    flushGenerationMs
-                )
-            )
-            {
-                rawValues[index] = RedisValue.Null;
-            }
+            var value = snapshots[2 * i];
+            var snapshot = _DecodeNativeSnapshot(value, snapshots[(2 * i) + 1], flushGenerationMs);
+            rawValues[index] = snapshot.HasValue ? value : RedisValue.Null;
+            decodedFrames[index] = snapshot?.Frame;
+            rawBytes?[index] = snapshot?.Raw ?? default;
         }
     }
 
-    // The same-slot MGET samples the value and generation together. A newer write can advance both, so only
-    // validate the previously fetched bytes when they still match that sample.
-    private static bool _MatchesNativeGeneration(
-        RedisValue value,
-        RedisValue generation,
-        ReadOnlyMemory<byte> expectedValue,
-        long flushGeneration
-    ) =>
-        !value.IsNull
-        && long.TryParse(
-            (string?)generation,
-            NumberStyles.Integer,
-            CultureInfo.InvariantCulture,
-            out var nativeGeneration
+    // Use the value paired with the generation in the same-slot MGET. An intervening increment can change
+    // the bytes without invalidating the key, and a framed replacement carries its own invalidation metadata.
+    private static ReadSnapshot? _DecodeNativeSnapshot(RedisValue value, RedisValue generation, long flushGeneration)
+    {
+        if (value.IsNull)
+        {
+            return null;
+        }
+
+        var raw = (ReadOnlyMemory<byte>)value;
+        var frame = RedisCacheEntryFrame.DecodeMemory(raw);
+        if (
+            !frame.IsFramed
+            && (
+                !long.TryParse(
+                    (string?)generation,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var nativeGeneration
+                )
+                || nativeGeneration < flushGeneration
+            )
         )
-        && nativeGeneration >= flushGeneration
-        && ((ReadOnlyMemory<byte>)value).Span.SequenceEqual(expectedValue.Span);
+        {
+            return null;
+        }
+
+        return new ReadSnapshot(raw, frame);
+    }
 
     /// <summary>
     /// Whether the key holds an entry every read would serve. A conditional write reads this from the primary first,
@@ -4192,7 +4339,8 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var generation = await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false);
+        var generation = await _ReadNativeFlushGenerationAsync(cancellationToken, mayWriteNativeMetadata: true)
+            .ConfigureAwait(false);
 
         var result = await SetAddWithExpireScriptDefinition
             .EvaluateAsync(
@@ -4315,33 +4463,51 @@ public sealed class RedisCache(
         }
     }
 
-    private static async Task<long> _CountKeysByPatternAsync(
+    private Task<RedisValue> _ReadCountModeAsync() =>
+        _database.StringGetAsync(_CountModeKey.Value, CommandFlags.DemandMaster);
+
+    private Task<bool[]> _ReadFixedMetadataAsync(RedisKey[] keys) =>
+        Task.WhenAll(keys.Select(key => _database.KeyExistsAsync(key, CommandFlags.DemandMaster)));
+
+    private async ValueTask _RequireCountScanAsync(RedisValue? observedMode = null)
+    {
+        var mode = observedMode ?? await _ReadCountModeAsync().ConfigureAwait(false);
+        if (mode != _CountVariableMetadata)
+        {
+            await _database
+                .StringSetAsync(_CountModeKey.Value, _CountVariableMetadata, flags: CommandFlags.DemandMaster)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<(long Entries, bool HasVariableMetadata)> _CountKeysByPatternAsync(
         IServer server,
         string pattern,
-        int keyPrefixLength,
-        int pageSize,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        RedisKey[]? knownMetadataKeys = null
     )
     {
+        const int pageSize = 2500;
         long count = 0;
+        var hasVariableMetadata = false;
 
         await foreach (
             var key in server.KeysAsync(pattern: pattern, pageSize: pageSize).WithCancellation(cancellationToken)
         )
         {
-            // An empty caller prefix matches the reserved {KeyPrefix}\0__ tag/clear/remove markers too; they are not
-            // entries. Consumer keys never contain NUL, so the byte after the instance prefix tells them apart.
+            // A database-wide scan can see markers written by any cache prefix. Cache data keys are NUL-free.
             var name = (string)key!;
 
-            if (name.Length > keyPrefixLength && name[keyPrefixLength] == '\0')
+            if (name.Contains('\0', StringComparison.Ordinal))
             {
+                hasVariableMetadata |= knownMetadataKeys?.Contains(key) == false;
                 continue;
             }
 
             count++;
         }
 
-        return count;
+        return (count, hasVariableMetadata);
     }
 
     #endregion
@@ -4428,4 +4594,12 @@ internal static partial class RedisCacheLog
         Exception exception,
         string key
     );
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "UnableToCacheCountMode",
+        Level = LogLevel.Debug,
+        Message = "Unable to record the Redis count mode. Future unprefixed counts may scan again."
+    )]
+    internal static partial void LogUnableToCacheCountMode(this ILogger logger, Exception exception);
 }

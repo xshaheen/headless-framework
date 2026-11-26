@@ -21,7 +21,7 @@ internal sealed class RelationalMonitoringApi(
     IMessageSerializer serializer,
     TimeProvider timeProvider,
     bool holdsReceived
-) : IMonitoringApi
+) : IMonitoringApi, IStorageIdMonitoringApi
 {
     private const int _HourlyBuckets = 24;
 
@@ -462,12 +462,8 @@ internal sealed class RelationalMonitoringApi(
             where += " AND " + RelationalMessageFilter.After(keyColumn, _t.Id, "AfterKey", "AfterId", query.Descending);
         }
 
-        // A published row names its transport instead; both kinds read from ordinal 13.
-        var receivedColumns = received
-            ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
-            : $",{_t.Transport}";
         var sql = $"""
-            SELECT {_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{receivedColumns}
+            SELECT {_MessageViewColumns(received)}
             FROM {table}
             WHERE {where}
             ORDER BY {keyColumn} {direction},{_t.Id} {direction}
@@ -504,41 +500,7 @@ internal sealed class RelationalMonitoringApi(
                     var views = new List<MessageView>();
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        var view = new MessageView
-                        {
-                            StorageId = reader.GetGuid(0),
-                            MessageId = reader.GetString(1),
-                            Version = reader.GetString(2),
-                            Name = reader.GetString(3),
-                            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(4)),
-                            Retries = reader.GetInt32(5),
-                            Added = await reader.GetFieldValueAsync<DateTimeOffset>(6, token).ConfigureAwait(false),
-                            ExpiresAt = await _InstantAsync(reader, 7, token).ConfigureAwait(false),
-                            StatusName = Enum.Parse<StatusName>(reader.GetString(8)),
-                            NextRetryAt = await _InstantAsync(reader, 9, token).ConfigureAwait(false),
-                            LockedUntil = await _InstantAsync(reader, 10, token).ConfigureAwait(false),
-                            ChangedAt = (
-                                await reader.GetFieldValueAsync<DateTimeOffset>(11, token).ConfigureAwait(false)
-                            ).ToUniversalTime(),
-                            FailureFingerprint = await _StringAsync(reader, 12, token).ConfigureAwait(false),
-                        };
-
-                        if (!received)
-                        {
-                            view.TransportName = await _StringAsync(reader, 13, token).ConfigureAwait(false);
-                        }
-
-                        if (received)
-                        {
-                            view.ConsumerIdentity = reader.GetString(13);
-                            view.TenantId = reader.GetBoolean(14) ? reader.GetString(15) : null;
-                            view.IsHeld = reader.GetBoolean(16);
-                            view.IncarnationId = await reader.IsDBNullAsync(17, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetGuid(17);
-                        }
-
-                        views.Add(view);
+                        views.Add(await _ReadMessageViewAsync(reader, received, token).ConfigureAwait(false));
                     }
 
                     return views;
@@ -553,6 +515,104 @@ internal sealed class RelationalMonitoringApi(
             Items = page,
             Next = rows.Count > pageSize ? MessageListPosition.Of(page[^1]) : null,
         };
+    }
+
+    public async ValueTask<IReadOnlyList<StoredMessageView>> GetMessageViewsAsync(
+        MessageType type,
+        IReadOnlyList<Guid> storageIds,
+        CancellationToken cancellationToken
+    )
+    {
+        var received = type == MessageType.Subscribe;
+
+        if (storageIds.Count == 0 || (received && !holdsReceived))
+        {
+            return [];
+        }
+
+        var table = received ? _receivedTable : _publishedTable;
+        var exceptionOrdinal = received ? 18 : 14;
+        var sql = $"""
+            SELECT {_MessageViewColumns(received)},
+                CASE WHEN {_t.StatusName} = '{nameof(StatusName.Failed)}' THEN {_t.ExceptionInfo} END
+            FROM {_dialect.ReadWithoutWaiting(table)}
+            WHERE {_dialect.InList(_t.Id, "Ids", SqlColumnType.Guid)} AND {_t.IntentType} IN (0, 1);
+            """;
+
+        await using var connection = _storage.CreateConnection();
+        return await RelationalCommand
+            .ExecuteReaderAsync(
+                connection,
+                transaction: null,
+                sql,
+                CommandTimeoutSeconds,
+                command => _dialect.AddListParameter(command, "Ids", SqlColumnType.Guid, storageIds),
+                async (reader, token) =>
+                {
+                    var views = new List<StoredMessageView>();
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var view = await _ReadMessageViewAsync(reader, received, token).ConfigureAwait(false);
+                        var exceptionInfo = await _StringAsync(reader, exceptionOrdinal, token).ConfigureAwait(false);
+                        views.Add(new StoredMessageView(view, exceptionInfo));
+                    }
+
+                    return views;
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private string _MessageViewColumns(bool received)
+    {
+        // A published row names its transport instead; both kinds read from ordinal 13.
+        var directionColumns = received
+            ? $",{_t.ConsumerIdentity},{_t.TenantPresent},{_t.TenantId},{_t.IsHeld},{_t.GenerationIncarnationId}"
+            : $",{_t.Transport}";
+        return $"{_t.Id},{_t.MessageId},{_t.Version},{_t.Name},{_t.IntentType},{_t.Retries},{_t.Added},{_t.ExpiresAt},{_t.StatusName},{_t.NextRetryAt},{_lockedUntil},{_t.ChangedAt},{_t.FailureFingerprint}{directionColumns}";
+    }
+
+    private static async ValueTask<MessageView> _ReadMessageViewAsync(
+        DbDataReader reader,
+        bool received,
+        CancellationToken cancellationToken
+    )
+    {
+        var view = new MessageView
+        {
+            StorageId = reader.GetGuid(0),
+            MessageId = reader.GetString(1),
+            Version = reader.GetString(2),
+            Name = reader.GetString(3),
+            Lane = MessageLaneCompatibility.FromPersistedValue(reader.GetInt16(4)),
+            Retries = reader.GetInt32(5),
+            Added = await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false),
+            ExpiresAt = await _InstantAsync(reader, 7, cancellationToken).ConfigureAwait(false),
+            StatusName = Enum.Parse<StatusName>(reader.GetString(8)),
+            NextRetryAt = await _InstantAsync(reader, 9, cancellationToken).ConfigureAwait(false),
+            LockedUntil = await _InstantAsync(reader, 10, cancellationToken).ConfigureAwait(false),
+            ChangedAt = (
+                await reader.GetFieldValueAsync<DateTimeOffset>(11, cancellationToken).ConfigureAwait(false)
+            ).ToUniversalTime(),
+            FailureFingerprint = await _StringAsync(reader, 12, cancellationToken).ConfigureAwait(false),
+        };
+
+        if (received)
+        {
+            view.ConsumerIdentity = reader.GetString(13);
+            view.TenantId = reader.GetBoolean(14) ? reader.GetString(15) : null;
+            view.IsHeld = reader.GetBoolean(16);
+            view.IncarnationId = await reader.IsDBNullAsync(17, cancellationToken).ConfigureAwait(false)
+                ? null
+                : reader.GetGuid(17);
+        }
+        else
+        {
+            view.TransportName = await _StringAsync(reader, 13, cancellationToken).ConfigureAwait(false);
+        }
+
+        return view;
     }
 
     /// <inheritdoc />

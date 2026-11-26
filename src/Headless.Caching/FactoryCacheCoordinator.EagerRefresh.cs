@@ -115,6 +115,7 @@ public sealed partial class FactoryCacheCoordinator
                 ExpectedConcurrencyStamp = entry.ConcurrencyStamp,
                 // Gate write is a restamp of the still-fresh entry — preserve its original birth time.
                 CreatedAt = entry.CreatedAt,
+                TagTimestampResolutionTicks = entry.TagTimestampResolutionTicks,
                 IsRestamp = true,
                 IsFactoryWrite = true,
             };

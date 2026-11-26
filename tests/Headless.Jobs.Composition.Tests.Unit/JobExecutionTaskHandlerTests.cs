@@ -271,6 +271,8 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
 
         var parentStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var inProgressStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseInProgress = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deferredStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var parentCompleted = false;
         var deferredObservedParentCompletion = false;
         var parent = _Job(
@@ -291,6 +293,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
                 {
                     await parentStarted.Task.ConfigureAwait(false);
                     inProgressStarted.TrySetResult();
+                    await releaseInProgress.Task.WaitAsync(AbortToken).ConfigureAwait(false);
                 }
             )
         );
@@ -301,12 +304,24 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
                 (_, _, _) =>
                 {
                     deferredObservedParentCompletion = parentCompleted;
+                    deferredStarted.TrySetResult();
                     return Task.CompletedTask;
                 }
             )
         );
 
-        await handler.ExecuteTaskAsync(parent, isDue: false, cancellationToken: AbortToken);
+        var execution = handler.ExecuteTaskAsync(parent, isDue: false, cancellationToken: AbortToken);
+        try
+        {
+            await deferredStarted.Task.Bounded();
+            parent.Status.Should().Be(JobStatus.Succeeded);
+            execution.IsCompleted.Should().BeFalse("the alongside child is still running");
+        }
+        finally
+        {
+            releaseInProgress.TrySetResult();
+            await execution.Bounded();
+        }
 
         parentCompleted.Should().BeTrue();
         deferredObservedParentCompletion.Should().BeTrue();

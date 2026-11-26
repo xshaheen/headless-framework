@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
@@ -87,18 +88,28 @@ internal static class DbContextUnitOfWorkBinding
             return true;
         }
 
-        return DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit)
-            && _TryJoinConnectionUnit(db, connectionUnit, out unit);
+        if (
+            !DbConnectionUnitOfWorkBinding.TryGet(db.Database.GetDbConnection(), out var connectionUnit)
+            || connectionUnit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource
+        )
+        {
+            return false;
+        }
+
+        _JoinConnectionUnit(db, connectionUnit, resource.Transaction);
+        unit = connectionUnit;
+
+        return true;
     }
 
     /// <summary>
-    /// <see cref="TryGet" /> for a caller about to begin on <paramref name="db" />: a stale unit either binding
-    /// evicts is abandoned before this returns, so its transaction is gone when the begin runs.
+    /// Resolves the unit for <c>RunAsync</c>. A stale owned unit is abandoned before a new begin, but an
+    /// observed unit that still awaits completion goes to the runner, which refuses to join its ended transaction.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The connection carries an EF unit but the context already uses a different transaction.
+    /// The connection carries a raw-ADO unit or an EF unit on a different transaction than this context.
     /// </exception>
-    public static async ValueTask<IUnitOfWork?> TryGetAsync(DbContext db)
+    public static async ValueTask<IUnitOfWork?> TryGetForRunAsync(DbContext db)
     {
         if (await _Binding.TryGetAsync(db).ConfigureAwait(false) is { } own)
         {
@@ -109,14 +120,29 @@ internal static class DbContextUnitOfWorkBinding
             .TryGetAsync(db.Database.GetDbConnection())
             .ConfigureAwait(false);
 
-        return connectionUnit is not null && _TryJoinConnectionUnit(db, connectionUnit, out var joined) ? joined : null;
+        if (connectionUnit is null)
+        {
+            return null;
+        }
+
+        if (connectionUnit.Resource is not EfUnitOfWorkResource resource)
+        {
+            throw new InvalidOperationException(ConnectionBoundMessage);
+        }
+
+        if (!resource.IsTransactionCompleted)
+        {
+            _JoinConnectionUnit(db, connectionUnit, resource.Transaction);
+        }
+
+        return connectionUnit;
     }
 
     /// <summary>
     /// Whether <paramref name="db" /> reaches its unit only through the connection it shares with the context
     /// the unit was bound to, rather than through a binding of its own. The save pipeline replays its own save
     /// without re-running the handlers that saved through such a sibling, so it needs to tell the two apart.
-    /// Never adopts a transaction and never throws.
+    /// Leaves transaction adoption to the binding lookup used to join the unit.
     /// </summary>
     public static bool IsJoinedThroughConnection(DbContext db)
     {
@@ -183,73 +209,54 @@ internal static class DbContextUnitOfWorkBinding
         }
     }
 
-    /// <summary>
-    /// Throws the EF-specific refusal when the connection beneath <paramref name="db" /> is bound by a unit the
-    /// context cannot join: one begun through a raw-ADO provider.
-    /// </summary>
-    public static async ValueTask ThrowIfConnectionBoundAsync(DbContext db)
-    {
-        if (
-            await DbConnectionUnitOfWorkBinding.TryGetAsync(db.Database.GetDbConnection()).ConfigureAwait(false)
-            is not null
-        )
-        {
-            throw new InvalidOperationException(ConnectionBoundMessage);
-        }
-    }
-
     private static string _BoundConnectionMessage(IUnitOfWork connectionUnit)
     {
         return connectionUnit.Resource is EfUnitOfWorkResource ? SharedConnectionBoundMessage : ConnectionBoundMessage;
     }
 
-    private static bool _TryJoinConnectionUnit(DbContext db, IUnitOfWork connectionUnit, out IUnitOfWork unit)
+    private static void _JoinConnectionUnit(DbContext db, IUnitOfWork connectionUnit, DbTransaction transaction)
     {
-        unit = null!;
-
-        // Only an EF unit is joinable from here: a raw-ADO unit is refused by the callers with its own remedy.
-        if (connectionUnit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource)
-        {
-            return false;
-        }
-
-        var transaction = resource.Transaction;
         var current = db.Database.CurrentTransaction;
 
-        if (current is null)
-        {
-            // Registered before adopting, so a unit that ends between the two still releases the context.
-            connectionUnit
-                .GetOrAdd(transaction, static (_, transaction) => new SharedConnectionContexts(transaction))
-                .Add(db);
-            db.Database.UseTransaction(transaction);
-        }
-        else if (!ReferenceEquals(current.GetDbTransaction(), transaction))
+        if (current is not null && !ReferenceEquals(current.GetDbTransaction(), transaction))
         {
             throw new InvalidOperationException(ForeignTransactionMessage);
         }
 
-        unit = connectionUnit;
-
-        return true;
+        connectionUnit
+            .GetOrAdd(transaction, static (_, transaction) => new SharedConnectionContexts(transaction))
+            .Join(db, current);
     }
 
     /// <summary>
-    /// The contexts that adopted a unit's transaction through a shared connection. Unit-local state, so it is
-    /// disposed once the unit reaches a terminal state — after the owner committed or rolled back — and releases
-    /// each context's reference to the finished transaction, leaving a context that outlives the unit free to
-    /// begin fresh.
+    /// Tracks every joined context for replay. When the unit ends, releases only the transaction wrappers
+    /// created by the framework for those contexts.
     /// </summary>
     private sealed class SharedConnectionContexts(DbTransaction transaction) : IDisposable
     {
         private readonly Lock _gate = new();
-        private readonly List<DbContext> _contexts = [];
 
-        public void Add(DbContext db)
+        private readonly Dictionary<DbContext, IDbContextTransaction?> _contexts = new(
+            ReferenceEqualityComparer.Instance
+        );
+
+        private bool _disposed;
+
+        public void Join(DbContext db, IDbContextTransaction? current)
         {
             lock (_gate)
             {
-                _contexts.Add(db);
+                Ensure.NotDisposed(_disposed, this);
+
+                if (current is null)
+                {
+                    _contexts[db] = db.Database.UseTransaction(transaction);
+                }
+                else
+                {
+                    // A pre-existing wrapper belongs to the caller. Keep any framework-owned wrapper from an earlier join.
+                    _contexts.TryAdd(db, value: null);
+                }
             }
         }
 
@@ -259,7 +266,7 @@ internal static class DbContextUnitOfWorkBinding
 
             lock (_gate)
             {
-                contexts = [.. _contexts];
+                contexts = [.. _contexts.Keys];
             }
 
             foreach (var db in contexts)
@@ -282,20 +289,26 @@ internal static class DbContextUnitOfWorkBinding
 
         public void Dispose()
         {
-            DbContext[] contexts;
+            KeyValuePair<DbContext, IDbContextTransaction?>[] contexts;
 
             lock (_gate)
             {
+                _disposed = true;
                 contexts = [.. _contexts];
                 _contexts.Clear();
             }
 
-            foreach (var db in contexts)
+            foreach (var (db, adopted) in contexts)
             {
+                if (adopted is null)
+                {
+                    continue;
+                }
+
                 try
                 {
-                    // Only release the transaction this unit handed out; a context that moved on keeps its own.
-                    if (ReferenceEquals(db.Database.CurrentTransaction?.GetDbTransaction(), transaction))
+                    // The context may have replaced the wrapper while keeping the same underlying transaction.
+                    if (ReferenceEquals(db.Database.CurrentTransaction, adopted))
                     {
                         db.Database.UseTransaction(transaction: null);
                     }

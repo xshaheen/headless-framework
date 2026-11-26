@@ -87,6 +87,26 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     #region List / Round-trip
 
     [Fact]
+    public async Task should_require_a_stable_logical_container_segment()
+    {
+        var provider = _Build(_Tenant, TenantBlobScopingStrategy.ContainerPerTenant);
+        var manager = provider.GetRequiredService<IBlobContainerManager>();
+        await manager.EnsureContainerAsync(_Tenant, AbortToken);
+        var storage = provider.GetRequiredService<IBlobStorage>();
+        var stable = new BlobLocation("daily2026", "report.txt");
+        await storage.UploadContentAsync(stable, "sample", AbortToken);
+
+        var upload = () =>
+            storage.UploadContentAsync(new BlobLocation("daily:2026", "other.txt"), "sample", AbortToken).AsTask();
+
+        await upload.Should().ThrowAsync<ArgumentException>();
+        (await storage.GetBlobContentAsync(stable, AbortToken)).Should().Be("sample");
+        (await storage.GetBlobsListAsync(new BlobQuery(stable.Container), cancellationToken: AbortToken))
+            .Should()
+            .ContainSingle();
+    }
+
+    [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
     {
         return base.can_get_empty_file_list_on_missing_directory();
@@ -379,14 +399,19 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     #endregion
 
 
-    private ServiceProvider _Build(string tenantId)
+    private ServiceProvider _Build(
+        string tenantId,
+        TenantBlobScopingStrategy strategy = TenantBlobScopingStrategy.PathPrefix
+    )
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
         builder.Services.AddSingleton<ICurrentTenant>(new FixedCurrentTenant(tenantId));
         builder.Services.AddHeadlessBlobs(blobs =>
             blobs.UseFileSystem(options => options.BaseDirectoryPath = _baseDirectoryPath)
         );
-        builder.AddHeadlessTenancy(tenancy => tenancy.Blobs(b => b.ScopeByTenant()));
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Blobs(b => b.ScopeByTenant(options => options.Strategy = strategy))
+        );
 
         var provider = builder.Services.BuildServiceProvider();
         _providers.Add(provider);

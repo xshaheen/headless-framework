@@ -6,6 +6,7 @@ using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.Domain;
 using Headless.UnitOfWork;
+using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -475,6 +476,9 @@ internal sealed class HeadlessSaveChangesPipeline(
             if (commitTransaction)
             {
                 var providerTransaction = transaction.GetDbTransaction();
+                await PostgreSqlCommitHealthCheck
+                    .VerifyAsync(providerTransaction, state.CancellationToken)
+                    .ConfigureAwait(false);
                 state.SaveContext.CommitStarted = true;
                 var cancelledBeforeCommit = state.CancellationToken.IsCancellationRequested;
 
@@ -618,6 +622,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             if (commitTransaction)
             {
                 var providerTransaction = transaction.GetDbTransaction();
+                PostgreSqlCommitHealthCheck.Verify(providerTransaction);
                 state.SaveContext.CommitStarted = true;
 
                 try

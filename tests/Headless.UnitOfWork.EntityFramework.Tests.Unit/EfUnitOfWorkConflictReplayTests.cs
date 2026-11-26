@@ -372,6 +372,53 @@ public sealed class EfUnitOfWorkConflictReplayTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_replay_a_conflict_when_a_manually_enlisted_sibling_tracks_an_edit()
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        var stockId = await _SeedProbeAsync(host, counter: 10);
+        await using var owner = host.CreateSession();
+        await using var sibling = host.CreateSession();
+        var conflict = new DbUpdateConcurrencyException("Simulated optimistic concurrency fault.");
+        IDbContextTransaction? adoption = null;
+        var blockRuns = 0;
+
+        var act = () =>
+            owner.Factory.RunAsync(
+                owner.Db,
+                async (unit, ct) =>
+                {
+                    blockRuns++;
+                    var resource = (IRelationalUnitOfWorkResource)unit.Resource!;
+                    adoption = sibling.Db.Database.UseTransaction(resource.Transaction);
+                    sibling.Db.UnitOfWork().Should().BeSameAs(unit);
+
+                    await sibling.Factory.RunAsync(
+                        sibling.Db,
+                        async (_, inner) =>
+                        {
+                            var stock = await sibling.Db.Probes.SingleAsync(x => x.Id == stockId, inner);
+                            stock.Counter += 3;
+                            await sibling.Db.SaveChangesAsync(inner);
+                        },
+                        cancellationToken: ct
+                    );
+
+                    throw conflict;
+                },
+                IsolationLevel.ReadCommitted,
+                EntityFrameworkConflictRetry.Create(),
+                AbortToken
+            );
+
+        (await act.Should().ThrowAsync<DbUpdateConcurrencyException>()).Which.Should().BeSameAs(conflict);
+        blockRuns.Should().Be(1);
+        adoption.Should().NotBeNull();
+        sibling.Db.Database.CurrentTransaction.Should().BeSameAs(adoption, "the caller owns the adoption");
+        await adoption!.DisposeAsync();
+        (await _ReadProbeCounterAsync(host, stockId)).Should().Be(10, "the only attempt was rolled back");
+    }
+
+    [Fact]
     public async Task should_replay_and_save_both_attempts_rows_when_a_sibling_context_tracked_them_before_it_joined()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();

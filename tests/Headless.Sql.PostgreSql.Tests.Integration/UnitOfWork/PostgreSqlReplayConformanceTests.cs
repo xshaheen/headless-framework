@@ -57,12 +57,7 @@ public sealed class PostgreSqlEntityFrameworkReplayConformanceTests(PostgreSqlUn
         new EntityFrameworkReplayFixture(
             fixture,
             options => options.UseNpgsql(fixture.ConnectionString),
-            (connection, ct) =>
-                PostgreSqlUnitOfWorkFixture.TerminateSessionAsync(
-                    fixture.ConnectionString,
-                    ((NpgsqlConnection)connection).ProcessID,
-                    ct
-                )
+            (connection, ct) => PostgreSqlUnitOfWorkFixture.ArmCommitDisconnectAsync((NpgsqlConnection)connection, ct)
         )
     )
 {
@@ -181,8 +176,7 @@ public sealed class PostgreSqlDataSourceReplayFixture(PostgreSqlUnitOfWorkFixtur
 
         return await factory.RunAsync(
             dataSource,
-            (unitOfWork, connection, ct) =>
-                operation(new PostgreSqlReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
+            (unitOfWork, connection, ct) => operation(new PostgreSqlReplayContext(factory, connection, unitOfWork), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -217,8 +211,7 @@ public sealed class PostgreSqlConnectionReplayFixture(PostgreSqlUnitOfWorkFixtur
 
         return await factory.RunAsync(
             connection,
-            (unitOfWork, ct) =>
-                operation(new PostgreSqlReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
+            (unitOfWork, ct) => operation(new PostgreSqlReplayContext(factory, connection, unitOfWork), ct),
             cancellationToken: cancellationToken
         );
     }
@@ -251,8 +244,7 @@ public sealed class PostgreSqlConnectionReplayFixture(PostgreSqlUnitOfWorkFixtur
 public sealed class PostgreSqlReplayContext(
     IUnitOfWorkFactory factory,
     NpgsqlConnection connection,
-    IUnitOfWork unitOfWork,
-    string adminConnectionString
+    IUnitOfWork unitOfWork
 ) : IUnitOfWorkReplayContext
 {
     public IUnitOfWork UnitOfWork => unitOfWork;
@@ -274,11 +266,7 @@ public sealed class PostgreSqlReplayContext(
 
     public Task BreakConnectionAsync(CancellationToken cancellationToken)
     {
-        return PostgreSqlUnitOfWorkFixture.TerminateSessionAsync(
-            adminConnectionString,
-            connection.ProcessID,
-            cancellationToken
-        );
+        return PostgreSqlUnitOfWorkFixture.ArmCommitDisconnectAsync(connection, cancellationToken);
     }
 
     public Task RunJoinedAsync(

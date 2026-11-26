@@ -61,3 +61,9 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
         return sb.ToString();
     }
 }
+
+/// <summary>Exposes a provider's configured normalizer to a decorator that inserts a key segment.</summary>
+internal interface IBlobNamingNormalizerSource
+{
+    IBlobNamingNormalizer? NamingNormalizer { get; }
+}

@@ -168,6 +168,7 @@ public sealed partial class HybridCache
         var timeoutKind = l1StaleCandidate is not null
             ? DistributedCacheTimeoutKind.Soft
             : DistributedCacheTimeoutKind.Hard;
+        using var tagPublication = _TrackTagPublication();
         var l1Generation = _CaptureL1Generation(key);
 
         var l2Read = await _ReadFromL2Async(
@@ -422,6 +423,7 @@ public sealed partial class HybridCache
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
                 CreatedAt = entry.CreatedAt,
+                TagTimestampResolutionTicks = entry.TagTimestampResolutionTicks,
                 ThrottledUntil = entry.ThrottledUntil,
                 Tags = entry.Tags,
             };
@@ -797,6 +799,7 @@ public sealed partial class HybridCache
                 // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
                 // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
                 CreatedAt = entry.CreatedAt,
+                TagTimestampResolutionTicks = entry.TagTimestampResolutionTicks,
                 // Carry the fail-safe throttle window too, so L1 holds back a failing factory on an invalidated
                 // reserve exactly as L2 does.
                 ThrottledUntil = entry.ThrottledUntil,
@@ -831,6 +834,7 @@ public sealed partial class HybridCache
             // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
             // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
             CreatedAt = entry.CreatedAt,
+            TagTimestampResolutionTicks = entry.TagTimestampResolutionTicks,
             // Carry the fail-safe throttle window too, so L1 holds back a failing factory on an invalidated
             // reserve exactly as L2 does.
             ThrottledUntil = entry.ThrottledUntil,
@@ -971,6 +975,7 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        using var tagPublication = _TrackTagPublication();
         var l1Generation = _CaptureL1Generation(key);
 
         var l2Read = await _ReadFromL2Async(

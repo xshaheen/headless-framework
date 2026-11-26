@@ -20,7 +20,7 @@ internal sealed class DbConnectionUnitOfWorkResource(
     Func<DbTransaction, bool> isTransactionCompleted,
     bool owned,
     bool closeConnection = false
-) : IRelationalUnitOfWorkResource, IUnitOfWorkCommitCleanup
+) : IRelationalUnitOfWorkResource, IUnitOfWorkCommitPreparation, IUnitOfWorkCommitCleanup
 {
     public bool IsOwned { get; } = owned;
 
@@ -29,6 +29,9 @@ internal sealed class DbConnectionUnitOfWorkResource(
     public DbTransaction Transaction => transaction;
 
     public bool IsTransactionCompleted => isTransactionCompleted(transaction);
+
+    public ValueTask PrepareCommitAsync(CancellationToken cancellationToken) =>
+        PostgreSqlCommitHealthCheck.VerifyAsync(transaction, cancellationToken);
 
     public ValueTask CommitAsync(CancellationToken cancellationToken) =>
         IsOwned ? new ValueTask(transaction.CommitAsync(cancellationToken)) : ValueTask.CompletedTask;

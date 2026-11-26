@@ -88,6 +88,41 @@ public sealed class HybridCacheL1FillOrderingTests : TestBase
     }
 
     [Fact]
+    public async Task should_refill_from_l2_after_successful_compare_and_set_responses_arrive_out_of_order()
+    {
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        using var l2 = new GatedRemoteCache(_timeProvider);
+        await using var cache = _CreateCache(l1, l2);
+        const string key = "value";
+        var lifetime = TimeSpan.FromMinutes(5);
+        await l2.UpsertAsync(key, 1, lifetime, AbortToken);
+
+        var readGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var responseGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        l2.ReadResponseGate = readGate;
+        var coldRead = cache.GetAsync<int>(key, AbortToken).AsTask();
+        await l2.ReadSnapshotCaptured.Task.Bounded();
+
+        l2.ReplaceIfEqualResponseGate = responseGate;
+        var earlier = cache.TryReplaceIfEqualAsync(key, 1, 2, lifetime, AbortToken).AsTask();
+        try
+        {
+            await l2.ReplaceIfEqualCommitted.Task.Bounded();
+            l2.ReplaceIfEqualResponseGate = null;
+            (await cache.TryReplaceIfEqualAsync(key, 2, 3, lifetime, AbortToken)).Should().BeTrue();
+        }
+        finally
+        {
+            responseGate.TrySetResult();
+            readGate.TrySetResult();
+        }
+
+        (await earlier).Should().BeTrue();
+        (await coldRead).Value.Should().Be(1);
+        (await cache.GetAsync<int>(key, AbortToken)).Value.Should().Be(3);
+    }
+
+    [Fact]
     public async Task should_drop_the_local_counter_after_an_increment_instead_of_writing_its_result()
     {
         // given - concurrent increments finish in either order, so a written result could move L1 backwards

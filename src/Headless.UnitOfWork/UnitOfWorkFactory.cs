@@ -104,31 +104,35 @@ internal sealed partial class UnitOfWorkFactory(
     /// <summary>Completes a unit: claim, commit (owned), drain.</summary>
     internal async ValueTask CompleteAsync(Internal.UnitOfWork unit, CancellationToken cancellationToken)
     {
-        if (!unit.TryClaimCompleted(out var claim))
+        if (!unit.TryClaimCompletion(out var claim))
         {
-            _ThrowForTerminalUnit(unit);
+            _ThrowForCompletingOrTerminalUnit(unit);
         }
 
         if (unit.Resource is { IsOwned: true } resource)
         {
-            var cancelledBeforeCommit = cancellationToken.IsCancellationRequested;
+            var commitStarted = false;
+            var cancelledBeforeCommit = false;
 
             try
             {
+                if (resource is IUnitOfWorkCommitPreparation preparation)
+                {
+                    await preparation.PrepareCommitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                cancelledBeforeCommit = cancellationToken.IsCancellationRequested;
+                commitStarted = true;
                 await resource.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 // A commit that may have reached the database is reported as in-doubt, with its own exception type,
                 // because a caller that treats it as a certain rollback and retries can apply the operation twice.
-                var inDoubt = InDoubtCommitFaults.Classify(ex, cancelledBeforeCommit);
+                var inDoubt = commitStarted ? InDoubtCommitFaults.Classify(ex, cancelledBeforeCommit) : null;
                 var failure = inDoubt is null
                     ? new UnitOfWorkFailure(UnitOfWorkFailureReason.Faulted, ex)
                     : new UnitOfWorkFailure(UnitOfWorkFailureReason.InDoubt, inDoubt);
-
-                // The unit transitions to Failed before the exception propagates, so a second CompleteAsync throws
-                // the "already failed" message rather than re-committing.
-                unit.TransitionCompletedToFailed(failure);
 
                 if (inDoubt is not null)
                 {
@@ -140,6 +144,7 @@ internal sealed partial class UnitOfWorkFactory(
                 // dies; roll it back best-effort. A resource whose commit did land reports the transaction as
                 // finished and treats this as a dispose.
                 await _RollbackAfterCommitFaultAsync(resource).ConfigureAwait(false);
+                unit.PublishCompletionOutcome(failure);
                 await _DrainFailedQuietlyAsync(claim, failure).ConfigureAwait(false);
 
                 if (inDoubt is not null && !ReferenceEquals(inDoubt, ex))
@@ -163,6 +168,7 @@ internal sealed partial class UnitOfWorkFactory(
             }
         }
 
+        unit.PublishCompletionOutcome(failure: null);
         await Internal.UnitOfWork.DrainCompletedAsync(claim).ConfigureAwait(false);
     }
 
@@ -217,7 +223,7 @@ internal sealed partial class UnitOfWorkFactory(
 
         if (!unit.TryClaimFailed(failure, out var claim))
         {
-            return; // Idempotent: a terminal unit ignores the conflicting verb.
+            return; // Idempotent: another lifecycle call already claimed the unit.
         }
 
         await _RollBackAndDrainAsync(unit, claim, failure, propagateFaults: true).ConfigureAwait(false);
@@ -333,9 +339,18 @@ internal sealed partial class UnitOfWorkFactory(
         }
     }
 
-    private static void _ThrowForTerminalUnit(Internal.UnitOfWork unit)
+    private static void _ThrowForCompletingOrTerminalUnit(Internal.UnitOfWork unit)
     {
-        if (unit.State == UnitOfWorkState.Completed)
+        var state = unit.State;
+
+        if (state == UnitOfWorkState.Completing)
+        {
+            throw new InvalidOperationException(
+                "The unit of work is already completing. Await the original CompleteAsync call."
+            );
+        }
+
+        if (state == UnitOfWorkState.Completed)
         {
             throw new InvalidOperationException(
                 "The unit of work has already completed. Begin a new unit of work for further work."

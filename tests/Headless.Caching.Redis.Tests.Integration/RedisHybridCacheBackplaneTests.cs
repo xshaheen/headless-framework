@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using System.Threading.Channels;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -97,14 +99,127 @@ public sealed class RedisHybridCacheBackplaneTests(RedisCacheFixture fixture) : 
         (await reader.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v2");
     }
 
-    private async Task<BackplaneHost> _StartHostAsync(string keyPrefix)
+    [Fact]
+    public async Task should_prune_only_durable_peer_tag_markers()
+    {
+        var prefix = $"hybrid-tag-history-{Faker.Random.AlphaNumeric(8)}:";
+        var clock = new FakeTimeProvider();
+        await using var writer = await _StartHostAsync(prefix, clock);
+        await using var reader = await _StartHostAsync(prefix, clock);
+        var cache = (InMemoryCache)reader.Cache.LocalCache;
+
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(1), Tags = ["durable"] };
+        await writer.Cache.UpsertEntryAsync("redis-origin", "remote", options, AbortToken);
+        (await reader.Tap.NextInvalidationAsync()).Key.Should().Be("redis-origin");
+        (await reader.Cache.GetAsync<string>("redis-origin", AbortToken)).Value.Should().Be("remote");
+
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryValue = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loading = reader
+            .Cache.GetOrAddAsync(
+                "load",
+                ct =>
+                {
+                    factoryStarted.SetResult();
+                    return new ValueTask<string?>(factoryValue.Task.WaitAsync(ct));
+                },
+                options with
+                {
+                    SkipDistributedCacheWrite = true,
+                },
+                AbortToken
+            )
+            .AsTask();
+        await factoryStarted.Task.Bounded();
+        clock.Advance(TimeSpan.FromTicks(1));
+
+        await writer.Cache.RemoveByTagAsync("durable", AbortToken);
+        (await reader.Tap.NextInvalidationAsync()).Tag.Should().Be("durable");
+
+        // Delivery is possible before the publisher's durable write, which can fail while the backplane works.
+        await writer.Backplane.PublishAsync(
+            new CacheInvalidationMessage
+            {
+                InstanceId = "peer-with-pending-write",
+                Tag = "pending",
+                Timestamp = clock.GetUtcNow(),
+            },
+            AbortToken
+        );
+        (await reader.Tap.NextInvalidationAsync()).Tag.Should().Be("pending");
+
+        try
+        {
+            await _RunMaintenanceAsync(cache);
+            _GetTagMarkerCount(cache).Should().Be(2);
+            // Redis and the imported L1 copy agree that the frame and the marker have the same timestamp.
+            (await cache.GetAsync<string>("redis-origin", AbortToken))
+                .Value.Should()
+                .Be("remote");
+        }
+        finally
+        {
+            factoryValue.SetResult("old");
+        }
+
+        await loading;
+        (await cache.GetAsync<string>("load", AbortToken)).HasValue.Should().BeFalse();
+        clock.Advance(TimeSpan.FromSeconds(3));
+        await _RunMaintenanceAsync(cache);
+        _GetTagMarkerCount(cache).Should().Be(1);
+
+        // A pending marker must still apply to an older promotion.
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var now = clock.GetUtcNow().UtcDateTime;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = "old",
+            IsNull = false,
+            CreatedAt = now.AddSeconds(-6),
+            LogicalExpiresAt = now.AddSeconds(1),
+            PhysicalExpiresAt = now.AddSeconds(1),
+            Tags = ["pending"],
+        };
+        var store = (IFactoryCacheStore)cache;
+        (await store.SetEntryAsync("pending", in entry, AbortToken)).Should().BeTrue();
+        (await cache.GetAsync<string>("pending", AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    private static Task _RunMaintenanceAsync(InMemoryCache cache)
+    {
+        var method = typeof(InMemoryCache).GetMethod(
+            "_DoMaintenanceAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        );
+        return (Task)method!.Invoke(cache, parameters: null)!;
+    }
+
+#pragma warning disable REFL009 // The private storage field differs on the base revision used for regression proof.
+    private static int _GetTagMarkerCount(InMemoryCache cache)
+    {
+        const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+        var state = typeof(InMemoryCache).GetField("_state", flags)?.GetValue(cache);
+        var markers =
+            state?.GetType().GetProperty("TagMarkers")?.GetValue(state)
+            ?? typeof(InMemoryCache).GetField("_tagMarkers", flags)!.GetValue(cache)!;
+        return (int)markers.GetType().GetProperty("Count")!.GetValue(markers)!;
+    }
+#pragma warning restore REFL009
+
+    private async Task<BackplaneHost> _StartHostAsync(string keyPrefix, TimeProvider? timeProvider = null)
     {
         var connection = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton(timeProvider ?? TimeProvider.System);
         builder.Services.AddHeadlessCaching(setup =>
         {
-            setup.AddMemoryTier();
+            setup.AddMemoryTier(options =>
+            {
+                if (timeProvider is not null)
+                {
+                    options.MaintenanceInterval = TimeSpan.MaxValue;
+                }
+            });
             setup.AddRedisTier(options =>
             {
                 options.ConnectionMultiplexer = connection;

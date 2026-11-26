@@ -33,7 +33,8 @@ public static class HeadlessDbContextUnitOfWorkExtensions
         /// <returns>The active bound unit, or <see langword="null" />.</returns>
         /// <exception cref="ArgumentNullException">The context is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException">
-        /// The connection carries another context's unit, but this context already uses a different transaction.
+        /// The bound unit is still completing, or the connection carries another context's unit and this
+        /// context already uses a different transaction.
         /// </exception>
         public IUnitOfWork? UnitOfWork()
         {

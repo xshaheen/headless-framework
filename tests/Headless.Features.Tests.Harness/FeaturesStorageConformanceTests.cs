@@ -10,6 +10,7 @@ using Headless.Hosting.Schema;
 using Headless.Primitives;
 using Headless.Serializer;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
@@ -350,6 +351,42 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         // then every write succeeds and exactly one row holds one of their values
         var stored = await repository.GetListAsync("Tenant", "t1", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().MatchRegex("^v[0-7]$");
+    }
+
+    [Fact]
+    public async Task should_refuse_padded_raw_scope_keys_before_writing_any_enlisted_rows()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var stored = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Tenant", "acme");
+        await repository.InsertAsync(stored, AbortToken);
+        await using var connection = fixture.CreateConnection(fixture.ConnectionString);
+        await using var unit = await fixture.BeginUnitOfWorkAsync(
+            host.Services.GetRequiredService<IUnitOfWorkFactory>(),
+            connection,
+            AbortToken
+        );
+        var batchRow = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Tenant", "second");
+        var padded = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Tenant", "acme ");
+
+        var find = () => repository.FindAsync("Checkout.Enabled", "Tenant", "acme ", AbortToken);
+        var readEnlisted = async () => await repository.GetListEnlistedAsync(unit, "Tenant", "acme ", AbortToken);
+        var save = async () => await repository.SaveEnlistedAsync(unit, [batchRow, padded], [], [], AbortToken);
+        var saveVersioned = () =>
+            repository.SaveIfVersionAsync(["Checkout.Enabled"], "Tenant", "acme ", "unused", [], [], [], AbortToken);
+
+        await find.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("providerKey");
+        await readEnlisted.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("providerKey");
+        await save.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("providerKey");
+        await saveVersioned.Should().ThrowExactlyAsync<ArgumentException>().WithParameterName("providerKey");
+        await unit.CompleteAsync(AbortToken);
+
+        var found = await repository.FindAsync("Checkout.Enabled", "Tenant", "acme", AbortToken);
+        found.Should().NotBeNull();
+        found!.Id.Should().Be(stored.Id);
+        (await repository.FindAsync("Checkout.Enabled", "Tenant", "second", AbortToken)).Should().BeNull();
     }
 
     [Fact]

@@ -64,6 +64,8 @@ Counts, Needs you, Overview, lookups, lists, and the change stream read every st
 
 ## Live changes
 
+For each page of changes, a built-in store loads the changed rows by storage ID in one read per affected table. The projection includes the list fields and failure reason without loading the stored message bodies.
+
 A write this node's senders and consumers make reaches its streams at once: the pipeline reports the write after it landed, and the module reads the row back with its marker. A write another node makes, or one inside an application transaction, arrives through this node's change read of the stores, within `ChangePollInterval` plus the read. A circuit breaker lives in one node's memory, so no store carries its changes: the breaker reports each one to the module, which publishes it to that node's streams at once. The Consumers view and the Overview's Circuits card patch the circuit in place and read `GET circuits` on no timer while every circuit is closed. The time an open circuit has left moves with no change behind it, so they read the list again every 5 seconds while a circuit is open. `GET metrics/realtime` stays polled every 5 seconds: a new second is measured whether or not anything changed, so there is no change to send.
 
 ## Sidebar counts
@@ -87,6 +89,8 @@ One item per failure fingerprint of the failures that ended for good: per consum
 ## Lookup and payload
 
 The palette accepts a full object id, a bare storage id, or a message id. A storage id or a message id is looked up in every store, and each match is listed with its store in its title; a message id matches byte for byte, trailing spaces included, on every provider. An id naming another node finds nothing on this node. A payload is the row's stored envelope as JSON.
+
+Details and commands identify a specific row by storage ID, even when many consumers or generations share its message ID.
 
 ## Trace
 

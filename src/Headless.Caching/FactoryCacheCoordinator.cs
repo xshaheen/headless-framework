@@ -761,6 +761,7 @@ public sealed partial class FactoryCacheCoordinator(
             ETag = eTag,
             LastModifiedAt = lastModifiedAt,
             CreatedAt = createdAt,
+            TagTimestampResolutionTicks = result.IsNotModified ? sourceEntry.TagTimestampResolutionTicks : 0,
             Tags = context.Tags,
             ExpectedConcurrencyStamp = sourceEntry.ConcurrencyStamp,
             // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so

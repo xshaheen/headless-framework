@@ -20,9 +20,9 @@ namespace Headless.Messaging.Dashboard;
 /// </para>
 /// <para>
 /// A store that throws or does not answer within <see cref="MessagingStores.Timeout"/> keeps its position and is named
-/// in <see cref="DashboardChangeBatch.UnavailableSources"/>, so the module stays live. Each changed row is read back
-/// for its projection: by id in one read per store and table, then its list row. A row deleted between the change
-/// read and its read-back goes out with no projection, so open views refetch it and say it no longer exists.
+/// in <see cref="DashboardChangeBatch.UnavailableSources"/>, so the module stays live. Built-in stores read the
+/// changed projections by storage id in one query per table. A row deleted before that lookup goes out with no
+/// projection, so open views refetch it and say it no longer exists.
 /// </para>
 /// </remarks>
 internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize, TimeSpan overlapWindow)
@@ -124,10 +124,10 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
             return ([], page.Cursor, false);
         }
 
-        var published = await _ReadBackAsync(store, MessageChangeKind.Published, page.Changes, cancellationToken)
+        var published = await _ReadRowsAsync(store, MessageChangeKind.Published, page.Changes, cancellationToken)
             .ConfigureAwait(false);
         var received = store.HoldsReceived
-            ? await _ReadBackAsync(store, MessageChangeKind.Received, page.Changes, cancellationToken)
+            ? await _ReadRowsAsync(store, MessageChangeKind.Received, page.Changes, cancellationToken)
                 .ConfigureAwait(false)
             : [];
 
@@ -147,22 +147,11 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
                 continue;
             }
 
-            // The by-id read lacks what a list row shows, such as a received row's consumer and hold, so the list row
-            // is read too; a row whose list row is gone by now still goes out with what the by-id read had.
-            var view = await MessagingViews
-                .ReadViewAsync(store, type, change.Id, MessagingViews.MessageIdOf(row), cancellationToken)
-                .ConfigureAwait(false);
-
             changes.Add(
                 MessagingViews.Change(
                     type,
                     id,
-                    view is null
-                        ? MessagingRowView.From(id, type, row, change.Status, change.ChangedAt)
-                        : MessagingRowView.From(id, view) with
-                        {
-                            Reason = MessagingViews.ReasonOf(view.StatusName, row.ExceptionInfo),
-                        },
+                    row,
                     version,
                     // A change read cannot tell whether a row entered or left a Needs-you group, so a failure or a
                     // success refreshes it.
@@ -175,26 +164,71 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
         return (changes, page.Cursor, page.Changes.Count >= pageSize);
     }
 
-    private static async Task<Dictionary<Guid, MediumMessage>> _ReadBackAsync(
+    private async Task<Dictionary<Guid, MessagingRowView>> _ReadRowsAsync(
         MessagingStore store,
         MessageChangeKind kind,
         IReadOnlyList<MessageChange> changes,
         CancellationToken cancellationToken
     )
     {
-        Guid[] ids = [.. changes.Where(change => change.Kind == kind).Select(static change => change.Id).Distinct()];
+        var selected = changes.Where(change => change.Kind == kind).ToArray();
 
-        if (ids.Length == 0)
+        if (selected.Length == 0)
         {
             return [];
         }
 
-        var rows =
-            kind == MessageChangeKind.Published
-                ? await store.Monitoring.GetPublishedMessagesAsync(ids, cancellationToken).ConfigureAwait(false)
-                : await store.Monitoring.GetReceivedMessagesAsync(ids, cancellationToken).ConfigureAwait(false);
+        Guid[] ids = [.. selected.Select(static change => change.Id).Distinct()];
+        var type = kind == MessageChangeKind.Published ? MessageType.Publish : MessageType.Subscribe;
+        var monitoring = store.Monitoring;
+        if (monitoring is IStorageIdMonitoringApi exact)
+        {
+            var projections = await exact.GetMessageViewsAsync(type, ids, cancellationToken).ConfigureAwait(false);
 
-        return rows.ToDictionary(static row => row.StorageId);
+            return projections.ToDictionary(
+                static row => row.View.StorageId,
+                row =>
+                    MessagingRowView.From(
+                        new MessagingObjectId(_stores.NodeName, store.Name, row.View.StorageId),
+                        row.View
+                    ) with
+                    {
+                        Reason = MessagingViews.ReasonOf(row.View.StatusName, row.ExceptionInfo),
+                    }
+            );
+        }
+
+        var details =
+            type == MessageType.Publish
+                ? await monitoring.GetPublishedMessagesAsync(ids, cancellationToken).ConfigureAwait(false)
+                : await monitoring.GetReceivedMessagesAsync(ids, cancellationToken).ConfigureAwait(false);
+        var byId = details.ToDictionary(static row => row.StorageId);
+        var result = new Dictionary<Guid, MessagingRowView>(byId.Count);
+
+        foreach (var change in selected)
+        {
+            if (result.ContainsKey(change.Id) || !byId.TryGetValue(change.Id, out var row))
+            {
+                continue;
+            }
+
+            // An older provider can still supply the detail even if the list projection disappears between reads.
+            var id = new MessagingObjectId(_stores.NodeName, store.Name, change.Id);
+            var view = await MessagingViews
+                .ReadViewAsync(store, type, change.Id, MessagingViews.MessageIdOf(row), cancellationToken)
+                .ConfigureAwait(false);
+            result.Add(
+                change.Id,
+                view is null
+                    ? MessagingRowView.From(id, type, row, change.Status, change.ChangedAt)
+                    : MessagingRowView.From(id, view) with
+                    {
+                        Reason = MessagingViews.ReasonOf(view.StatusName, row.ExceptionInfo),
+                    }
+            );
+        }
+
+        return result;
     }
 
     private static string _Format(IReadOnlyDictionary<string, MessageChangeCursor?> cursors)

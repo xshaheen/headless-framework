@@ -44,10 +44,12 @@ internal sealed partial class SshBlobStorage(
     IOptionsMonitor<SshBlobStorageOptions> options,
     TimeProvider timeProvider,
     ILogger<SshBlobStorage> logger
-) : IBlobStorage
+) : IBlobStorage, IBlobNamingNormalizerSource
 {
     // Writes create only container-relative parent directories; a missing top-level container directory throws.
     public bool RequiresContainerProvisioning => true;
+
+    IBlobNamingNormalizer IBlobNamingNormalizerSource.NamingNormalizer => normalizer;
 
     #region Upload
 

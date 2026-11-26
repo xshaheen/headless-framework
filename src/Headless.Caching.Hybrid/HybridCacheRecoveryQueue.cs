@@ -98,12 +98,14 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     /// check). Residual publishes pass the original write time so a foreign write that raced between the
     /// original write and its replay still wins the conflict check.
     /// </param>
+    /// <param name="scalarWriteGeneration">Orders scalar writes whose background failures can arrive out of order.</param>
     public void Enqueue(
         string key,
         HybridCacheRecoveryKind kind,
         DateTimeOffset expiresAt,
         Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> replay,
-        DateTimeOffset? enqueuedAt = null
+        DateTimeOffset? enqueuedAt = null,
+        long? scalarWriteGeneration = null
     )
     {
         var now = _timeProvider.GetUtcNow();
@@ -113,12 +115,17 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return; // Nothing left to recover.
         }
 
-        var item = new RecoveryItem(key, kind, enqueuedAt ?? now, expiresAt, replay);
+        var item = new RecoveryItem(key, kind, enqueuedAt ?? now, expiresAt, replay, scalarWriteGeneration);
 
         lock (_admissionLock)
         {
             if (_items.TryGetValue(key, out var existing))
             {
+                if (existing.ScalarWriteGeneration > item.ScalarWriteGeneration)
+                {
+                    return;
+                }
+
                 // A queued value op must survive a publish for the same key: displacing it would lose the value
                 // permanently while its replay already covers the invalidation. The one exception is the value
                 // op currently being replayed — its L2 write has already landed, so a residual publish is the
@@ -549,7 +556,8 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         HybridCacheRecoveryKind kind,
         DateTimeOffset enqueuedAt,
         DateTimeOffset expiresAt,
-        Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> replay
+        Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> replay,
+        long? scalarWriteGeneration
     )
     {
         public string Key { get; } = key;
@@ -559,6 +567,8 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         public DateTimeOffset EnqueuedAt { get; } = enqueuedAt;
 
         public DateTimeOffset ExpiresAt { get; } = expiresAt;
+
+        public long? ScalarWriteGeneration { get; } = scalarWriteGeneration;
 
         public Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> Replay { get; } = replay;
 

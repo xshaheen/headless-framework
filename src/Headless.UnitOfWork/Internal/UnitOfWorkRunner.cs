@@ -51,9 +51,8 @@ internal static partial class UnitOfWorkRunner
     }
 
     /// <summary>
-    /// Runs a joined block on the owner's handle and refuses, after it returns, a block that ended the unit: the
-    /// owner's own completion would otherwise surface as a swallowed "already completed" drain fault and report
-    /// success for writes that ran outside the transaction.
+    /// Runs a joined block on the owner's handle. Refuses an inactive unit or finished transaction before the
+    /// block runs, and checks afterward that the block left the unit active.
     /// </summary>
     public static async Task<TResult> RunJoinedAsync<TResult>(
         IUnitOfWork joined,
@@ -61,6 +60,20 @@ internal static partial class UnitOfWorkRunner
         CancellationToken cancellationToken
     )
     {
+        var state = joined.State;
+
+        if (state != UnitOfWorkState.Active)
+        {
+            throw new InvalidOperationException($"The unit of work is {state}. RunAsync needs an active unit to join.");
+        }
+
+        if (joined.Resource is IRelationalUnitOfWorkResource { IsTransactionCompleted: true })
+        {
+            throw new InvalidOperationException(
+                "The unit of work's transaction already completed. Finish the existing unit before starting new work."
+            );
+        }
+
         var result = await operation(joined, cancellationToken).ConfigureAwait(false);
 
         if (joined.State != UnitOfWorkState.Active)

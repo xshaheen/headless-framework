@@ -20,6 +20,7 @@ namespace Headless.UnitOfWork;
 /// </remarks>
 internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction transaction, bool owned)
     : IRelationalUnitOfWorkResource,
+        IUnitOfWorkCommitPreparation,
         IUnitOfWorkCommitCleanup
 {
     public bool IsOwned { get; } = owned;
@@ -35,6 +36,9 @@ internal sealed class EfUnitOfWorkResource(DbContext db, IDbContextTransaction t
     /// </summary>
     public bool IsTransactionCompleted =>
         db.Database.CurrentTransaction is null || !ReferenceEquals(db.Database.CurrentTransaction, transaction);
+
+    public ValueTask PrepareCommitAsync(CancellationToken cancellationToken) =>
+        PostgreSqlCommitHealthCheck.VerifyAsync(Transaction, cancellationToken);
 
     public async ValueTask CommitAsync(CancellationToken cancellationToken)
     {

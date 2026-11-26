@@ -6,10 +6,9 @@ namespace Headless.UnitOfWork;
 /// Describes the lifecycle state of a unit of work.
 /// </summary>
 /// <remarks>
-/// Transitions are one-way and atomic: <see cref="Active" /> → <see cref="Completed" /> or
-/// <see cref="Active" /> → <see cref="Failed" />. Registrations are accepted only while
-/// <see cref="Active" />; a registration after the terminal state throws
-/// <see cref="InvalidOperationException" />.
+/// Completion moves from <see cref="Active" /> through <see cref="Completing" /> to
+/// <see cref="Completed" /> or <see cref="Failed" />. Rollback and abandonment move from
+/// <see cref="Active" /> directly to <see cref="Failed" />. Only <see cref="Active" /> accepts registrations.
 /// </remarks>
 [PublicAPI]
 public enum UnitOfWorkState
@@ -24,8 +23,12 @@ public enum UnitOfWorkState
     Completed = 1,
 
     /// <summary>
-    /// The unit failed: an explicit rollback, an abandon, a commit fault, a child abandon aborting the root,
-    /// or the scope disposing while the unit was active. See <see cref="IUnitOfWork.Failure" /> for the reason.
+    /// The unit failed after a rollback, abandonment, or commit fault. See <see cref="IUnitOfWork.Failure" /> for the reason.
     /// </summary>
     Failed = 2,
+
+    /// <summary>
+    /// <see cref="IUnitOfWork.CompleteAsync" /> owns the unit and is settling the outcome. The unit refuses new work.
+    /// </summary>
+    Completing = 3,
 }

@@ -44,7 +44,9 @@ await cache.ClearAsync(ct);
 - On a factory read, tags passed in the call replace the tags on the existing entry. `Tags = null` keeps the existing tags.
 - `RemoveByTagAsync` and `ClearAsync` work on Redis Cluster: one marker key per tag, one clear key, and no cross-slot enumeration.
 
-Until a standalone in-memory cache stores its first tagged entry, it keeps per-tag history only while a factory or tagged write is in flight. After a tagged entry has been stored, maintenance prunes markers once the longest observed tagged lifetime makes them safe to discard. A manual tagged write through `IFactoryCacheStore.SetEntryAsync` returns `false` if its birth timestamp predates discarded history. Hybrid keeps exact timestamped tag markers so L1 can check an older L2 value against its own tags.
+Until a standalone in-memory cache stores its first tagged entry, it keeps per-tag history only while a factory or tagged write is in flight. After a tagged entry has been stored, maintenance prunes markers once the longest observed tagged lifetime makes them safe to discard. A manual tagged write through `IFactoryCacheStore.SetEntryAsync` returns `false` if its birth timestamp predates discarded history.
+
+Hybrid retains a seeded tag marker while a local entry or in-flight publication can depend on it and until L2 confirms its durable timestamp. An unavailable L2 or a provider without durable confirmation leaves the marker pinned. An entry imported from Redis compares tag timestamps at Redis's whole-millisecond precision. New local entries and factory results retain full timestamp precision.
 
 ## What a logical invalidation does
 

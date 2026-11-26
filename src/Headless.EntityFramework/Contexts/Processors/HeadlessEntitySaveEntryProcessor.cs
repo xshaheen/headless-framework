@@ -170,21 +170,23 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
     private static void _TrySetMultiTenantId(EntityEntry entry, string? tenantId)
     {
-        if (
-            entry.Entity is not IMultiTenant entity
-            || !string.IsNullOrEmpty(entity.TenantId)
-            || !HeadlessTenantPlan.For(entry.Metadata).IsTenantOwned
-        )
+        if (entry.Entity is not IMultiTenant)
         {
             return;
         }
 
-        if (entry.Property(nameof(IMultiTenant.TenantId)) is { IsModified: true, CurrentValue: not (null or "") })
+        var plan = HeadlessTenantPlan.For(entry.Metadata);
+        if (!plan.IsTenantOwned || plan.IsOwnedType)
         {
             return;
         }
 
-        HeadlessEntryStamping.SetValue(entry, nameof(IMultiTenant.TenantId), tenantId);
+        // The mapped owner is also the property the query filter reads and SQL fences.
+        var owner = entry.Property(plan.TenantProperty!);
+        if (owner.CurrentValue is null or "")
+        {
+            owner.CurrentValue = tenantId;
+        }
     }
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)
