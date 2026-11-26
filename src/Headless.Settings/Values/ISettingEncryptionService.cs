@@ -128,7 +128,7 @@ public sealed class SettingEncryptionService(
         {
             logger.LogFailedToDecryptSettingValue(e, settingDefinition.Name);
 
-            throw new ConflictException(errorsDescriptor.DecryptionFailed(settingDefinition.Name));
+            throw new ConflictException(errorsDescriptor.DecryptionFailed(settingDefinition.Name), e);
         }
     }
 

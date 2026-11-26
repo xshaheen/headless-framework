@@ -29,6 +29,18 @@ public class ConflictException : Exception
         Errors = [error];
     }
 
+    /// <summary>
+    /// Initializes a conflict exception from a single <see cref="ErrorDescriptor"/> and the exception that caused it,
+    /// such as the database's unique-key violation behind a lost uniqueness race.
+    /// </summary>
+    /// <param name="error">The descriptor of the conflicting condition.</param>
+    /// <param name="inner">The exception that triggered this conflict.</param>
+    public ConflictException(ErrorDescriptor error, Exception? inner)
+        : base(_BuildErrorMessage(error), inner)
+    {
+        Errors = [error];
+    }
+
     /// <summary>Initializes a conflict exception from a message and an optional error code.</summary>
     /// <param name="error">The human-readable conflict message.</param>
     /// <param name="code">The error code associated with the conflict; defaults to <see cref="DefaultErrorCode"/>.</param>

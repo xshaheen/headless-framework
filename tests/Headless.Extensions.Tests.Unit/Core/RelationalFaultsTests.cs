@@ -162,16 +162,163 @@ public sealed class RelationalFaultsTests : TestBase
     }
 
     [Fact]
+    public void should_read_the_violated_constraint_name_from_a_postgresql_driver()
+    {
+        var exception = new InvalidOperationException(
+            "save failed",
+            new Npgsql.PostgresException("23505", "IX_Members_Email")
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be("IX_Members_Email");
+    }
+
+    [Fact]
+    public void should_report_no_name_when_a_sqlstate_driver_exposes_none()
+    {
+        RelationalFaults
+            .IsUniqueViolation(new FakeDbException(sqlState: "23505"), out var constraintName)
+            .Should()
+            .BeTrue();
+        constraintName.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_report_no_violation_and_no_name_for_another_postgresql_failure()
+    {
+        RelationalFaults
+            .IsUniqueViolation(new Npgsql.PostgresException("23503", "FK_Orders_Members"), out var name)
+            .Should()
+            .BeFalse();
+        name.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(
+        2627,
+        "Violation of PRIMARY KEY constraint 'PK_Members'. Cannot insert duplicate key in object 'dbo.Members'. The duplicate key value is (1).",
+        "PK_Members"
+    )]
+    [InlineData(
+        2627,
+        "Violation of UNIQUE KEY constraint 'UQ_Members_Code'. Cannot insert duplicate key in object 'dbo.Members'. The duplicate key value is (a).",
+        "UQ_Members_Code"
+    )]
+    [InlineData(
+        2601,
+        "Cannot insert duplicate key row in object 'dbo.Members' with unique index 'IX_Members_Email'. The duplicate key value is (a@b.c).",
+        "IX_Members_Email"
+    )]
+    [InlineData(
+        2601,
+        "Cannot insert duplicate key row in object 'dbo.Members' with unique index 'IX_it's'. The duplicate key value is (x).",
+        "IX_it's"
+    )]
+    // A session whose language localizes the message: the violation is still known, its name is not.
+    [InlineData(
+        2601,
+        "Eine Zeile mit doppeltem Schlüssel kann in das dbo.Members-Objekt mit dem eindeutigen IX_Members_Email-Index nicht eingefügt werden.",
+        null
+    )]
+    public void should_read_the_violated_constraint_name_from_a_sql_server_message(
+        int number,
+        string message,
+        string? expected
+    )
+    {
+        var exception = new Microsoft.Data.SqlClient.SqlException(
+            new Microsoft.Data.SqlClient.SqlError(number, message)
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_read_the_name_from_the_sql_server_error_that_reported_the_duplicate_key()
+    {
+        var exception = new Microsoft.Data.SqlClient.SqlException(
+            new Microsoft.Data.SqlClient.SqlError(3621, "The statement has been terminated."),
+            new Microsoft.Data.SqlClient.SqlError(
+                2601,
+                "Cannot insert duplicate key row in object 'dbo.Members' with unique index 'IX_Members_Email'. The duplicate key value is (a)."
+            )
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be("IX_Members_Email");
+    }
+
+    [Fact]
+    public void should_read_a_sql_server_index_name_that_holds_a_quote_period_and_space()
+    {
+        var exception = new Microsoft.Data.SqlClient.SqlException(
+            new Microsoft.Data.SqlClient.SqlError(
+                2601,
+                "Cannot insert duplicate key row in object 'dbo.Members' with unique index 'IX_a'. b'. The duplicate key value is (x)."
+            )
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be("IX_a'. b");
+    }
+
+    [Fact]
+    public void should_read_the_name_from_the_exception_message_when_no_error_message_parses()
+    {
+        var exception = new Microsoft.Data.SqlClient.SqlException(
+            "Cannot insert duplicate key row in object 'dbo.Members' with unique index 'IX_Members_Email'. The duplicate key value is (a).",
+            [new Microsoft.Data.SqlClient.SqlError(2601, "")]
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be("IX_Members_Email");
+    }
+
+    [Fact]
+    public void should_read_the_name_from_a_legacy_sql_server_message()
+    {
+        var exception = new System.Data.SqlClient.SqlException(
+            2627,
+            "Violation of PRIMARY KEY constraint 'PK_Members'. Cannot insert duplicate key in object 'dbo.Members'."
+        );
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().Be("PK_Members");
+    }
+
+    [Fact]
+    public void should_report_no_name_for_a_sqlite_violation()
+    {
+        var exception = new Microsoft.Data.Sqlite.SqliteException(19, 2067);
+
+        RelationalFaults.IsUniqueViolation(exception, out var constraintName).Should().BeTrue();
+        constraintName.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_report_no_name_when_the_failure_is_not_a_database_exception()
+    {
+        RelationalFaults
+            .IsUniqueViolation(new IOException("connection reset"), out var constraintName)
+            .Should()
+            .BeFalse();
+        constraintName.Should().BeNull();
+    }
+
+    [Fact]
     public void should_reject_a_null_exception()
     {
         var find = () => RelationalFaults.FindDatabaseException(null!);
         var numbers = () => RelationalFaults.GetSqlServerErrorNumbers(null!);
         var unique = () => RelationalFaults.IsUniqueViolation(null!);
+        var named = () => RelationalFaults.IsUniqueViolation(null!, out _);
         var conflict = () => RelationalFaults.IsConcurrencyConflict(null!);
 
         find.Should().Throw<ArgumentNullException>();
         numbers.Should().Throw<ArgumentNullException>();
         unique.Should().Throw<ArgumentNullException>();
+        named.Should().Throw<ArgumentNullException>();
         conflict.Should().Throw<ArgumentNullException>();
     }
 

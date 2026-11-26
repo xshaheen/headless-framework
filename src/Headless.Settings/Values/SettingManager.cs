@@ -680,9 +680,9 @@ public sealed class SettingManager(
                         .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (DBConcurrencyException)
+                catch (DBConcurrencyException exception)
                 {
-                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName), exception);
                 }
             }
             else if (unitOfWork is null)
