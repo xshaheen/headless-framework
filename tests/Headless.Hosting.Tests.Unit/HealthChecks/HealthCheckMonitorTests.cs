@@ -434,11 +434,20 @@ public sealed class HealthCheckMonitorTests : TestBase
             static checks => checks.AddCheck("a", static () => HealthCheckResult.Healthy()),
             configure: services => services.Replace(ServiceDescriptor.Singleton<HealthCheckService>(service))
         );
-        var failed = async () => await sut.ProbeAllAsync(AbortToken);
-        await failed.Should().ThrowAsync<InvalidOperationException>();
+        var failed = sut.ProbeAllAsync(AbortToken);
 
-        // when
-        var report = await sut.ProbeAllAsync(AbortToken);
+        // when: the retry is issued from the failed run's own continuation
+        var retry = failed
+            .ContinueWith(
+                _ => sut.ProbeAllAsync(AbortToken),
+                AbortToken,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            )
+            .Unwrap();
+        var waitFailed = async () => await failed;
+        await waitFailed.Should().ThrowAsync<InvalidOperationException>();
+        var report = await retry;
 
         // then
         report.Status.Should().Be(HealthStatus.Healthy);
@@ -623,11 +632,14 @@ public sealed class HealthCheckMonitorTests : TestBase
 
         public int Runs => Volatile.Read(ref _runs);
 
-        public override Task<HealthReport> CheckHealthAsync(
+        public override async Task<HealthReport> CheckHealthAsync(
             Func<HealthCheckRegistration, bool>? predicate,
             CancellationToken cancellationToken = default
         )
         {
+            // Fails after yielding, so the run completes on a continuation and a caller can retry before cleanup.
+            await Task.Yield();
+
             if (Interlocked.Increment(ref _runs) == 1)
             {
                 throw new InvalidOperationException("The health check service failed.");
@@ -638,7 +650,7 @@ public sealed class HealthCheckMonitorTests : TestBase
                 ["a"] = new(HealthStatus.Healthy, description: null, TimeSpan.Zero, exception: null, data: null),
             };
 
-            return Task.FromResult(new HealthReport(entries, TimeSpan.Zero));
+            return new HealthReport(entries, TimeSpan.Zero);
         }
     }
 

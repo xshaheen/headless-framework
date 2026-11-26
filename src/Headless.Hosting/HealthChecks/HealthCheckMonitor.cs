@@ -147,46 +147,60 @@ internal sealed class HealthCheckMonitor(
 
     private async Task _RunSharedAsync(SharedRun run)
     {
+        var token = run.Cancellation.Token;
+        HealthReport? report = null;
+        Exception? failure = null;
+
         try
         {
             // Forced yielding keeps the run's continuation off the thread that cancels it, so a cancel never runs
             // the cleanup below, which disposes the token source, inside its own callbacks.
-            var report = await healthCheckService
-                .CheckHealthAsync(run.Cancellation.Token)
+            report = await healthCheckService
+                .CheckHealthAsync(token)
                 .ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             if (!_Record(report, run.Number, run))
             {
-                run.Completion.TrySetCanceled(run.Cancellation.Token);
-
-                return;
+                report = null;
             }
-
-            run.Completion.TrySetResult(report);
         }
         catch (OperationCanceledException exception)
         {
-            run.Completion.TrySetCanceled(exception.CancellationToken);
+            token = exception.CancellationToken;
         }
 #pragma warning disable CA1031 // False positive: the failure is not swallowed; every caller waiting on the shared run receives it.
         catch (Exception exception)
 #pragma warning restore CA1031
         {
-            run.Completion.TrySetException(exception);
+            failure = exception;
         }
-        finally
-        {
-            lock (_gate)
-            {
-                if (ReferenceEquals(_inFlight, run))
-                {
-                    _inFlight = null;
-                }
 
-                // Under the lock, so no waiter cancels it while it is disposed.
-                run.Cancellation.Dispose();
-                run.Disposed = true;
+        lock (_gate)
+        {
+            // Before any waiter resumes, so a caller that retries at once starts a new run instead of joining this one.
+            if (ReferenceEquals(_inFlight, run))
+            {
+                _inFlight = null;
             }
+
+            // The gate orders this against _Leave's abandon decision: a waiter that leaves after this point sees
+            // Disposed and cancels nothing. A cancel _Leave already decided runs outside the lock and may land on the
+            // disposed source, which _Leave tolerates.
+            run.Cancellation.Dispose();
+            run.Disposed = true;
+        }
+
+        if (failure is not null)
+        {
+            run.Completion.TrySetException(failure);
+        }
+        else if (report is not null)
+        {
+            run.Completion.TrySetResult(report);
+        }
+        else
+        {
+            run.Completion.TrySetCanceled(token);
         }
     }
 
