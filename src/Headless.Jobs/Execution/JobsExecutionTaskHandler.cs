@@ -398,6 +398,7 @@ internal sealed class JobsExecutionTaskHandler
             CorrelationId = context.CorrelationId,
             CausationId = context.CausationId,
             TenantId = context.TenantId,
+            CausationTraceId = JobTraceParent.TryGetTraceId(context.TraceParent),
             Id = context.JobId,
             Type = context.Type,
             IsDue = isDue,
