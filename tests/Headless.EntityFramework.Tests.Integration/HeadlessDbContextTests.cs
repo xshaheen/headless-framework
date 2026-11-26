@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
+using UserId = Headless.Primitives.UserId;
 
 namespace Tests;
 
@@ -113,6 +114,184 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         rows["imported"].CreatedAt.Should().BeCloseTo(fixture.Now, TimeSpan.FromMilliseconds(1));
         rows["authored"].CreatedById.Should().Be(fixture.UserId);
     }
+
+    public static TheoryData<string> ActorSkips => ["update", "delete", "restore"];
+
+    [Theory]
+    [MemberData(nameof(ActorSkips))]
+    public async Task should_commit_null_actor_once_when_actor_stamp_skipped_in_unit_of_work(string change)
+    {
+        // given
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
+        var entity = await _SeedForChangeAsync(db, change);
+
+        // when
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (_, ct) =>
+            {
+                _ApplyChange(db, entity, change, skipActor: true);
+                await db.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+        var skipped = await _ReadAsync(entity.Id);
+
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (_, ct) =>
+            {
+                await _ApplyNextChangeAsync(db, entity, change, ct);
+            },
+            cancellationToken: AbortToken
+        );
+        var next = await _ReadAsync(entity.Id);
+
+        // then
+        _ActorOf(skipped, change).Should().BeNull();
+        _TimestampOf(skipped, change).Should().NotBeNull("the timestamp is stamped as usual");
+        _ActorOf(next, change).Should().Be(fixture.UserId, "the committed save used up the mark");
+    }
+
+    [Theory]
+    [MemberData(nameof(ActorSkips))]
+    public async Task should_stamp_user_on_resave_when_actor_stamp_skipped_save_failed_in_unit_of_work(string change)
+    {
+        // given
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        var unitOfWorkFactory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
+        var entity = await _SeedForChangeAsync(db, change);
+
+        // Another writer moves the row on, so the tracked concurrency stamp is stale and the first save conflicts
+        // after the audit stamps ran, without aborting the PostgreSQL transaction.
+        await using (var otherScope = fixture.ServiceProvider.CreateAsyncScope())
+        {
+            await using var other = otherScope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+            await other
+                .Tests.IgnoreQueryFilters()
+                .Where(x => x.Id == entity.Id)
+                .ExecuteUpdateAsync(x => x.SetProperty(e => e.ConcurrencyStamp, "moved-on"), AbortToken);
+        }
+
+        // when
+        await unitOfWorkFactory.RunAsync(
+            db,
+            async (_, ct) =>
+            {
+                _ApplyChange(db, entity, change, skipActor: true);
+                var conflicted = async () => await db.SaveChangesAsync(ct);
+                await conflicted.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+                db.Entry(entity).Property(x => x.ConcurrencyStamp).OriginalValue = "moved-on";
+                await db.SaveChangesAsync(ct);
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        var saved = await _ReadAsync(entity.Id);
+        _TimestampOf(saved, change).Should().NotBeNull();
+        _ActorOf(saved, change).Should().Be(fixture.UserId, "the failed save used up the mark");
+    }
+
+    private static async Task<TestEntity> _SeedForChangeAsync(TestHeadlessDbContext db, string change)
+    {
+        var entity = new TestEntity { Name = "seeded", TenantId = "T1" };
+        db.Tests.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+
+        if (string.Equals(change, "restore", StringComparison.Ordinal))
+        {
+            entity.MarkDeleted();
+            await db.SaveChangesAsync(AbortToken);
+        }
+
+        return entity;
+    }
+
+    private static void _ApplyChange(TestHeadlessDbContext db, TestEntity entity, string change, bool skipActor)
+    {
+        var entry = db.Entry(entity);
+
+        switch (change)
+        {
+            case "update":
+                entity.Name = "imported";
+                if (skipActor)
+                {
+                    entry.SkipUpdatedByIdStamp();
+                }
+
+                break;
+            case "delete":
+                entity.MarkDeleted();
+                if (skipActor)
+                {
+                    entry.SkipDeletedByIdStamp();
+                }
+
+                break;
+            case "restore":
+                entry.Property(x => x.IsDeleted).CurrentValue = false;
+                if (skipActor)
+                {
+                    entry.SkipRestoredByIdStamp();
+                }
+
+                break;
+        }
+    }
+
+    // The same kind of change once more, so the save stamps the same actor id again. A delete or restore first undoes
+    // the previous one in its own save.
+    private static async Task _ApplyNextChangeAsync(
+        TestHeadlessDbContext db,
+        TestEntity entity,
+        string change,
+        CancellationToken cancellationToken
+    )
+    {
+        if (string.Equals(change, "update", StringComparison.Ordinal))
+        {
+            entity.Name = "edited";
+            await db.SaveChangesAsync(cancellationToken);
+
+            return;
+        }
+
+        var isDeleted = db.Entry(entity).Property(x => x.IsDeleted);
+        isDeleted.CurrentValue = !isDeleted.CurrentValue;
+        await db.SaveChangesAsync(cancellationToken);
+        isDeleted.CurrentValue = !isDeleted.CurrentValue;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<TestEntity> _ReadAsync(Guid id)
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        return await db.Tests.IgnoreQueryFilters().AsNoTracking().SingleAsync(x => x.Id == id, AbortToken);
+    }
+
+    private static UserId? _ActorOf(TestEntity entity, string change) =>
+        change switch
+        {
+            "update" => entity.UpdatedById,
+            "delete" => entity.DeletedById,
+            _ => entity.RestoredById,
+        };
+
+    private static DateTimeOffset? _TimestampOf(TestEntity entity, string change) =>
+        change switch
+        {
+            "update" => entity.UpdatedAt,
+            "delete" => entity.DeletedAt,
+            _ => entity.RestoredAt,
+        };
 
     [Fact]
     public async Task should_stamp_guid_id_at_track_time_so_many_empty_keyed_entities_can_be_added_before_save_when_add()

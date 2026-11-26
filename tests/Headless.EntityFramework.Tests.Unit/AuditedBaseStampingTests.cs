@@ -129,6 +129,172 @@ public sealed class AuditedBaseStampingTests : TestBase
 
     [Theory]
     [MemberData(nameof(Rows))]
+    public async Task should_record_null_updater_once_when_updated_by_id_stamp_skipped(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = _Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // when
+        entity.Rename("imported");
+        db.Entry(entity).SkipUpdatedByIdStamp();
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var skipped = await harness.ReloadAsync(entity);
+        skipped.UpdatedAt.Should().Be(_Start.AddMinutes(5));
+        skipped.UpdatedById.Should().BeNull();
+        skipped.CreatedById.Should().Be(_currentUser.UserId);
+
+        // and the mark is gone after the save that used it
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        entity.Rename("edited");
+        await db.SaveChangesAsync(AbortToken);
+        var edited = await harness.ReloadAsync(entity);
+        edited.UpdatedById.Should().Be(_currentUser.UserId);
+    }
+
+    [Fact]
+    public async Task should_keep_updated_by_id_skip_until_a_save_stamps_the_update()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" };
+        db.Add(entity).SkipUpdatedByIdStamp();
+
+        // when: the insert stamps no update, so it leaves the mark for the first update
+        await db.SaveChangesAsync(AbortToken);
+        entity.Rename("imported");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.CreatedById.Should().Be(_currentUser.UserId);
+        saved.UpdatedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_stamp_updater_on_resave_when_updated_by_id_stamp_skipped_save_failed()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" };
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.Name = null!; // violates NOT NULL, so the save fails after the stamps ran
+        db.Entry(entity).SkipUpdatedByIdStamp();
+        var failed = async () => await db.SaveChangesAsync(AbortToken);
+        await failed.Should().ThrowAsync<DbUpdateException>();
+
+        // when
+        entity.Rename("fixed");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.Name.Should().Be("fixed");
+        saved.UpdatedById.Should().Be(_currentUser.UserId, "the failed save used up the mark");
+    }
+
+    [Theory]
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_record_null_deleter_once_when_deleted_by_id_stamp_skipped(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = (IDeletableRow)_Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // when
+        entity.SoftDelete();
+        db.Entry(entity).SkipDeletedByIdStamp();
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var skipped = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        skipped.DeletedAt.Should().Be(_Start.AddMinutes(5));
+        skipped.DeletedById.Should().BeNull();
+        skipped.UpdatedById.Should().Be(_currentUser.UserId, "only the deleter mark was set");
+
+        // and the mark is gone after the save that used it
+        entity.Undelete();
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        var redeleted = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        redeleted.DeletedById.Should().Be(_currentUser.UserId);
+    }
+
+    [Theory]
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_record_null_restorer_once_when_restored_by_id_stamp_skipped(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = (IDeletableRow)_Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // when
+        entity.Undelete();
+        db.Entry(entity).SkipRestoredByIdStamp();
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var skipped = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        skipped.RestoredAt.Should().Be(_Start.AddMinutes(5));
+        skipped.RestoredById.Should().BeNull();
+        skipped.DeletedById.Should().Be(_currentUser.UserId);
+
+        // and the mark is gone after the save that used it
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        entity.Undelete();
+        await db.SaveChangesAsync(AbortToken);
+        var restored = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        restored.RestoredById.Should().Be(_currentUser.UserId);
+    }
+
+    [Fact]
+    public async Task should_throw_when_actor_stamp_skipped_for_entity_without_that_actor()
+    {
+        // given
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await using var modelOnly = new ModelOnlyDbContext(
+            new DbContextOptionsBuilder<ModelOnlyDbContext>().UseSqlite(connection).Options
+        );
+        var unaudited = modelOnly.Add(new UnauditedRow { Id = Guid.CreateVersion7() });
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var updateOnly = db.Add(new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" });
+
+        // when
+        var skipUpdate = () => unaudited.SkipUpdatedByIdStamp();
+        var skipDelete = () => updateOnly.SkipDeletedByIdStamp();
+        var skipRestore = () => updateOnly.SkipRestoredByIdStamp();
+
+        // then
+        skipUpdate.Should().Throw<ArgumentException>().WithParameterName("entry");
+        skipDelete.Should().Throw<ArgumentException>().WithParameterName("entry");
+        skipRestore.Should().Throw<ArgumentException>().WithParameterName("entry");
+    }
+
+    [Theory]
+    [MemberData(nameof(Rows))]
     public async Task should_stamp_latest_updater_when_audited_base_modified_by_successive_users(string kind)
     {
         // given

@@ -16,12 +16,13 @@ namespace Headless.EntityFramework;
 /// <remarks>
 /// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
-/// anonymous or the entity was marked with
-/// <see cref="HeadlessEntityEntryExtensions.SkipCreatedByIdStamp{TEntry}"/>). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
+/// anonymous). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
 /// on an <c>IsDeleted</c> transition it stamps the matching delete or restore fields. Fields of the opposite
 /// transition are kept as history. A non-null value the save already set explicitly (for example through a
 /// transition method) wins over the stamp. An update or transition with no actor, given or resolved from
-/// <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor.
+/// <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor. An entity marked through a
+/// <see cref="HeadlessEntityEntryExtensions"/> <c>Skip…Stamp</c> method is stamped as if no actor resolved, for
+/// that actor id only.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
@@ -78,7 +79,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        if (HeadlessCreatedByIdStampSkips.Contains(entry.Entity))
+        if (HeadlessActorStampSkips.Contains(entry.Entity, HeadlessActorStamps.CreatedById))
         {
             return;
         }
@@ -122,6 +123,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             entry,
             nameof(IUpdateAudit.UpdatedAt),
             nameof(IUpdateAudit<>.UpdatedById),
+            HeadlessActorStamps.UpdatedById,
             new ActorKind(entry.Entity is IUpdateAudit<UserId>, entry.Entity is IUpdateAudit<AccountId>),
             StampMode.Transition,
             actor
@@ -144,6 +146,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     entry,
                     nameof(IDeleteAudit.DeletedAt),
                     nameof(IDeleteAudit<>.DeletedById),
+                    HeadlessActorStamps.DeletedById,
                     kind,
                     StampMode.Transition,
                     actor
@@ -154,6 +157,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     entry,
                     nameof(IDeleteAudit.RestoredAt),
                     nameof(IDeleteAudit<>.RestoredById),
+                    HeadlessActorStamps.RestoredById,
                     kind,
                     StampMode.Transition,
                     actor
@@ -164,6 +168,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                     entry,
                     nameof(IDeleteAudit.DeletedAt),
                     nameof(IDeleteAudit<>.DeletedById),
+                    HeadlessActorStamps.DeletedById,
                     kind,
                     StampMode.FillMissing,
                     actor
@@ -201,6 +206,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         EntityEntry entry,
         string timestampName,
         string actorIdName,
+        HeadlessActorStamps stamp,
         ActorKind kind,
         StampMode mode,
         ActorPair actor
@@ -219,6 +225,9 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
+        // Consumed before any early return, so a mark covers exactly the one save that reaches this stamp, even when
+        // an explicit value wins or the save later fails: a mark left behind would drop the actor from a later save.
+        var skipActor = HeadlessActorStampSkips.TryConsume(entry.Entity, stamp);
         var actorId = entry.Property(actorIdName);
 
         if (mode is StampMode.FillMissing ? actorId.CurrentValue is not null : _IsExplicitlySet(actorId))
@@ -233,9 +242,14 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        var (currentUserId, currentAccountId) = actor.Resolve();
-        object? current = kind.IsUser ? currentUserId : null;
-        current ??= kind.IsAccount ? currentAccountId : null;
+        object? current = null;
+
+        if (!skipActor)
+        {
+            var (currentUserId, currentAccountId) = actor.Resolve();
+            current = kind.IsUser ? currentUserId : null;
+            current ??= kind.IsAccount ? currentAccountId : null;
+        }
 
         if (current is null && mode is StampMode.FillMissing)
         {
