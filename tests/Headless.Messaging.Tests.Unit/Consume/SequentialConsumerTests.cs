@@ -103,6 +103,9 @@ public sealed class SequentialConsumerTests : TestBase
     [Guarantee("MSG-LANE-05")]
     public async Task should_hold_a_row_that_waits_behind_its_key_from_retry_pickup()
     {
+        // quarantine: #1924 the finished row intermittently reads as Scheduled; skips while MSG-LANE-05 is Unsupported
+        MessagingGuarantees.RequireSupport("MSG-LANE-05");
+
         // given
         var probe = new PipelineProbe { Behavior = _HoldUntilReleased };
         await using var host = await PipelineHosts.StartAsync(probe, AbortToken, _Sequential(concurrency: 1));

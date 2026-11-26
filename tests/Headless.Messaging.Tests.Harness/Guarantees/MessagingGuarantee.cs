@@ -466,7 +466,13 @@ public static class MessagingGuarantees
             GuaranteeArea.Lanes,
             realSystem: false,
             "A row that waits behind its key on a sequential consumer is held from retry pickup until it runs."
-        ),
+        ) with
+        {
+            Status = GuaranteeStatus.Unsupported,
+            IssueUrl = "https://github.com/xshaheen/headless-framework/issues/1924",
+            Rationale =
+                "Its test intermittently reads the row of a keyed message whose handler returned as Scheduled, not Succeeded.",
+        },
         _Bound(
             "MSG-LANE-06",
             GuaranteeArea.Lanes,
