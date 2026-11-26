@@ -38,6 +38,7 @@ CAPTCHA verification is its own domain: see [captcha.md](captcha.md).
 - Put a misconfiguration that must stop the host in an `IHeadlessStartupValidator`, not in a hosted service. Keep it to in-memory checks.
 - Put first-request preparation (cache loads, script loads) in an `IWarmup`, not in a startup validator or a hosted service's `StartAsync`. Make `WarmUpAsync` safe to repeat: a failed warm-up retries.
 - Register options with `Configure<TOptions, TValidator>(...)` or `AddOptions<TOptions, TValidator>()` from `Headless.Hosting`. Both validate with FluentValidation when the host starts.
+- To put the isolation prefix on a name your application writes to a shared store, such as its own Redis channel or a SignalR backplane prefix, call `services.AddHeadlessPrefix()`, resolve `IOptions<HeadlessPrefixOptions>`, and call `Apply(name, separator)`. Do not read `configuration["Headless:Prefix"]` and format `{prefix}:{name}` yourself: that misses a `ConfigureHeadlessPrefix` call, skips validation, and writes `:{name}` when the prefix is empty. Use `HeadlessPrefixOptions.ConfigurationKey` and `HeadlessPrefixOptions.MaxLength` instead of the key and the limit as literals. See [Prefix your own names](#prefix-your-own-names).
 - Use `HeadlessRedisScriptsLoader` only for Lua scripts, not for general Redis calls. Reuse each script definition's single `Instance`.
 - Use `GeoConstants.GoogleMapsSrid` (4326) as the SRID for geography data. Call `SanitizeForSqlGeography()` before you save a polygon to a SQL Server `geography` column.
 - For a sitemap of more than 50,000 URLs or 50 MB, call `WriteAsync(onShard)` and write each shard inside the callback, not `WriteToAsync`, which throws `ArgumentException` for input past either limit. A shard is invalid after the callback returns.
@@ -287,7 +288,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Capability | Entry point | Section |
 | --- | --- | --- |
 | Host verbs for deploy and verification | `RunHeadlessAsync(args)` | [Host verbs](#host-verbs) |
-| Environments that share one Redis or message broker | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
+| Environments that share one Redis or message broker | `Headless:Prefix`, `ConfigureHeadlessPrefix`, `HeadlessPrefixOptions.Apply` | [Isolation prefix](#isolation-prefix) |
 | Readiness checks for dependencies | `AddHeadlessHealthCheck`, `ConfigureHeadlessHealthCheck`, `RemoveHealthChecks` | [Health checks](#health-checks) |
 | Pre-rollout dependency check | the `check` verb | [Health check command](#health-check-command) |
 | What the host registered, without starting it | the `describe` verb | [Host manifest](#host-manifest) |
@@ -369,6 +370,45 @@ You can also set the environment variable `Headless__Prefix=wt1`, or call `servi
 A provider package applies the prefix to its own options with `services.ApplyHeadlessPrefix<TOptions>((options, prefix) => ...)`. The options factory applies it after every `Configure`, `PostConfigure`, and validation step, once per named instance, so a later consumer `PostConfigure` cannot remove it.
 
 **Verify:** at start the host logs `Headless names in shared stores start with the prefix '{Prefix}'`, and `dotnet MyApp.dll describe` shows the prefix as `host.prefix`.
+
+#### Prefix your own names
+
+The prefix covers only the names Headless features write. When your application writes its own names to a shared store, such as a Redis pub/sub channel or the SignalR Redis backplane, apply the same prefix to them, or two environments hear each other's messages.
+
+1. Call `services.AddHeadlessPrefix()`. It registers `HeadlessPrefixOptions`, binds it from `HeadlessPrefixOptions.ConfigurationKey` (`Headless:Prefix`), and validates it at start. Every Headless feature that writes shared names already calls it, and a repeated call adds nothing. Without it, a host that registers no such feature resolves an empty prefix and ignores the configured value.
+2. Resolve `IOptions<HeadlessPrefixOptions>` and call `Apply(name, separator)`. It returns `name` unchanged when the prefix is empty, and `{prefix}{separator}{name}` otherwise. Use `:` for Redis names, so `SCAN wt1:*` finds them next to the cache and coordination keys.
+
+```csharp
+using Headless.Hosting;
+using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+
+builder.Services.AddHeadlessPrefix();
+
+// A Redis channel the application publishes to and subscribes on.
+builder.Services.AddSingleton(provider =>
+{
+    var prefix = provider.GetRequiredService<IOptions<HeadlessPrefixOptions>>().Value;
+
+    return new OrderEventsChannel(RedisChannel.Literal(prefix.Apply("app:order-events", ":")));
+});
+
+// The SignalR backplane channels. Configure the options through DI so the prefix comes from the host.
+builder.Services.AddSignalR().AddStackExchangeRedis(builder.Configuration.GetConnectionString("Redis")!);
+builder.Services
+    .AddOptions<RedisOptions>()
+    .Configure<IOptions<HeadlessPrefixOptions>>(
+        (options, prefix) => options.Configuration.ChannelPrefix = RedisChannel.Literal(prefix.Value.Apply("signalr:", ":"))
+    );
+
+public sealed record OrderEventsChannel(RedisChannel Channel);
+```
+
+- **Length budget.** When a store limits the length of your names, subtract `HeadlessPrefixOptions.MaxLength` plus the separator length from that limit. Do not repeat `20` as a literal.
+- **Registration-time values.** `Apply` needs the resolved options. When an API takes the name only while you register services, configure that API's options with `Configure<IOptions<HeadlessPrefixOptions>>(...)` as above, instead of reading configuration.
+
+**Verify:** with `Headless__Prefix=wt1`, run `redis-cli PUBSUB CHANNELS 'wt1:*'` while the host is subscribed and confirm that your channels are listed with the prefix. A unit test can resolve `IOptions<HeadlessPrefixOptions>` from a `ServiceCollection` with `ConfigureHeadlessPrefix("wt1")` and assert that `Apply("app:order-events", ":")` returns `wt1:app:order-events`.
 
 ### Health checks
 
