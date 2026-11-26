@@ -563,6 +563,34 @@ internal static class PipelineHosts
     }
 
     /// <summary>
+    /// Waits, without moving time, until every received row of <see cref="PipelineOrder"/> matches
+    /// <paramref name="predicate"/>. Rows change only through the store, so it reads them again after each store call.
+    /// </summary>
+    /// <remarks>
+    /// A handler returning is not its row finishing: the pipeline writes the outcome after the handler, on its own task,
+    /// so a test that asserts a stored outcome waits for it here rather than on the handler.
+    /// </remarks>
+    public static async Task WaitForEveryRowAsync(
+        this SimulationHost host,
+        Func<MessageView, bool> predicate,
+        CancellationToken cancellationToken
+    )
+    {
+        while (true)
+        {
+            var mark = host.Storage.CallMark;
+            var rows = await host.ReceivedRowsAsync(cancellationToken).ConfigureAwait(false);
+            if (rows.Count > 0 && rows.All(predicate))
+            {
+                return;
+            }
+
+            await host.WithinBoundAsync(host.Storage.WhenCallFinishedAsync(mark, cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// Awaits <paramref name="effect"/> within <see cref="Bound"/>, failing with the stored rows and the broker's record,
     /// which is what a reader needs to see where the run stopped.
     /// </summary>
