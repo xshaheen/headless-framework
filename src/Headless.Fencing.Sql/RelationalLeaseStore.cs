@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using Headless.Checks;
@@ -68,6 +69,10 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     private readonly string _claimFirstSql;
     private readonly string _claimAfterSql;
     private readonly string _purgeSql;
+    private readonly string _snapshotColumns;
+    private readonly string _kindsSql;
+    private readonly ConcurrentDictionary<ListShape, string> _listSql = new();
+    private readonly ConcurrentDictionary<ListShape, string> _countSql = new();
 
     public RelationalLeaseStore(
         RelationalFencingStorage storage,
@@ -170,16 +175,20 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
             }
         );
 
+        // Every column an operator view of one attempt needs, in the order _ReadSnapshotAsync reads them. The progress
+        // is reduced to its size in the database, so its bytes never leave it.
+        _snapshotColumns =
+            $"{t.TenantId}, {t.Kind}, {t.Resource}, {t.Generation}, {t.State}, {t.GrantedAt}, {t.ExpiresAt}, "
+            + $"CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, {t.EndedAt}, {t.TakeoverCount}, {t.Holder}, "
+            + $"{storage.ReadDialect.ByteLength(t.Progress)}, {t.ProgressContract}";
+
         // The same lockless one-statement read as the status read, returning the whole attempt the row describes.
         _currentSql = _dialect.Render(
-            new SqlClockedStatement(
-                $"SELECT {t.Generation}, {t.State}, {t.ExpiresAt}, CASE WHEN {t.ExpiresAt} > {now} THEN 1 ELSE 0 END, "
-                    + $"{t.TakeoverCount}, {t.Holder} FROM {t.Table} WHERE {byKey};"
-            )
-            {
-                ReadsOneRow = true,
-            }
+            new SqlClockedStatement($"SELECT {_snapshotColumns} FROM {t.Table} WHERE {byKey};") { ReadsOneRow = true }
         );
+
+        // Reads no clock, so it needs no clocked rendering. The key collations make the order ordinal.
+        _kindsSql = $"SELECT DISTINCT {t.Kind} FROM {_dialect.ReadWithoutWaiting(t.Table)} ORDER BY {t.Kind};";
 
         _insertSql = _dialect.Render(
             new SqlInsertIfAbsent(
@@ -812,24 +821,52 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         await using var command = _Command(_currentSql, connection, transaction, key);
         await using var reader = await _ReaderAsync(command, cancellationToken).ConfigureAwait(false);
 
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? await _ReadSnapshotAsync(reader, cancellationToken).ConfigureAwait(false)
+            : null;
+    }
 
-        var row = new LeaseRow(
-            reader.GetInt64(0),
-            reader.GetInt16(1),
-            await reader.GetFieldValueAsync<DateTimeOffset>(2, cancellationToken).ConfigureAwait(false),
-            reader.GetInt32(4),
-            await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(5)
-        );
-        var live = Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture) == 1;
+    /// <summary>Reads one row of <see cref="_snapshotColumns" /> as the attempt it holds.</summary>
+    private static async ValueTask<LeaseSnapshot> _ReadSnapshotAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        var key = new LeaseKey(reader.GetString(0), reader.GetString(1), reader.GetString(2));
+        var generation = reader.GetInt64(3);
+        var state = Convert.ToInt16(reader.GetValue(4), CultureInfo.InvariantCulture);
+        var grantedAt = await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false);
+        var expiresAt = await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false);
+        var live = Convert.ToInt32(reader.GetValue(7), CultureInfo.InvariantCulture) == 1;
+        DateTimeOffset? endedAt = await reader.IsDBNullAsync(8, cancellationToken).ConfigureAwait(false)
+            ? null
+            : await reader.GetFieldValueAsync<DateTimeOffset>(8, cancellationToken).ConfigureAwait(false);
+        var takeoverCount = reader.GetInt32(9);
+        var holder = await reader.IsDBNullAsync(10, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetString(10);
+        int? progressSize = await reader.IsDBNullAsync(11, cancellationToken).ConfigureAwait(false)
+            ? null
+            : Convert.ToInt32(reader.GetValue(11), CultureInfo.InvariantCulture);
+        var progressContract = await reader.IsDBNullAsync(12, cancellationToken).ConfigureAwait(false)
+            ? null
+            : reader.GetString(12);
 
         // The row's own generation is judged, so the answer is never stale.
-        var status =
-            row.State == FencingTable.Active && live ? LeaseFenceStatus.Current : _Rejection(key, row, row.Generation);
-        return new LeaseSnapshot(key.ToLease(row.Generation), status, row.ExpiresAt, row.Holder, row.TakeoverCount);
+        var row = new LeaseRow(generation, state, expiresAt, takeoverCount, holder);
+        var status = state == FencingTable.Active && live ? LeaseFenceStatus.Current : _Rejection(key, row, generation);
+
+        return new LeaseSnapshot(
+            key.ToLease(generation),
+            status,
+            expiresAt,
+            holder,
+            takeoverCount,
+            grantedAt,
+            endedAt,
+            progressSize,
+            progressContract
+        );
     }
 
     private void _RequireCallerConnection(DbConnection connection, DbTransaction? transaction)
@@ -873,6 +910,269 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         // The refused row is locked by this transaction, so it is still there to read.
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             && Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture) == 1;
+    }
+
+    #endregion
+
+    #region Inspection
+
+    public ValueTask<IReadOnlyList<LeaseSnapshot>> ListAsync(
+        LeaseListFilter filter,
+        LeaseKey? after,
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(filter);
+        Argument.IsPositive(limit);
+
+        var sql = _listSql.GetOrAdd(_ShapeOf(filter, after is not null), _RenderList);
+
+        return SqlAutonomousRead.RunAsync(
+            "fencing.list",
+            _storage.CreateConnection,
+            async (connection, ct) =>
+            {
+                await using var command = _Command(sql, connection, transaction: null);
+                _AddFilter(command, filter);
+                _dialect.AddParameter(command, "Limit", SqlColumnType.Int32, limit);
+
+                if (after is { } cursor)
+                {
+                    _dialect.AddParameter(
+                        command,
+                        "AfterTenantId",
+                        SqlColumnType.KeyText(FencingFieldLimits.TenantIdMaxLength),
+                        cursor.TenantId
+                    );
+                    _dialect.AddParameter(
+                        command,
+                        "AfterKind",
+                        SqlColumnType.KeyText(FencingFieldLimits.KindMaxLength),
+                        cursor.Kind
+                    );
+                    _dialect.AddParameter(
+                        command,
+                        "AfterResource",
+                        SqlColumnType.KeyText(FencingFieldLimits.ResourceMaxLength),
+                        cursor.Resource
+                    );
+                }
+
+                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+                var rows = new List<LeaseSnapshot>();
+
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    rows.Add(await _ReadSnapshotAsync(reader, ct).ConfigureAwait(false));
+                }
+
+                return (IReadOnlyList<LeaseSnapshot>)rows;
+            },
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<FencedLeaseCounts> CountAsync(
+        LeaseListFilter filter,
+        int cap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(filter);
+        Argument.IsPositive(cap);
+
+        var sql = _countSql.GetOrAdd(_ShapeOf(filter, after: false), _RenderCount);
+
+        return SqlAutonomousRead.RunAsync(
+            "fencing.count",
+            _storage.CreateConnection,
+            async (connection, ct) =>
+            {
+                await using var command = _Command(sql, connection, transaction: null);
+                _AddFilter(command, filter);
+                // One row past the cap proves the count is capped.
+                _dialect.AddParameter(command, "Cap", SqlColumnType.Int32, cap + 1);
+
+                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+                await reader.ReadAsync(ct).ConfigureAwait(false);
+
+                return new FencedLeaseCounts(
+                    LeaseCount.Of(Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture), cap),
+                    LeaseCount.Of(Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture), cap),
+                    LeaseCount.Of(Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture), cap)
+                );
+            },
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<IReadOnlyList<string>> ListKindsAsync(CancellationToken cancellationToken = default)
+    {
+        return SqlAutonomousRead.RunAsync(
+            "fencing.kinds",
+            _storage.CreateConnection,
+            async (connection, ct) =>
+            {
+                await using var command = _Command(_kindsSql, connection, transaction: null);
+                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+                var kinds = new List<string>();
+
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    kinds.Add(reader.GetString(0));
+                }
+
+                return (IReadOnlyList<string>)kinds;
+            },
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    private static ListShape _ShapeOf(LeaseListFilter filter, bool after)
+    {
+        return new ListShape(
+            filter.TenantId is not null,
+            filter.Kind is not null,
+            filter.ResourcePrefix is not null,
+            filter.State,
+            after
+        );
+    }
+
+    private string _RenderList(ListShape shape)
+    {
+        var t = _t;
+        var conditions = _FilterConditions(shape);
+
+        if (_StateCondition(shape.State) is { } state)
+        {
+            conditions.Add(state);
+        }
+
+        if (shape.After)
+        {
+            conditions.Add(_dialect.KeysetAfter(t.KeyColumns, ["AfterTenantId", "AfterKind", "AfterResource"]));
+        }
+
+        // The primary key orders the page, so a keyset position stays valid under any filter.
+        return _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {_snapshotColumns} FROM {_dialect.ReadWithoutWaiting(t.Table)}{_Where(conditions)} "
+                    + $"ORDER BY {string.Join(", ", t.KeyColumns)} {_dialect.Limit("Limit")};"
+            )
+        );
+    }
+
+    private string _RenderCount(ListShape shape)
+    {
+        var t = _t;
+        var order = string.Join(", ", t.KeyColumns);
+
+        // Each state is counted by its own capped subquery, so one capped state never hides another's exact count,
+        // and all three judge expiry by the one clock read the statement makes.
+        string count(FencedLeaseStateFilter state, string name)
+        {
+            if (shape.State != FencedLeaseStateFilter.All && shape.State != state)
+            {
+                return "0";
+            }
+
+            var conditions = _FilterConditions(shape);
+            conditions.Add(_StateCondition(state)!);
+
+            return $"(SELECT COUNT(*) FROM (SELECT 1 AS one_row FROM {_dialect.ReadWithoutWaiting(t.Table)}"
+                + $"{_Where(conditions)} ORDER BY {order} {_dialect.Limit("Cap")}) AS {name})";
+        }
+
+        return _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {count(FencedLeaseStateFilter.Live, "live_rows")}, "
+                    + $"{count(FencedLeaseStateFilter.Expired, "expired_rows")}, "
+                    + $"{count(FencedLeaseStateFilter.Ended, "ended_rows")};"
+            )
+        );
+    }
+
+    private List<string> _FilterConditions(ListShape shape)
+    {
+        var t = _t;
+        var conditions = new List<string>();
+
+        if (shape.Tenant)
+        {
+            conditions.Add($"{t.TenantId} = @TenantId");
+        }
+
+        if (shape.Kind)
+        {
+            conditions.Add($"{t.Kind} = @Kind");
+        }
+
+        if (shape.Prefix)
+        {
+            conditions.Add(_storage.ReadDialect.StartsWith(t.Resource, "ResourcePrefix"));
+        }
+
+        return conditions;
+    }
+
+    private static string _Where(List<string> conditions)
+    {
+        return conditions.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", conditions);
+    }
+
+    private string? _StateCondition(FencedLeaseStateFilter state)
+    {
+        var t = _t;
+        var active = FencingTable.StateLiteral(FencingTable.Active);
+        const string now = SqlDialectTokens.Now;
+
+        return state switch
+        {
+            FencedLeaseStateFilter.Live => $"({t.State} = {active} AND {t.ExpiresAt} > {now})",
+            FencedLeaseStateFilter.Expired => $"({t.State} = {active} AND {t.ExpiresAt} <= {now})",
+            FencedLeaseStateFilter.Ended => $"{t.State} <> {active}",
+            _ => null,
+        };
+    }
+
+    private void _AddFilter(DbCommand command, LeaseListFilter filter)
+    {
+        if (filter.TenantId is not null)
+        {
+            _dialect.AddParameter(
+                command,
+                "TenantId",
+                SqlColumnType.KeyText(FencingFieldLimits.TenantIdMaxLength),
+                filter.TenantId
+            );
+        }
+
+        if (filter.Kind is not null)
+        {
+            _dialect.AddParameter(
+                command,
+                "Kind",
+                SqlColumnType.KeyText(FencingFieldLimits.KindMaxLength),
+                filter.Kind
+            );
+        }
+
+        if (filter.ResourcePrefix is not null)
+        {
+            var prefix = _storage.ReadDialect.PrefixValue(filter.ResourcePrefix);
+            // An escaped SQL Server pattern can be longer than the column, so it binds unsized past that.
+            _dialect.AddParameter(
+                command,
+                "ResourcePrefix",
+                SqlColumnType.LookupText(FencingFieldLimits.ResourceMaxLength, prefix),
+                prefix
+            );
+        }
     }
 
     #endregion
@@ -1226,6 +1526,15 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         DateTimeOffset ExpiresAt,
         int TakeoverCount,
         string? Holder
+    );
+
+    /// <summary>Which optional parts a list statement filters on; each shape renders one statement text.</summary>
+    private readonly record struct ListShape(
+        bool Tenant,
+        bool Kind,
+        bool Prefix,
+        FencedLeaseStateFilter State,
+        bool After
     );
 
     private sealed record GrantedRow(

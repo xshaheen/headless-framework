@@ -268,6 +268,8 @@ public sealed class LeasesHost(ServiceProvider services) : IAsyncDisposable
 
     public IFencedLeases Leases { get; } = services.GetRequiredService<IFencedLeases>();
 
+    public IFencedLeaseInspector Inspector { get; } = services.GetRequiredService<IFencedLeaseInspector>();
+
     public IUnitOfWorkFactory Factory { get; } = services.GetRequiredService<IUnitOfWorkFactory>();
 
     public ICurrentTenant CurrentTenant { get; } = services.GetRequiredService<ICurrentTenant>();

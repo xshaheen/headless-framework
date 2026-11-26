@@ -1586,6 +1586,447 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     #endregion
 
+    #region Inspection
+
+    public virtual async Task should_list_every_lease_of_a_kind_in_key_order_by_pages_without_repeat_or_gap()
+    {
+        var kind = CreateKind();
+        var (tenantA, tenantB) = (CreateTenant("a"), CreateTenant("b"));
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var expected = new List<(string? Tenant, string Resource)>();
+
+        foreach (var tenant in new[] { tenantB, null, tenantA })
+        {
+            using (host.CurrentTenant.Change(tenant))
+            {
+                foreach (var resource in new[] { "r-2", "r-1" })
+                {
+                    await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+                    expected.Add((tenant, resource));
+                }
+            }
+        }
+
+        // The host scope sorts first, then tenants and resources ordinally.
+        var ordered = expected
+            .OrderBy(static e => e.Tenant ?? "", StringComparer.Ordinal)
+            .ThenBy(static e => e.Resource, StringComparer.Ordinal)
+            .ToList();
+
+        var query = new FencedLeaseQuery { Kind = kind };
+        var listed = new List<LeaseSnapshot>();
+        var sizes = new List<int>();
+        FencedLeasePosition? after = null;
+
+        do
+        {
+            var page = await host.Inspector.ListAsync(query, after, pageSize: 4, AbortToken);
+            sizes.Add(page.Items.Count);
+            listed.AddRange(page.Items);
+            after = page.Next;
+        } while (after is not null);
+
+        sizes.Should().Equal(4, 2);
+        listed.Select(static s => (s.Lease.TenantId, s.Lease.Resource)).Should().Equal(ordered);
+        listed.Should().OnlyContain(s => s.Lease.Kind == kind && s.IsLive);
+
+        var exact = await host.Inspector.ListAsync(query, after: null, pageSize: 6, AbortToken);
+        exact.Items.Should().HaveCount(6);
+        exact.Next.Should().BeNull("a page that holds the last lease has no next page");
+    }
+
+    public virtual async Task should_partition_listed_and_counted_leases_into_live_expired_and_ended_by_the_database_clock()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var (live, expired, settled, released, revoked, abandoned) = (
+            "live",
+            "expired",
+            "settled",
+            "released",
+            "revoked",
+            "abandoned"
+        );
+        // The sweep runs before the expired lease expires, so it abandons only its own lease.
+        await host.Leases.GrantAsync(kind, abandoned, LongDuration, AbortToken);
+        await ExpireAsync(HostKey(kind, abandoned));
+        await _SweepOneAsync(host, kind, abandoned);
+        await host.Leases.GrantAsync(kind, live, LongDuration, AbortToken);
+        await host.Leases.GrantAsync(kind, expired, LongDuration, AbortToken);
+        await ExpireAsync(HostKey(kind, expired));
+        await host.Leases.SettleAsync(
+            (await host.Leases.GrantAsync(kind, settled, LongDuration, AbortToken)).Lease!,
+            AbortToken
+        );
+        await host.Leases.ReleaseAsync(
+            (await host.Leases.GrantAsync(kind, released, LongDuration, AbortToken)).Lease!,
+            AbortToken
+        );
+        await host.Leases.GrantAsync(kind, revoked, LongDuration, AbortToken);
+        await host.Leases.RevokeAsync(kind, revoked, AbortToken);
+
+        async Task<string[]> list(FencedLeaseStateFilter state)
+        {
+            var page = await host.Inspector.ListAsync(
+                new FencedLeaseQuery { Kind = kind, State = state },
+                after: null,
+                pageSize: 50,
+                AbortToken
+            );
+
+            return [.. page.Items.Select(static s => s.Lease.Resource)];
+        }
+
+        (await list(FencedLeaseStateFilter.Live)).Should().Equal(live);
+        (await list(FencedLeaseStateFilter.Expired)).Should().Equal(expired);
+        (await list(FencedLeaseStateFilter.Ended)).Should().BeEquivalentTo(settled, released, revoked, abandoned);
+        (await list(FencedLeaseStateFilter.All)).Should().HaveCount(6);
+
+        var all = await host.Inspector.ListAsync(new FencedLeaseQuery { Kind = kind }, null, 50, AbortToken);
+        var byResource = all.Items.ToDictionary(static s => s.Lease.Resource, StringComparer.Ordinal);
+        byResource[live]
+            .Should()
+            .Match<LeaseSnapshot>(s => s.IsLive && !s.IsExpired && !s.IsEnded && s.EndedAt == null);
+        byResource[expired]
+            .Should()
+            .Match<LeaseSnapshot>(s => s.IsExpired && s.Status == LeaseFenceStatus.Expired && s.EndedAt == null);
+        byResource[settled].Status.Should().Be(LeaseFenceStatus.Settled);
+        byResource[released].Status.Should().Be(LeaseFenceStatus.Released);
+        byResource[revoked].Status.Should().Be(LeaseFenceStatus.Revoked);
+        byResource[abandoned].Status.Should().Be(LeaseFenceStatus.Abandoned);
+        all.Items.Where(static s => s.IsEnded).Should().OnlyContain(static s => s.EndedAt != null);
+        all.Items.Should().OnlyContain(static s => s.GrantedAt <= s.ExpiresAt);
+
+        var counts = await host.Inspector.CountAsync(
+            new FencedLeaseQuery { Kind = kind },
+            cancellationToken: AbortToken
+        );
+        counts.Live.Should().Be(new LeaseCount(1, Capped: false));
+        counts.Expired.Should().Be(new LeaseCount(1, Capped: false));
+        counts.Ended.Should().Be(new LeaseCount(4, Capped: false));
+        counts.Total.Should().Be(new LeaseCount(6, Capped: false));
+
+        var endedOnly = await host.Inspector.CountAsync(
+            new FencedLeaseQuery { Kind = kind, State = FencedLeaseStateFilter.Ended },
+            cancellationToken: AbortToken
+        );
+        endedOnly.Should().Be(new FencedLeaseCounts(default, default, new LeaseCount(4, Capped: false)));
+    }
+
+    public virtual async Task should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock()
+    {
+        foreach (var skew in new[] { TimeSpan.FromMinutes(-10), TimeSpan.FromMinutes(10) })
+        {
+            var kind = CreateKind();
+            await using var host = await Fixture.CreateHostAsync(
+                timeProvider: new SkewedTimeProvider(skew),
+                cancellationToken: AbortToken
+            );
+
+            await host.Leases.GrantAsync(kind, "live", LongDuration, AbortToken);
+            await host.Leases.GrantAsync(kind, "expired", LongDuration, AbortToken);
+            await ExpireAsync(HostKey(kind, "expired"));
+
+            var page = await host.Inspector.ListAsync(new FencedLeaseQuery { Kind = kind }, null, 10, AbortToken);
+            var counts = await host.Inspector.CountAsync(
+                new FencedLeaseQuery { Kind = kind },
+                cancellationToken: AbortToken
+            );
+
+            page.Items.Single(static s => s.Lease.Resource == "live").IsLive.Should().BeTrue($"under a {skew} skew");
+            page.Items.Single(static s => s.Lease.Resource == "expired")
+                .IsExpired.Should()
+                .BeTrue($"under a {skew} skew");
+            counts.Live.Count.Should().Be(1);
+            counts.Expired.Count.Should().Be(1);
+        }
+    }
+
+    public virtual async Task should_filter_by_tenant_or_the_host_scope_and_get_by_an_explicit_tenant()
+    {
+        var kind = CreateKind();
+        var (tenantA, tenantB) = (CreateTenant("a"), CreateTenant("b"));
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var hostLease = (await host.Leases.GrantAsync(kind, "shared", LongDuration, AbortToken)).Lease!;
+        FencedLease tenantLease;
+
+        using (host.CurrentTenant.Change(tenantA))
+        {
+            tenantLease = (await host.Leases.GrantAsync(kind, "shared", LongDuration, AbortToken)).Lease!;
+        }
+
+        using (host.CurrentTenant.Change(tenantB))
+        {
+            await host.Leases.GrantAsync(kind, "other", LongDuration, AbortToken);
+        }
+
+        async Task<FencedLease[]> list(LeaseTenantFilter tenant)
+        {
+            var page = await host.Inspector.ListAsync(
+                new FencedLeaseQuery { Kind = kind, Tenant = tenant },
+                null,
+                10,
+                AbortToken
+            );
+
+            return [.. page.Items.Select(static s => s.Lease)];
+        }
+
+        (await list(LeaseTenantFilter.Any)).Should().HaveCount(3);
+        (await list(LeaseTenantFilter.Host)).Should().Equal(hostLease);
+        (await list(LeaseTenantFilter.Of(null))).Should().Equal(hostLease);
+        (await list(LeaseTenantFilter.Of(tenantA))).Should().Equal(tenantLease);
+
+        (
+            await host.Inspector.CountAsync(
+                new FencedLeaseQuery { Kind = kind, Tenant = LeaseTenantFilter.Of(tenantB) },
+                cancellationToken: AbortToken
+            )
+        )
+            .Total.Should()
+            .Be(new LeaseCount(1, Capped: false));
+
+        using (host.CurrentTenant.Change(tenantB))
+        {
+            // The inspector never reads the current tenant.
+            (await host.Inspector.GetAsync(tenantA, kind, "shared", AbortToken))!
+                .Lease.Should()
+                .Be(tenantLease);
+            (await host.Inspector.GetAsync(null, kind, "shared", AbortToken))!.Lease.Should().Be(hostLease);
+        }
+
+        (await host.Inspector.GetAsync(tenantB, kind, "shared", AbortToken))
+            .Should()
+            .BeNull("tenant b has no such lease");
+        (await host.Inspector.GetAsync(tenantA, kind, "shared", AbortToken))!.IsLive.Should().BeTrue();
+    }
+
+    public virtual async Task should_match_the_resource_prefix_ordinally_and_with_every_character_literal()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        string[] resources =
+        [
+            "Export/1",
+            "export/1",
+            "export/2",
+            "expo",
+            "exp%x",
+            "exp_y",
+            "ex[p]z",
+            "ex*p?",
+            @"ex\q",
+            "exq",
+        ];
+
+        foreach (var resource in resources)
+        {
+            await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        }
+
+        async Task<string[]> matching(string prefix)
+        {
+            var page = await host.Inspector.ListAsync(
+                new FencedLeaseQuery { Kind = kind, ResourcePrefix = prefix },
+                null,
+                50,
+                AbortToken
+            );
+
+            return [.. page.Items.Select(static s => s.Lease.Resource)];
+        }
+
+        (await matching("export/")).Should().Equal("export/1", "export/2");
+        (await matching("Export/")).Should().Equal("Export/1");
+        (await matching("exp%")).Should().Equal("exp%x");
+        (await matching("exp_")).Should().Equal("exp_y");
+        (await matching("ex[")).Should().Equal("ex[p]z");
+        (await matching("ex*")).Should().Equal("ex*p?");
+        (await matching(@"ex\")).Should().Equal(@"ex\q");
+        (await matching("export/1")).Should().Equal("export/1");
+        (await matching("export/1-longer")).Should().BeEmpty();
+        (await matching("")).Should().HaveCount(resources.Length, "an empty prefix matches every resource");
+
+        (
+            await host.Inspector.CountAsync(
+                new FencedLeaseQuery { Kind = kind, ResourcePrefix = "exp_" },
+                cancellationToken: AbortToken
+            )
+        )
+            .Live.Should()
+            .Be(new LeaseCount(1, Capped: false));
+    }
+
+    public virtual async Task should_report_progress_size_and_contract_without_its_bytes()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var granted = await host.Leases.GrantAsync(kind, "with-progress", LongDuration, AbortToken);
+        await host.Leases.RenewAsync(
+            granted.Lease!,
+            LongDuration,
+            Progress("export.cursor/v1", 1, 2, 3, 4, 5),
+            AbortToken
+        );
+        await host.Leases.GrantAsync(kind, "without-progress", LongDuration, AbortToken);
+
+        var withProgress = await host.Inspector.GetAsync(null, kind, "with-progress", AbortToken);
+        var stored = await Fixture.ReadLeaseAsync(HostKey(kind, "with-progress"), AbortToken);
+
+        withProgress!.ProgressSizeBytes.Should().Be(5);
+        withProgress.ProgressContract.Should().Be("export.cursor/v1");
+        withProgress.GrantedAt.Should().BeCloseTo(stored!.GrantedAt, TimeSpan.FromMicroseconds(1));
+        withProgress.ExpiresAt.Should().BeCloseTo(stored.ExpiresAt, TimeSpan.FromMicroseconds(1));
+
+        var page = await host.Inspector.ListAsync(new FencedLeaseQuery { Kind = kind }, null, 10, AbortToken);
+        page.Items.Single(static s => s.Lease.Resource == "with-progress").Should().Be(withProgress);
+        var without = page.Items.Single(static s => s.Lease.Resource == "without-progress");
+        without.ProgressSizeBytes.Should().BeNull();
+        without.ProgressContract.Should().BeNull();
+
+        typeof(LeaseSnapshot)
+            .GetProperties()
+            .Select(static p => p.PropertyType)
+            .Should()
+            .NotContain(
+                [typeof(byte[]), typeof(ReadOnlyMemory<byte>), typeof(Memory<byte>), typeof(LeaseProgress)],
+                "an operator view never carries the progress bytes"
+            );
+
+        var current = await host.Leases.GetCurrentAsync(kind, "with-progress", AbortToken);
+        current.Should().Be(withProgress, "the current read and the inspector read the same attempt");
+    }
+
+    public virtual async Task should_list_the_kinds_in_use_in_ordinal_order_until_their_rows_are_purged()
+    {
+        var stem = CreateKind();
+        var (upper, lower, purged) = ($"{stem}-B", $"{stem}-a", $"{stem}-c");
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        await host.Leases.GrantAsync(lower, "r", LongDuration, AbortToken);
+        await host.Leases.GrantAsync(upper, "r", LongDuration, AbortToken);
+        await host.Leases.SettleAsync(
+            (await host.Leases.GrantAsync(purged, "r", LongDuration, AbortToken)).Lease!,
+            AbortToken
+        );
+
+        var kinds = await host.Inspector.ListKindsAsync(AbortToken);
+        kinds.Should().BeInAscendingOrder(StringComparer.Ordinal);
+        kinds.Should().OnlyHaveUniqueItems();
+        kinds.Where(k => k.StartsWith(stem, StringComparison.Ordinal)).Should().Equal(upper, lower, purged);
+
+        (await host.Leases.PurgeAsync(purged, TimeSpan.Zero, AbortToken)).Should().Be(1);
+
+        (await host.Inspector.ListKindsAsync(AbortToken))
+            .Where(k => k.StartsWith(stem, StringComparison.Ordinal))
+            .Should()
+            .Equal(upper, lower);
+    }
+
+    public virtual async Task should_cap_each_state_count_on_its_own()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        foreach (var resource in new[] { "l-1", "l-2", "l-3" })
+        {
+            await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        }
+
+        await host.Leases.ReleaseAsync(
+            (await host.Leases.GrantAsync(kind, "e-1", LongDuration, AbortToken)).Lease!,
+            AbortToken
+        );
+        await host.Leases.ReleaseAsync(
+            (await host.Leases.GrantAsync(kind, "e-2", LongDuration, AbortToken)).Lease!,
+            AbortToken
+        );
+
+        var capped = await host.Inspector.CountAsync(new FencedLeaseQuery { Kind = kind }, cap: 2, AbortToken);
+
+        capped.Live.Should().Be(new LeaseCount(2, Capped: true));
+        capped.Expired.Should().Be(new LeaseCount(0, Capped: false));
+        capped.Ended.Should().Be(new LeaseCount(2, Capped: false), "a capped live count never hides the ended count");
+        capped.Total.Should().Be(new LeaseCount(4, Capped: true));
+
+        var exact = await host.Inspector.CountAsync(new FencedLeaseQuery { Kind = kind }, cap: 3, AbortToken);
+        exact.Live.Should().Be(new LeaseCount(3, Capped: false));
+    }
+
+    public virtual async Task should_refuse_an_invalid_inspection_before_reading()
+    {
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var query = new FencedLeaseQuery();
+
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.ListAsync(null!, null, 10, AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentNullException>();
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.ListAsync(query, null, 0, AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentOutOfRangeException>();
+        await FluentActions
+            .Awaiting(async () =>
+                await host.Inspector.ListAsync(query, null, FencedLeasePage.MaxPageSize + 1, AbortToken)
+            )
+            .Should()
+            .ThrowAsync<ArgumentOutOfRangeException>();
+        await FluentActions
+            .Awaiting(async () =>
+                await host.Inspector.ListAsync(query with { State = (FencedLeaseStateFilter)99 }, null, 10, AbortToken)
+            )
+            .Should()
+            .ThrowAsync<System.ComponentModel.InvalidEnumArgumentException>();
+        await FluentActions
+            .Awaiting(async () =>
+                await host.Inspector.ListAsync(query with { Tenant = LeaseTenantFilter.Of("") }, null, 10, AbortToken)
+            )
+            .Should()
+            .ThrowAsync<ArgumentException>("the empty tenant id is the stored host scope, never a tenant");
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.ListAsync(query with { Kind = " " }, null, 10, AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(async () =>
+                await host.Inspector.ListAsync(query, new FencedLeasePosition(null, "k", ""), 10, AbortToken)
+            )
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.GetAsync("", "k", "r", AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(async () => await host.Inspector.CountAsync(query, cap: 0, AbortToken))
+            .Should()
+            .ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    private async Task _SweepOneAsync(LeasesHost host, string kind, string resource)
+    {
+        var swept = await host.Leases.SweepExpiredAsync(
+            kind,
+            (_, _, _) => ValueTask.CompletedTask,
+            limit: 10,
+            AbortToken
+        );
+        swept.Handled.Select(static l => l.Resource).Should().Equal(resource);
+    }
+
+    /// <summary>Returns a tenant id no other test uses; <paramref name="suffix" /> orders tenants of one test.</summary>
+    protected static string CreateTenant(string suffix)
+    {
+        return $"tenant-{Guid.NewGuid():N}-{suffix}";
+    }
+
+    #endregion
+
     /// <summary>Returns a progress record over <paramref name="payload" />.</summary>
     protected static LeaseProgress Progress(string contract, params byte[] payload)
     {

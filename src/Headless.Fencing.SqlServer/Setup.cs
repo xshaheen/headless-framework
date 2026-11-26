@@ -117,6 +117,7 @@ public static class SetupFencingSqlServer
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqlConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
-        SqlServerFencingSchemaContribution.Create
+        SqlServerFencingSchemaContribution.Create,
+        FencingReadDialect.SqlServer
     );
 }

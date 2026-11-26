@@ -311,4 +311,34 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     {
         return base.should_purge_a_revoked_lease_older_than_the_threshold();
     }
+
+    [Fact]
+    public override Task should_list_every_lease_of_a_kind_in_key_order_by_pages_without_repeat_or_gap()
+    {
+        return base.should_list_every_lease_of_a_kind_in_key_order_by_pages_without_repeat_or_gap();
+    }
+
+    [Fact]
+    public override Task should_partition_listed_and_counted_leases_into_live_expired_and_ended_by_the_database_clock()
+    {
+        return base.should_partition_listed_and_counted_leases_into_live_expired_and_ended_by_the_database_clock();
+    }
+
+    [Fact]
+    public override Task should_match_the_resource_prefix_ordinally_and_with_every_character_literal()
+    {
+        return base.should_match_the_resource_prefix_ordinally_and_with_every_character_literal();
+    }
+
+    [Fact]
+    public override Task should_list_the_kinds_in_use_in_ordinal_order_until_their_rows_are_purged()
+    {
+        return base.should_list_the_kinds_in_use_in_ordinal_order_until_their_rows_are_purged();
+    }
+
+    [Fact]
+    public override Task should_cap_each_state_count_on_its_own()
+    {
+        return base.should_cap_each_state_count_on_its_own();
+    }
 }

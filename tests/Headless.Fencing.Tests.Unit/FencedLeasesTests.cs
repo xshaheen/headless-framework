@@ -547,7 +547,11 @@ public sealed class FencedLeasesTests : TestBase
             LeaseFenceStatus.Current,
             DateTimeOffset.UnixEpoch,
             "cluster/node-1@3",
-            TakeoverCount: 0
+            TakeoverCount: 0,
+            GrantedAt: DateTimeOffset.UnixEpoch,
+            EndedAt: null,
+            ProgressSizeBytes: null,
+            ProgressContract: null
         );
         var connection = Substitute.For<DbConnection>();
         var transaction = Substitute.For<DbTransaction>();

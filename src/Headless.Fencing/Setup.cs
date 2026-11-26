@@ -15,7 +15,7 @@ public static class SetupFencing
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <see cref="IFencedLeases" />, the enlisted <c>unit.Leases</c> feature, and the chosen provider.
+        /// Registers <see cref="IFencedLeases" />, <see cref="IFencedLeaseInspector" />, the enlisted <c>unit.Leases</c> feature, and the chosen provider.
         /// Exactly one <c>setup.Use…</c> call (<c>UseInMemory</c>, <c>UsePostgreSql</c>, or <c>UseSqlServer</c>) is
         /// required.
         /// </summary>
@@ -59,6 +59,7 @@ public static class SetupFencing
             services.TryAddSingleton<LeaseRequestResolver>();
             services.TryAddSingleton<LeaseTakeoverAlerts>();
             services.TryAddSingleton<IFencedLeases, FencedLeases>();
+            services.TryAddSingleton<IFencedLeaseInspector, FencedLeaseInspector>();
             services.TryAddSingleton<IUnitOfWorkLeases, UnitOfWorkLeasesFeature>();
 
             foreach (var extension in setup.Extensions)
