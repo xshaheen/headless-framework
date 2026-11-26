@@ -189,9 +189,9 @@ public sealed class PermissionManager(
                 .SetVersionedAsync(writes, providerKey, version, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (DBConcurrencyException)
+        catch (DBConcurrencyException exception)
         {
-            throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+            throw new ConflictException(errorsDescriptor.VersionMismatch(providerName), exception);
         }
 
         await _PublishChangedAsync([.. grants.Keys], providerName, providerKey).ConfigureAwait(false);

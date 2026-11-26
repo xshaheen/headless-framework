@@ -59,7 +59,7 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         {
             logger.LogFailedToCreateWalletCashIn(e, request);
 
-            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed(), e);
         }
 
         if (string.IsNullOrWhiteSpace(payResponse.RedirectUrl) || !payResponse.IsCreatedSuccessfully())
@@ -99,7 +99,7 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         {
             logger.LogFailedToCreateKioskCashIn(e, request);
 
-            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed(), e);
         }
 
         if (payResponse.Data is null || !payResponse.IsCreatedSuccessfully())
@@ -141,7 +141,7 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         {
             logger.LogFailedToCreateSavedTokenCashIn(e, request);
 
-            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed(), e);
         }
 
         if (payResponse.ErrorOccured.Equals("true", StringComparison.OrdinalIgnoreCase))
@@ -273,7 +273,7 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         {
             logger.LogCannotCreatePaymentKey(e, request.OrderId, request.IntegrationId, request.AmountCents);
 
-            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed(), e);
         }
     }
 
@@ -295,7 +295,7 @@ internal sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Pa
         {
             logger.LogCannotCreateOrder(e, amountCents);
 
-            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed(), e);
         }
 
         return response;
