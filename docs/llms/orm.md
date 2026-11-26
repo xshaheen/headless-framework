@@ -48,6 +48,7 @@ Neither tier is registered by default. No startup check covers them: a save thro
 - Wrap a host or admin write in `ITenantWriteGuardBypass.BeginBypass()` when `GuardTenantWrites()` is on. `IgnoreMultiTenancyFilter()` lifts only the read filter, and the two bypasses are independent.
 - Create a fresh `DbContext` for each tenant scope. The tenant filter reads the current tenant on every query, but `FindAsync` can return an entity already tracked under another tenant.
 - Add explicit tenant predicates and authorization to raw SQL and stored procedures. They bypass the query filters and the write guard, and `BeginBypass()` has no effect on them. Bulk `ExecuteUpdate` and `ExecuteDelete` apply the query filters but skip the write guard.
+- Answer a lost uniqueness race with your own error through `db.SaveChangesOrConflictAsync(indexName, descriptor, ct)`, not a hand-written `catch (DbUpdateException)` that parses the provider exception, and not a pre-save existence check alone, which a concurrent writer can pass at the same time. See [Unique conflicts](#unique-conflicts).
 - Treat a zero-row update or delete as `DbUpdateConcurrencyException`, as EF Core reports it. Never translate it into a tenancy exception, and never assume that domain-event handlers did not run.
 - Write your own migrations for tenant columns, keys, and indexes. Headless supplies no backfill and no default tenant. See [Tenant schema rollout](#tenant-schema-rollout).
 - Leave `ConcurrencyStamp` on ASP.NET Identity entities to Identity. Do not add framework concurrency stamping to them.
@@ -501,6 +502,32 @@ modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyAmountVal
 // Or apply globally across all matching CLR types:
 configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueConverter>();
 ```
+
+#### Unique conflicts
+
+A handler that checks that no other row holds a value can still lose to a concurrent writer that takes the value before the save. The unique index decides the race. Without a mapping, the Headless API exception handler answers the violation with the generic 409 `g:unique_violation`. To return your own error, save through `SaveChangesOrConflictAsync` (namespace `Microsoft.EntityFrameworkCore`) and name the index:
+
+```csharp
+// The model names the index, so the database reports the same name.
+modelBuilder.Entity<Member>().HasIndex(x => x.Email).IsUnique().HasDatabaseName("IX_Members_Email");
+
+// In the handler: the existence check gives the common case a clean error, the save covers the race.
+if (await db.Members.AnyAsync(x => x.Email == command.Email, ct))
+{
+    throw new ConflictException(MemberErrors.EmailTaken());
+}
+
+db.Members.Add(member);
+await db.SaveChangesOrConflictAsync("IX_Members_Email", MemberErrors.EmailTaken(), ct);
+```
+
+- A violation of the named constraint or unique index throws `ConflictException` with your descriptor, and the provider failure as `InnerException`. The Headless API exception handler returns it as 409 with your `errors[].code`.
+- Pass an `IReadOnlyDictionary<string, ErrorDescriptor>` to map several names in one save. The dictionary's comparer matches the reported name; use `StringComparer.Ordinal`.
+- A violation of any other constraint, and every other failure, propagates unchanged, so the generic 409 still answers it.
+- Name the constraint as the database holds it: `HasDatabaseName(...)` for an index, `HasName(...)` for a key or alternate key. EF's default names (`IX_<Table>_<Column>`, `AK_...`, `PK_...`) work too, but a naming convention such as snake_case rewrites them.
+- The constraint name comes from `RelationalFaults.IsUniqueViolation(exception, out var constraintName)` in `Headless.Extensions`, which you can call from your own catch filter. PostgreSQL reports the name in its own field. SQL Server reports it only in the message text, so the name is read from the English message (errors `2627` and `2601`). Under a session or login language that localizes the message (`SET LANGUAGE`, or a non-English default language), no name is read: the mapping does not apply, and the violation propagates as the generic 409. SQLite reports no name, so the mapping never applies there.
+
+**Verify:** in an integration test against your engine, insert a row, add a second row with the same value, and assert that `SaveChangesOrConflictAsync` throws `ConflictException` whose `Errors[0].Code` is your code.
 
 ### Design and runtime behavior
 

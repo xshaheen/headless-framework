@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Headless.Checks;
 
 namespace Headless;
@@ -11,7 +12,7 @@ namespace Headless;
 /// <summary>
 /// Reads a relational failure without referencing any ADO.NET driver: finds the database exception in a failure's
 /// chain, enumerates every SQL Server error number it carries, and recognizes a unique-key violation on PostgreSQL,
-/// SQL Server, and SQLite. The unit of work's transient classifier reads faults the same way; build a narrower
+/// SQL Server, and SQLite, with the violated constraint's name where the engine reports one. The unit of work's transient classifier reads faults the same way; build a narrower
 /// classifier (a conflict mapper, a duplicate-insert check) on these instead of reading driver properties by hand.
 /// </summary>
 /// <remarks>
@@ -27,7 +28,7 @@ namespace Headless;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public static class RelationalFaults
+public static partial class RelationalFaults
 {
     private const string _SqlClientExceptionTypeName = "Microsoft.Data.SqlClient.SqlException";
     private const string _LegacySqlClientExceptionTypeName = "System.Data.SqlClient.SqlException";
@@ -43,6 +44,8 @@ public static class RelationalFaults
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> _ErrorsProperties = new();
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> _NumberProperties = new();
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> _SqliteExtendedErrorCodeProperties = new();
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> _ConstraintNameProperties = new();
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> _MessageProperties = new();
 
     /// <summary>
     /// Returns the outermost <see cref="DbException" /> in <paramref name="exception" />'s inner-exception chain,
@@ -108,6 +111,49 @@ public static class RelationalFaults
         Argument.IsNotNull(exception);
 
         return FindDatabaseException(exception) is { } databaseException && _IsUniqueViolation(databaseException);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a unique-key or primary-key violation, as
+    /// <see cref="IsUniqueViolation(Exception)" /> does, and the name of the violated constraint or unique index when
+    /// the engine reports it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use it to answer a lost uniqueness race with your own conflict: a check that no other row holds a value passes,
+    /// a concurrent writer takes the value, and the save fails on the index that enforces it. Compare the name
+    /// ordinally with the name the database holds, such as EF Core's <c>GetDatabaseName()</c> for the index.
+    /// </para>
+    /// <para>
+    /// PostgreSQL reports the name in its own field, read from the driver's <c>ConstraintName</c> (Npgsql's
+    /// <c>PostgresException</c>). SQL Server reports it only inside the message text of error 2627 (a primary-key or
+    /// unique constraint) or 2601 (a unique index), so the name is read from the English message and is
+    /// <see langword="null" /> when the session's language (<c>SET LANGUAGE</c>, or the login's default language)
+    /// localizes the message. SQLite reports the columns, not a name, so the name is always
+    /// <see langword="null" /> there.
+    /// </para>
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <param name="constraintName">
+    /// The violated constraint or unique index; <see langword="null" /> when the result is <see langword="false" /> or
+    /// the engine did not report a name.
+    /// </param>
+    /// <returns><see langword="true" /> when the statement failed on a duplicate key.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsUniqueViolation(Exception exception, out string? constraintName)
+    {
+        Argument.IsNotNull(exception);
+
+        constraintName = null;
+
+        if (FindDatabaseException(exception) is not { } databaseException || !_IsUniqueViolation(databaseException))
+        {
+            return false;
+        }
+
+        constraintName = _ReadUniqueConstraintName(databaseException);
+
+        return true;
     }
 
     /// <summary>
@@ -201,6 +247,89 @@ public static class RelationalFaults
 
         return false;
     }
+
+    private static string? _ReadUniqueConstraintName(DbException exception)
+    {
+        if (string.Equals(exception.SqlState, SqlErrorCodes.PostgreSql.UniqueViolation, StringComparison.Ordinal))
+        {
+            return
+                _ConstraintNameProperties
+                    .GetOrAdd(
+                        exception.GetType(),
+                        static type => type.GetProperty("ConstraintName", BindingFlags.Public | BindingFlags.Instance)
+                    )
+                    ?.GetValue(exception) as string
+                    is { Length: > 0 } name
+                ? name
+                : null;
+        }
+
+        if (!_IsSqlClientException(exception))
+        {
+            return null;
+        }
+
+        // The duplicate key is not always the first error, so the message is read from the error that reported it;
+        // the legacy driver exposes no collection, and its own message is that of the first error.
+        if (
+            _ErrorsProperties
+                .GetOrAdd(exception.GetType(), static type => type.GetProperty("Errors"))
+                ?.GetValue(exception)
+            is IEnumerable errors
+        )
+        {
+            foreach (var error in errors)
+            {
+                if (error is not null && _ReadNumber(error) is { } number && _ReadMessage(error) is { } message)
+                {
+                    if (_ParseSqlServerConstraintName(number, message) is { } name)
+                    {
+                        return name;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        return _ReadNumber(exception) is { } own ? _ParseSqlServerConstraintName(own, exception.Message) : null;
+    }
+
+    private static string? _ParseSqlServerConstraintName(int number, string message)
+    {
+        var match = number switch
+        {
+            SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint => _SqlServerDuplicateConstraint.Match(message),
+            SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex => _SqlServerDuplicateIndex.Match(message),
+            _ => null,
+        };
+
+        return match is { Success: true } ? match.Groups["name"].Value : null;
+    }
+
+    private static string? _ReadMessage(object error)
+    {
+        return _MessageProperties.GetOrAdd(error.GetType(), static type => type.GetProperty("Message"))?.GetValue(error)
+            as string;
+    }
+
+    // Error 2627: "Violation of PRIMARY KEY constraint 'PK_T'. Cannot insert duplicate key in object 'dbo.T'. ..."
+    // (UNIQUE KEY for a unique constraint). The lazy name stops at the first "'. Cannot insert", so a name holding a
+    // quote still parses.
+    [GeneratedRegex(
+        pattern: @"\Aviolation of [a-z ]+ constraint '(?<name>.+?)'\. cannot insert duplicate key",
+        options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
+    )]
+    private static partial Regex _SqlServerDuplicateConstraint { get; }
+
+    // Error 2601: "Cannot insert duplicate key row in object 'dbo.T' with unique index 'IX_T_Email'. ..."
+    [GeneratedRegex(
+        pattern: @"\Acannot insert duplicate key row in object '.+?' with unique index '(?<name>.+?)'\.(?: |\z)",
+        options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
+    )]
+    private static partial Regex _SqlServerDuplicateIndex { get; }
 
     private static bool _IsSqlClientException(DbException exception)
     {
