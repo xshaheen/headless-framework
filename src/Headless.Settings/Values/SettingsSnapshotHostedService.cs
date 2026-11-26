@@ -58,7 +58,9 @@ internal sealed partial class SettingsSnapshotHostedService(
 
                 if (wait > TimeSpan.Zero)
                 {
-                    await Task.Delay(wait, timeProvider, stoppingToken).ConfigureAwait(false);
+                    // Task.Delay rounds a positive sub-millisecond wait down to zero, so the loop would spin.
+                    await Task.Delay(wait.Max(TimeSpan.FromMilliseconds(1)), timeProvider, stoppingToken)
+                        .ConfigureAwait(false);
                 }
 
                 now = timeProvider.GetUtcNow();
