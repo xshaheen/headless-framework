@@ -67,7 +67,46 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         await recorder.Consumed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
-        logs.Single(_ConsumerLogMessage).Fields.Should().Contain(_CausationTraceId, requestTraceId.ToHexString());
+        var probeId = lane == MessageLane.Bus ? "b1" : "q1";
+        logs.Single($"{_ConsumerLogMessage} {probeId}")
+            .Fields.Should()
+            .Contain(_CausationTraceId, requestTraceId.ToHexString());
+    }
+
+    [Fact]
+    public async Task should_keep_each_concurrent_consume_on_its_own_publisher_trace_id()
+    {
+        // given: two requests, each in its own trace, publish one message each
+        using var listener = _ListenToMessaging();
+        using var logs = new EnrichedLogCapture();
+        using var host = await _StartInMemoryHostAsync(logs);
+        var recorder = host.Services.GetRequiredService<ConsumeRecorder>();
+        recorder.Expected = 2;
+        ActivityTraceId busTraceId;
+        ActivityTraceId queueTraceId;
+
+        // when: each consume is held open until both have started, so the two run at the same time
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            using (var request = _StartRequest("POST /a"))
+            {
+                busTraceId = request.TraceId;
+                await scope.ServiceProvider.GetRequiredService<IBus>().PublishAsync(new BusProbe("b2"), AbortToken);
+            }
+
+            using (var request = _StartRequest("POST /b"))
+            {
+                queueTraceId = request.TraceId;
+                await scope.ServiceProvider.GetRequiredService<IQueue>().EnqueueAsync(new QueueProbe("q2"), AbortToken);
+            }
+        }
+
+        await recorder.Consumed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then: each consumer's entry carries only its own publisher's trace id
+        busTraceId.Should().NotBe(queueTraceId);
+        logs.Single($"{_ConsumerLogMessage} b2").Fields.Should().Contain(_CausationTraceId, busTraceId.ToHexString());
+        logs.Single($"{_ConsumerLogMessage} q2").Fields.Should().Contain(_CausationTraceId, queueTraceId.ToHexString());
     }
 
     [Fact]
@@ -103,6 +142,9 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
     [InlineData(null)]
     [InlineData("not-a-traceparent")]
     [InlineData("00-00000000000000000000000000000000-0000000000000000-00")]
+    [InlineData("ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")]
+    [InlineData("00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01")]
+    [InlineData("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra")]
     public void should_carry_no_trace_id_when_the_message_stored_no_readable_trace_context(string? traceParent)
     {
         // given
@@ -187,14 +229,31 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
 
     private sealed class ConsumeRecorder
     {
-        private readonly TaskCompletionSource _consumed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allLogged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _started;
+        private int _logged;
 
-        public Task Consumed => _consumed.Task;
+        /// <summary>How many consumes to hold open until all have started; set before publishing.</summary>
+        public int Expected { get; set; } = 1;
 
-        public void Record(ILogger logger)
+        public Task Consumed => _allLogged.Task;
+
+        public async ValueTask RecordAsync(ILogger logger, string probeId, CancellationToken cancellationToken)
         {
-            logger.LogInformation(_ConsumerLogMessage);
-            _consumed.TrySetResult();
+            if (Interlocked.Increment(ref _started) >= Expected)
+            {
+                _allStarted.TrySetResult();
+            }
+
+            // Waits for an event, never for time; the bound only fails a broken run instead of hanging it.
+            await _allStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            logger.LogInformation("consumed the probe message {ProbeId}", probeId);
+
+            if (Interlocked.Increment(ref _logged) >= Expected)
+            {
+                _allLogged.TrySetResult();
+            }
         }
     }
 
@@ -204,8 +263,7 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
     {
         public ValueTask ConsumeAsync(ConsumeContext<BusProbe> context, CancellationToken cancellationToken)
         {
-            recorder.Record(logger);
-            return ValueTask.CompletedTask;
+            return recorder.RecordAsync(logger, context.Message.Id, cancellationToken);
         }
     }
 
@@ -215,8 +273,7 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
     {
         public ValueTask ConsumeAsync(ConsumeContext<QueueProbe> context, CancellationToken cancellationToken)
         {
-            recorder.Record(logger);
-            return ValueTask.CompletedTask;
+            return recorder.RecordAsync(logger, context.Message.Id, cancellationToken);
         }
     }
 }
