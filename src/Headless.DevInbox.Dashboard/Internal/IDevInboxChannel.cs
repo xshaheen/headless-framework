@@ -27,8 +27,8 @@ internal interface IDevInboxChannel
 
     bool Delete(Guid id);
 
-    /// <summary>Every capture's id and sequence, newest first.</summary>
-    IReadOnlyList<(Guid Id, long Sequence)> Snapshot();
+    /// <summary>The id and sequence of every capture matching <paramref name="search"/>, newest first.</summary>
+    IReadOnlyList<(Guid Id, long Sequence)> Snapshot(string? search);
 
     /// <summary>The captures whose sequence is after <paramref name="sequence"/>, newest first, as list rows.</summary>
     IReadOnlyList<(Guid Id, long Sequence, JsonElement Row)> RowsAfter(long sequence);

@@ -20,7 +20,7 @@ internal sealed class DevInboxEndpoints(DevInboxChannels channels)
 
     internal const string UnconfiguredCode = "channel_unconfigured";
 
-    private static readonly (string Messages, string Setup) _EmailSetup = ("emails", "AddHeadlessEmails");
+    internal static readonly (string Messages, string Setup) EmailSetup = ("emails", "AddHeadlessEmails");
 
     private static readonly (string Messages, string Setup) _SmsSetup = ("SMS", "AddHeadlessSms");
 
@@ -43,7 +43,7 @@ internal sealed class DevInboxEndpoints(DevInboxChannels channels)
                 (string? search, string? before, int? limit) =>
                     _List(
                         _channels.Email,
-                        _EmailSetup,
+                        EmailSetup,
                         search,
                         before,
                         limit,
@@ -80,7 +80,7 @@ internal sealed class DevInboxEndpoints(DevInboxChannels channels)
             )
         );
 
-        DevInboxNoStore.Apply(routes.MapGet("/emails/{id}", (string id) => _Detail(_channels.Email, _EmailSetup, id)));
+        DevInboxNoStore.Apply(routes.MapGet("/emails/{id}", (string id) => _Detail(_channels.Email, EmailSetup, id)));
         DevInboxNoStore.Apply(routes.MapGet("/sms/{id}", (string id) => _Detail(_channels.Sms, _SmsSetup, id)));
         DevInboxNoStore.Apply(routes.MapGet("/push/{id}", (string id) => _Detail(_channels.Push, _PushSetup, id)));
     }

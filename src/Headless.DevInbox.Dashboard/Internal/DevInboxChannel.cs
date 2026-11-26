@@ -63,9 +63,9 @@ internal abstract class DevInboxChannel<TCapture, TRow, TDetail> : IDevInboxChan
         return ([.. page.Take(limit).Select(ToRow)], next);
     }
 
-    public IReadOnlyList<(Guid Id, long Sequence)> Snapshot()
+    public IReadOnlyList<(Guid Id, long Sequence)> Snapshot(string? search)
     {
-        return [.. Query(search: null, afterSequence: null).Select(c => (IdOf(c), SequenceOf(c)))];
+        return [.. Query(search, afterSequence: null).Select(c => (IdOf(c), SequenceOf(c)))];
     }
 
     public IReadOnlyList<(Guid Id, long Sequence, JsonElement Row)> RowsAfter(long sequence)

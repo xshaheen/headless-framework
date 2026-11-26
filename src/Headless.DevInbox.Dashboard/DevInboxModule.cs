@@ -18,6 +18,7 @@ internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, 
 {
     private readonly DevInboxChannels _channels;
     private readonly DevInboxEndpoints _endpoints;
+    private readonly EmailContentEndpoints _content;
 
     public DevInboxModule(DevInboxStores stores)
     {
@@ -25,6 +26,7 @@ internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, 
 
         _channels = new DevInboxChannels(stores);
         _endpoints = new DevInboxEndpoints(_channels);
+        _content = new EmailContentEndpoints(_channels.Email);
     }
 
     public string Id => DevInboxDashboardOptions.ModuleId;
@@ -38,6 +40,7 @@ internal sealed class DevInboxModule : IDashboardModule, IDashboardCountSource, 
         Argument.IsNotNull(endpoints);
 
         _endpoints.Map(endpoints);
+        _content.Map(endpoints);
     }
 
     public Task<IReadOnlyDictionary<string, DashboardCount>> GetCountsAsync(
