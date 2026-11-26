@@ -57,9 +57,7 @@ internal static class ResourcesCommand
             )
         )
         {
-            return await HostCommandLine
-                .UsageErrorAsync(stderr, error, _Usage, cancellationToken)
-                .ConfigureAwait(false);
+            return await HostCommandLine.UsageErrorAsync(stderr, error, _Usage).ConfigureAwait(false);
         }
 
         if (parsed.Help)
@@ -73,7 +71,7 @@ internal static class ResourcesCommand
         if (parsed.Subcommand is null)
         {
             return await HostCommandLine
-                .UsageErrorAsync(stderr, "A subcommand is required.", _Usage, cancellationToken)
+                .UsageErrorAsync(stderr, "A subcommand is required.", _Usage)
                 .ConfigureAwait(false);
         }
 

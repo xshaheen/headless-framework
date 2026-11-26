@@ -222,13 +222,17 @@ public static class HeadlessHostRunExtensions
 
     private static bool _IsBackgroundServiceFault(Exception exception, List<BackgroundService> backgroundServices)
     {
-        IEnumerable<Exception> thrown = exception is AggregateException aggregate
-            ? aggregate.Flatten().InnerExceptions
-            : [exception];
+        // Matched by reference before any unwrapping: a service that throws an AggregateException itself (several
+        // processors failing at once, say) faults with that aggregate, and the host rethrows it as it is.
+        if (backgroundServices.Exists(s => s.ExecuteTask?.Exception?.InnerExceptions.Contains(exception) == true))
+        {
+            return true;
+        }
 
-        return thrown.All(ex =>
-            backgroundServices.Exists(s => s.ExecuteTask?.Exception?.InnerExceptions.Contains(ex) == true)
-        );
+        // The host wraps several services' faults in one aggregate. An empty one wraps no fault, and one that also
+        // carries a failure from elsewhere (a hosted service's StopAsync, say) must still escape.
+        return exception is AggregateException { InnerExceptions.Count: > 0 } aggregate
+            && aggregate.InnerExceptions.All(inner => _IsBackgroundServiceFault(inner, backgroundServices));
     }
 
     // Runs one command with standard output reserved for its result, then disposes the host.
@@ -326,10 +330,11 @@ public static class HeadlessHostRunExtensions
         catch (Exception exception)
         {
             // The message only: validators write it for the operator, and a stack trace adds noise to a CLI error.
+            // Written without the caller's token: a cancelled run is one of the failures this line must report.
             await stderr
-                .WriteLineAsync($"Host manifest failed: {exception.Message}", cancellationToken)
+                .WriteLineAsync($"Host manifest failed: {exception.Message}", CancellationToken.None)
                 .ConfigureAwait(false);
-            await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await stderr.FlushAsync(CancellationToken.None).ConfigureAwait(false);
 
             return 1;
         }
@@ -378,10 +383,11 @@ public static class HeadlessHostRunExtensions
 #pragma warning disable CA1031, EPC12 // False positive: the command's process boundary reports any failure as its message and an exit code, by design.
         catch (Exception exception)
         {
+            // Written without the caller's token: a cancelled run is one of the failures this line must report.
             await stderr
-                .WriteLineAsync($"Host check failed: {exception.Message}", cancellationToken)
+                .WriteLineAsync($"Host check failed: {exception.Message}", CancellationToken.None)
                 .ConfigureAwait(false);
-            await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await stderr.FlushAsync(CancellationToken.None).ConfigureAwait(false);
 
             return 1;
         }

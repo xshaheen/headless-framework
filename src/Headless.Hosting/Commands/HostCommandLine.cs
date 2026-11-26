@@ -178,16 +178,13 @@ internal static class HostCommandLine
             : text;
 
     /// <summary>Writes a usage error and the usage line to <paramref name="stderr"/>, and returns the usage exit code.</summary>
-    public static async Task<int> UsageErrorAsync(
-        TextWriter stderr,
-        string error,
-        string usage,
-        CancellationToken cancellationToken
-    )
+    public static async Task<int> UsageErrorAsync(TextWriter stderr, string error, string usage)
     {
-        await stderr.WriteLineAsync(error, cancellationToken).ConfigureAwait(false);
-        await stderr.WriteLineAsync(usage, cancellationToken).ConfigureAwait(false);
-        await stderr.FlushAsync(cancellationToken).ConfigureAwait(false);
+        // Written without the caller's token: an operator who cancels a mistyped command still needs to see why it
+        // was rejected.
+        await stderr.WriteLineAsync(error, CancellationToken.None).ConfigureAwait(false);
+        await stderr.WriteLineAsync(usage, CancellationToken.None).ConfigureAwait(false);
+        await stderr.FlushAsync(CancellationToken.None).ConfigureAwait(false);
 
         return ExitUsage;
     }

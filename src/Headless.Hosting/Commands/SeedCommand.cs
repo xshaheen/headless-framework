@@ -32,9 +32,7 @@ internal static class SeedCommand
     {
         if (!HostCommandLine.TryParse(Name, args, _Subcommands, _Options, out var parsed, out var error))
         {
-            return await HostCommandLine
-                .UsageErrorAsync(stderr, error, _Usage, cancellationToken)
-                .ConfigureAwait(false);
+            return await HostCommandLine.UsageErrorAsync(stderr, error, _Usage).ConfigureAwait(false);
         }
 
         if (parsed.Help)
