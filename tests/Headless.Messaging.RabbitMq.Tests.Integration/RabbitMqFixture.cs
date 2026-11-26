@@ -25,6 +25,10 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     // the process with no bound of its own, so an unbounded call holds the module until the runner's hang timeout.
     private static readonly TimeSpan _RabbitMqCtlTimeout = TimeSpan.FromSeconds(30);
 
+    // A stalled read-only list_* call is asked again, since asking again cannot change broker state. A command that
+    // changes state gets one attempt, so a stall fails it.
+    private const int _ReadOnlyAttempts = 3;
+
     private IConnection? _connection;
 
     /// <summary>
@@ -33,19 +37,31 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     /// </summary>
     public async Task<ExecResult> RabbitMqCtlAsync(IList<string> arguments, CancellationToken cancellationToken)
     {
-        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        bounded.CancelAfter(_RabbitMqCtlTimeout);
+        var attempts =
+            arguments.Count > 0 && arguments[0].StartsWith("list_", StringComparison.Ordinal) ? _ReadOnlyAttempts : 1;
+        var perAttempt = _RabbitMqCtlTimeout / attempts;
 
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            return await Container.ExecAsync(["rabbitmqctl", .. arguments], bounded.Token);
-        }
-        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException(
-                $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {_RabbitMqCtlTimeout}.",
-                e
-            );
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bounded.CancelAfter(perAttempt);
+
+            try
+            {
+                return await Container.ExecAsync(["rabbitmqctl", .. arguments], bounded.Token);
+            }
+            catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+            {
+                if (attempt < attempts)
+                {
+                    continue;
+                }
+
+                throw new TimeoutException(
+                    $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {_RabbitMqCtlTimeout} ({attempts} attempt(s)).",
+                    e
+                );
+            }
         }
     }
 

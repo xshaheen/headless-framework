@@ -31,6 +31,61 @@ public sealed class RabbitMqCtlTests : TestBase
     }
 
     [Fact]
+    public async Task should_ask_a_read_only_call_again_after_a_stall_and_return_the_answer()
+    {
+        // given - list_queues stalls on its first two runs and answers on the third
+        var calls = 0;
+        var container = Substitute.For<IContainer>();
+        container
+            .ExecAsync(Arg.Any<IList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref calls) < RabbitMqCtl.ReadOnlyAttempts)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                }
+
+                return new ExecResult("q 0\n", string.Empty, 0);
+            });
+
+        // when
+        var result = await RabbitMqCtl.ExecAsync(
+            container,
+            ["list_queues", "-q"],
+            AbortToken,
+            TimeSpan.FromMilliseconds(150)
+        );
+
+        // then
+        result.Stdout.Should().Be("q 0\n");
+        calls.Should().Be(RabbitMqCtl.ReadOnlyAttempts);
+    }
+
+    [Fact]
+    public async Task should_not_run_a_state_changing_call_twice_when_it_stalls()
+    {
+        // given - delete_queue stalls
+        var calls = 0;
+        var container = Substitute.For<IContainer>();
+        container
+            .ExecAsync(Arg.Any<IList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                Interlocked.Increment(ref calls);
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return new ExecResult(string.Empty, string.Empty, 0);
+            });
+
+        // when
+        var act = () =>
+            RabbitMqCtl.ExecAsync(container, ["delete_queue", "q"], AbortToken, TimeSpan.FromMilliseconds(50));
+
+        // then
+        await act.Should().ThrowAsync<TimeoutException>();
+        calls.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_report_cancellation_not_a_timeout_when_the_caller_cancels()
     {
         // given
