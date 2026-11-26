@@ -141,7 +141,7 @@ public sealed class ConsumeLogEnrichmentTests : TestBase
         await recorder.Consumed.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then: the consumer's own entry gets the tenant from the enrichment
-        var consumed = logs.Single(_ConsumerLogMessage);
+        var consumed = logs.Single($"{_ConsumerLogMessage} {(lane == MessageLane.Bus ? "b1" : "q1")}");
         consumed.Keys.Should().ContainSingle(k => k == _TenantId);
         consumed.Fields[_TenantId].Should().Be("acme");
 
