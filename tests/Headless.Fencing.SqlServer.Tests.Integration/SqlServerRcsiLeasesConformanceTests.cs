@@ -325,9 +325,27 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     }
 
     [Fact]
+    public override Task should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock()
+    {
+        return base.should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock();
+    }
+
+    [Fact]
+    public override Task should_filter_by_tenant_or_the_host_scope_and_get_by_an_explicit_tenant()
+    {
+        return base.should_filter_by_tenant_or_the_host_scope_and_get_by_an_explicit_tenant();
+    }
+
+    [Fact]
     public override Task should_match_the_resource_prefix_ordinally_and_with_every_character_literal()
     {
         return base.should_match_the_resource_prefix_ordinally_and_with_every_character_literal();
+    }
+
+    [Fact]
+    public override Task should_report_progress_size_and_contract_without_its_bytes()
+    {
+        return base.should_report_progress_size_and_contract_without_its_bytes();
     }
 
     [Fact]
@@ -340,5 +358,11 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     public override Task should_cap_each_state_count_on_its_own()
     {
         return base.should_cap_each_state_count_on_its_own();
+    }
+
+    [Fact]
+    public override Task should_refuse_an_invalid_inspection_before_reading()
+    {
+        return base.should_refuse_an_invalid_inspection_before_reading();
     }
 }

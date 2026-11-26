@@ -197,6 +197,11 @@ internal static class ConformanceCaseAllowList
             "The in-memory store has no database, so there is no caller's connection to read on; it ignores the connection argument."
         ),
         new(
+            "InMemoryLeasesConformanceTests",
+            "should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock",
+            "The injected TimeProvider is the in-memory store's clock authority by design, so there is no separate application clock to ignore."
+        ),
+        new(
             "PostgreSqlDistributedLockConformanceTests",
             "should_get_expiration_for_locked_resource",
             "A PostgreSQL advisory lock is session-scoped with no lease, so expiration is always null."
