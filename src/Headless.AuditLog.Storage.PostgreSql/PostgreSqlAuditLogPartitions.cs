@@ -3,6 +3,7 @@
 using System.Globalization;
 using Headless.Checks;
 using Headless.Hosting;
+using Headless.Hosting.Schema;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -144,9 +145,7 @@ internal sealed class PostgreSqlAuditLogPartitionsProvisioner(
     TimeProvider timeProvider
 ) : IResourceProvisioner
 {
-    public const string ResourceKind = "AuditLogPartitions";
-
-    public string Kind => ResourceKind;
+    public string Kind => SetupAuditLogPostgreSql.PartitionsResourceKind;
 
     public string Name => $"{table.Schema}/{table.Name}";
 
@@ -176,7 +175,7 @@ internal sealed class PostgreSqlAuditLogPartitionsProvisioner(
         {
             throw new ResourceProvisioningException(
                 $"The audit log table {table.Schema}.{table.Name} has no partition for the current month ({current}), so "
-                    + $"audit entries cannot be written. Run 'resources provision -k {ResourceKind}' to create it."
+                    + $"audit entries cannot be written. Run 'resources provision -k {SetupAuditLogPostgreSql.PartitionsResourceKind}' to create it."
             );
         }
     }
@@ -203,7 +202,7 @@ internal sealed class PostgreSqlAuditLogPartitionsProvisioner(
 
     // The functions and the partitioned table come from the audit log's schema steps.
     public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
-        provisioners.Where(static p => string.Equals(p.Kind, "Schema", StringComparison.Ordinal));
+        provisioners.Where(static p => string.Equals(p.Kind, SchemaRunner.ResourceKind, StringComparison.Ordinal));
 
     // Must match the name the ensure function builds: '{table}_' || to_char(month, 'YYYY_MM'), in UTC.
     private string _PartitionName(DateTimeOffset instant)

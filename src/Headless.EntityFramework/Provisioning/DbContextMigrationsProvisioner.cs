@@ -23,7 +23,7 @@ namespace Headless.EntityFramework;
 internal sealed class DbContextMigrationsProvisioner<TDbContext>(IServiceProvider services) : IResourceProvisioner
     where TDbContext : DbContext
 {
-    public string Kind => "EntityFramework";
+    public string Kind => HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind;
 
     public string Name => typeof(TDbContext).Name;
 

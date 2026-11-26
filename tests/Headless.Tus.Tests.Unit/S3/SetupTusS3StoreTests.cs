@@ -139,7 +139,8 @@ public sealed class SetupTusS3StoreTests : TestBase
 
         // then
         provisioners.Should().ContainSingle();
-        provisioners[0].Kind.Should().Be("S3Bucket");
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        provisioners[0].Kind.Should().Be(SetupTusS3.BucketResourceKind).And.Be("S3Bucket");
         provisioners[0].Name.Should().Be("uploads-bucket");
         provisioners[0].StartupCheck.Should().Be(ResourceStartupCheck.GateReadiness);
     }

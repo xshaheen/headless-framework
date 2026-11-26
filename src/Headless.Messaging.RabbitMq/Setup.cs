@@ -29,6 +29,13 @@ namespace Headless.Messaging;
 )]
 public static class SetupMessagingRabbitMq
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the RabbitMQ topology (exchanges, queues, and
+    /// bindings), which <c>resources provision -k</c> selects and a provisioner that needs the topology selects in its
+    /// <c>DependsOn</c>.
+    /// </summary>
+    public const string TopologyResourceKind = "RabbitMQ";
+
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>

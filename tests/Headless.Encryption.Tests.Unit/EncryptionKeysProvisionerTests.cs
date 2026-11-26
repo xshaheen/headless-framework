@@ -12,6 +12,21 @@ public sealed class EncryptionKeysProvisionerTests : TestBase
     private readonly InMemoryDataKeyStore _store = new();
 
     [Fact]
+    public void should_report_the_public_kind_constant()
+    {
+        // given
+        using var host = new EncryptionTestHost(_store);
+
+        // when
+        var kinds = host.Services.GetServices<IResourceProvisioner>().Select(p => p.Kind);
+
+        // then
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        kinds.Should().ContainSingle(k => k == SetupEncryption.KeysResourceKind);
+        SetupEncryption.KeysResourceKind.Should().Be("EncryptionKeys");
+    }
+
+    [Fact]
     public async Task should_fail_verify_naming_the_command_until_the_host_keys_are_provisioned()
     {
         using var host = new EncryptionTestHost(_store);
@@ -76,5 +91,5 @@ public sealed class EncryptionKeysProvisionerTests : TestBase
     private static IResourceProvisioner _Provisioner(EncryptionTestHost host) =>
         host
             .Services.GetServices<IResourceProvisioner>()
-            .Single(p => string.Equals(p.Kind, "EncryptionKeys", StringComparison.Ordinal));
+            .Single(p => string.Equals(p.Kind, SetupEncryption.KeysResourceKind, StringComparison.Ordinal));
 }

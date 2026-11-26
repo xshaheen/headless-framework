@@ -76,7 +76,7 @@ With every file present, the warm-up does nothing and does not hold readiness: t
 
 ### Download ahead of time
 
-The provider registers a provisioned resource of kind `MaxMind`, named `databases` ([Resource provisioning](utilities.md#resource-provisioning)). Run `dotnet MyApp.dll resources provision -k MaxMind` in an image build or a deploy step, with the account credentials available to that step. It downloads every missing or outdated edition into `DatabaseDirectory` before a host starts.
+The provider registers a provisioned resource of kind `MaxMind` (`SetupMaxMind.DatabasesResourceKind`), named `databases` ([Resource provisioning](utilities.md#resource-provisioning)). Run `dotnet MyApp.dll resources provision -k MaxMind` in an image build or a deploy step, with the account credentials available to that step. It downloads every missing or outdated edition into `DatabaseDirectory` before a host starts.
 
 ### A failure keeps the last good database
 

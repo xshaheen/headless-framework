@@ -22,7 +22,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
 
     private readonly string _prefix = options.NormalizedPrefix;
 
-    public string Kind => "S3Bucket";
+    public string Kind => SetupTusS3.BucketResourceKind;
 
     public string Name => options.Bucket;
 
@@ -48,7 +48,7 @@ internal sealed class TusS3BucketProvisioner(IAmazonS3 s3, TusS3StoreOptions opt
         if (!await _BucketExistsAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new ResourceProvisioningException(
-                $"The tus upload bucket '{options.Bucket}' does not exist. Run 'resources provision -k S3Bucket' to create it."
+                $"The tus upload bucket '{options.Bucket}' does not exist. Run 'resources provision -k {SetupTusS3.BucketResourceKind}' to create it."
             );
         }
     }

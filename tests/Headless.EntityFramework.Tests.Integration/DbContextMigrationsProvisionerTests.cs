@@ -43,7 +43,11 @@ public sealed class DbContextMigrationsProvisionerTests : TestBase, IDisposable
         // then
         using var provider = services.BuildServiceProvider();
         var resource = provider.GetServices<IResourceProvisioner>().Should().ContainSingle().Which;
-        resource.Kind.Should().Be("EntityFramework");
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        resource
+            .Kind.Should()
+            .Be(HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind)
+            .And.Be("EntityFramework");
         resource.Name.Should().Be(nameof(MigratedDbContext));
         resource.StartupCheck.Should().Be(ResourceStartupCheck.FailStart);
         resource.CanPurge.Should().BeFalse();
