@@ -56,7 +56,7 @@ A feature that registers its own health checks, such as Jobs or Messaging, adds 
 | Command | On | Does |
 | --- | --- | --- |
 | `cluster.probe` | `check` | Runs each named check. A row is `Done` with the check's status as its reason whatever that status is, or `Skipped` with `No check named '<id>'` |
-| `cluster.probe-all` | `health` | Runs every check once. Its one row's reason is `<overall status> · <n> checks`. Send the serving host's label, `summary.host`, as the id |
+| `cluster.probe-all` | `health` | Runs every check once. Its one row's reason is `<overall status> · <n> checks`. Send exactly one id, the serving host's label, `summary.host`. Any other id, or more than one, answers `409` naming the host that served the request, runs nothing, and writes no operator-log entry; `allowed` reports the command disabled for that id with the same reason. Behind a load balancer without session affinity, read `summary` again and retry |
 
 Both need operate permission, ask for no confirmation or reason, and are written to the operator log. Without the monitor both are refused with `409` and the remedy, and the log gets no entry. Cancelling the request cancels the probe, which then records nothing.
 
@@ -64,7 +64,7 @@ Both need operate permission, ask for no confirmation or reason, and are written
 
 A check whose latest result is `Degraded` (Warning) or `Unhealthy` (Critical) is one item in the shell's `Health checks` section, dated from the first result of its current run of that status. A `Suspected` (Warning) or `Dead` (Critical) node is one work item, dated from its last heartbeat. A relational store prunes a dead incarnation shortly after `DeadRetentionWindow`, but Redis keeps it for its known-node retention, so dead nodes stay in Needs you longer on Redis.
 
-The sidebar counts are `nodes`, `Alive`, `Suspected`, and `Dead` from one snapshot read, and `checks`, `Degraded`, and `Unhealthy` from the checks' latest results. A half the host does not serve answers no key, so its entries read `–`. When the membership store does not answer, Needs you and the counts keep the health answers and name `coordination` as unavailable.
+The sidebar counts are `nodes`, `Alive`, `Suspected`, and `Dead` from one snapshot read, and `checks`, `Degraded`, and `Unhealthy` from the checks' latest results. A half the host does not serve answers no key, so its entries read `–`. When the membership store does not answer, Needs you and the counts keep the health answers and name `coordination` as unavailable, and the node entries read `0+`, a lower bound, in the sidebar and the Nodes stat strip. A host that serves only Coordination has no health answer to keep, so its module reads as stale instead.
 
 ## Live changes
 
@@ -93,7 +93,7 @@ The health routes read recorded results only. No read runs a check: checks run o
 
 | View | Shows | Acts |
 | --- | --- | --- |
-| Cluster (`{base}/cluster`, each state at `?state=<state>`) | Alive, Suspected, and Dead counts and the heartbeat, suspicion, and dead thresholds; every incarnation with its role, state, and last heartbeat, the serving node tagged `This node`; and the metadata keys whose values differ across live nodes. The open node (`?open=<id>`) docks under the list: Overview, Metadata (each key with how many live nodes match; a key that differs on every one of three or more nodes, such as a pod name, reads `Differs on every node`), and Events (this node's log for it, captioned with the observer and `local clock`). A node that left the store reads `This node is no longer in the membership store.` | None |
+| Cluster (`{base}/cluster`, each state at `?state=<state>`) | Alive, Suspected, and Dead counts and the heartbeat, suspicion, and dead thresholds; every incarnation with its role, state, and last heartbeat, the serving node tagged `This node`; and the metadata keys whose values differ across live nodes. The open node (`?open=<id>`) docks under the list: Overview, Metadata (each key with how many live nodes match; a key that differs on every one of three or more nodes, such as a pod name, reads `Differs on every node`), and Events (this node's log for it, captioned with the observer and `local clock`; a death reads `Marked dead`, and only an incarnation that left the snapshot reads `Left the snapshot`). A node that left the store reads `This node is no longer in the membership store.` | None |
 | Health (`health`, each status at `?status=<status>`) | Overall status, totals, liveness, and the slowest probe, with liveness and the slowest probe only once a result exists; every check with its tags, latest status (`Not probed` before its first probe), duration, last probe, and failure status. The header reads `N checks · probed <time>`, or `N checks · Not probed yet`, beside a `Host <host>` tag. The open check (`?open=<name>`) docks under the list: Overview and History (its recent results with a summary such as `Healthy for 22 probes, then Degraded for the last 8`) | `Probe all` in the header; `Probe now` on the open check. A viewer sees both disabled with `Needs operate permission` |
 
 An open row that leaves the active filter stays in the panel, and its row stays with `No longer matches the filter` until the panel closes.

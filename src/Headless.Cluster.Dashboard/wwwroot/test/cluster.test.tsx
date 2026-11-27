@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { node, nodeChange, now, open, summary, user, type FakeServer } from './fake-server.ts'
 
 beforeEach(() => {
@@ -231,6 +232,159 @@ describe('cluster nodes', () => {
       ),
     )
     expect(screen.getByRole('region', { name: 'Node orders-worker-1@5' })).toBeTruthy()
+  })
+
+  it('drops an open node that left the unfiltered list and keeps the gone message in its panel', async () => {
+    let present = true
+    const leaving = nodes[4]!
+    const view = open(
+      {
+        ...fake,
+        extra: (request) =>
+          request.path === 'cluster/nodes'
+            ? { items: present ? nodes : nodes.slice(0, 4) }
+            : request.path === 'cluster/nodes/orders-worker-2%403' && !present
+              ? (() => {
+                  throw new DashboardApiError(404, 'Not found')
+                })()
+              : undefined,
+      },
+      { path: `?open=${encodeURIComponent(leaving.id)}` },
+    )
+    await screen.findByRole('row', { name: /orders-worker-2@3/ })
+
+    present = false
+    act(() => view.stream.push('change', nodeChange(leaving.id)))
+
+    const panel = screen.getByRole('region', { name: 'Node orders-worker-2@3' })
+    await waitFor(() => expect(panel.textContent).toContain('This node is no longer in the membership store.'))
+    await waitFor(() => expect(screen.queryByRole('row', { name: /orders-worker-2@3/ })).toBeNull())
+    expect(document.body.textContent).not.toContain('No longer matches the filter')
+  })
+
+  it('drops an open node a filter no longer matches once its detail answers 404', async () => {
+    let present = true
+    const shifting = node({ id: 'orders-worker-1@5', state: 'Suspected' })
+    const view = open(
+      {
+        ...fake,
+        extra: (request) => {
+          if (request.path === 'cluster/nodes') {
+            return { items: present ? [shifting] : [] }
+          }
+
+          if (request.path === 'cluster/nodes/orders-worker-1%405') {
+            if (!present) {
+              throw new DashboardApiError(404, 'Not found')
+            }
+
+            return { node: shifting, agreement: [], events: [] }
+          }
+
+          return undefined
+        },
+      },
+      { path: '?state=Suspected&open=orders-worker-1%405' },
+    )
+    await screen.findByRole('row', { name: /orders-worker-1@5/ })
+
+    present = false
+    act(() => view.stream.push('change', nodeChange('orders-worker-1@5')))
+
+    const panel = screen.getByRole('region', { name: 'Node orders-worker-1@5' })
+    await waitFor(() => expect(panel.textContent).toContain('This node is no longer in the membership store.'))
+    expect(screen.queryByRole('row', { name: /orders-worker-1@5/ })).toBeNull()
+  })
+
+  it('shows a failed metadata agreement read as an error with Retry, not as every node agreeing', async () => {
+    open({
+      ...fake,
+      extra: (request) => {
+        if (request.path === 'cluster/metadata-agreement') {
+          throw new Error('The membership store did not answer.')
+        }
+
+        return undefined
+      },
+    })
+
+    await screen.findByRole('row', { name: /orders-api-1@2/ })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('The metadata agreement did not load')
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy()
+  })
+
+  it('labels a node that died as Marked dead and only a node that left as Left the snapshot', async () => {
+    const actor = user()
+    const leaving = (sequence: number, state: 'Dead' | null) => ({
+      sequence,
+      kind: 'NodeLeft',
+      node: 'orders-worker-2@3',
+      observedAt: `2026-11-27T09:5${sequence}:00Z`,
+      state,
+      lastHeartbeatAt: null,
+      isFirstObservation: false,
+    })
+    open(
+      { ...fake, details: { 'orders-worker-2@3': { events: [leaving(2, null), leaving(1, 'Dead')] } } },
+      { path: '?open=orders-worker-2%403' },
+    )
+
+    const panel = await screen.findByRole('region', { name: 'Node orders-worker-2@3' })
+    await actor.click(await within(panel).findByRole('tab', { name: 'Events' }))
+    const history = within(panel).getByRole('region', { name: 'Membership events' })
+    const items = within(history).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]!.textContent).toContain('Left the snapshot')
+    expect(items[0]!.textContent).not.toContain('Marked dead')
+    expect(items[1]!.textContent).toContain('Marked dead')
+    expect(items[1]!.textContent).not.toContain('Left the snapshot')
+  })
+
+  it('shows the open node’s heartbeat from the polled list, not the detail read when it opened', async () => {
+    let beat = '2026-11-27T09:59:55Z'
+    const steady = node({ id: 'orders-api-1@2' })
+    open(
+      {
+        ...fake,
+        extra: (request) =>
+          request.path === 'cluster/nodes'
+            ? { items: [{ ...steady, lastHeartbeatAt: beat }] }
+            : request.path === 'cluster/nodes/orders-api-1%402'
+              ? { node: steady, agreement: [], events: [] }
+              : undefined,
+      },
+      { path: '?open=orders-api-1%402' },
+    )
+    const panel = await screen.findByRole('region', { name: 'Node orders-api-1@2' })
+    await waitFor(() => expect(panel.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-27T09:59:55Z'))
+
+    beat = '2026-11-27T10:00:05Z'
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+
+    await waitFor(() => expect(panel.querySelector('time')?.getAttribute('datetime')).toBe('2026-11-27T10:00:05Z'))
+  })
+
+  it('marks node counts as a lower bound when the checks answered and Coordination did not', async () => {
+    open({
+      ...fake,
+      counts: {
+        checks: 2,
+        Degraded: 0,
+        Unhealthy: 0,
+        nodes: { count: 0, unavailable: ['coordination'] },
+        Alive: { count: 0, unavailable: ['coordination'] },
+        Suspected: { count: 0, unavailable: ['coordination'] },
+        Dead: { count: 0, unavailable: ['coordination'] },
+      },
+    })
+
+    const strip = await screen.findByRole('region', { name: 'Cluster at a glance' })
+    await waitFor(() => expect(within(strip).getByRole('link', { name: /Alive/ }).textContent).toContain('0+'))
+    expect(within(strip).getByRole('link', { name: /Suspected/ }).textContent).toContain('0+')
+    expect(within(strip).getByRole('link', { name: /Dead/ }).textContent).toContain('0+')
   })
 
   it('says this node is not in the membership store when the snapshot lacks it', async () => {

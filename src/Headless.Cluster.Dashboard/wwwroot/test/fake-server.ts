@@ -131,8 +131,11 @@ export interface FakeServer {
   checks?: HealthCheck[]
   /** Per check name, up to 30 results newest first; the check's latest only by default. */
   history?: Readonly<Record<string, ProbeResult[]>>
-  /** The sidebar counts by key, as `GET api/counts?product=cluster` answers them. */
-  counts?: Readonly<Record<string, number>>
+  /**
+   * The sidebar counts by key, as `GET api/counts?product=cluster` answers them; an object names the sources a count
+   * left out.
+   */
+  counts?: Readonly<Record<string, number | { count: number; unavailable: string[] }>>
   /** Why the server refuses the probe commands now; allowed by default. */
   disabledReason?: string
   /** What the server does when a probe command runs; answers `Done` per id by default. */
@@ -156,7 +159,10 @@ export function server(fake: FakeServer) {
     if (request.path === 'counts') {
       return {
         counts: Object.fromEntries(
-          Object.entries(fake.counts ?? {}).map(([key, count]) => [key, { count, capped: false }]),
+          Object.entries(fake.counts ?? {}).map(([key, count]) => [
+            key,
+            typeof count === 'number' ? { count, capped: false } : { ...count, capped: false },
+          ]),
         ),
         stale: [],
       }

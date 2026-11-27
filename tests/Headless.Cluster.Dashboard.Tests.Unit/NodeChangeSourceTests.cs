@@ -209,6 +209,65 @@ public sealed class NodeChangeSourceTests : TestBase
         await read.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Theory]
+    [InlineData("web 1@1")]
+    [InlineData("web\n1@1")]
+    public async Task should_round_trip_a_node_id_with_an_interior_space_or_line_break(string identity)
+    {
+        // given
+        _membership.SetSnapshot(FakeMembership.Node(identity), FakeMembership.Node("b@1"));
+        var source = _Source();
+        var start = await source.GetStartCursorAsync(AbortToken);
+        _membership.SetSnapshot(FakeMembership.Node(identity, NodeLivenessState.Suspected), FakeMembership.Node("b@1"));
+
+        // when
+        var batch = await source.ReadChangesAsync(start, AbortToken);
+        var after = await source.ReadChangesAsync(batch.Cursor, AbortToken);
+
+        // then
+        batch.Changes.Should().ContainSingle().Which.Target.Id.Should().Be(identity);
+        after.Changes.Should().BeEmpty();
+        after.Cursor.Should().Be(batch.Cursor);
+    }
+
+    [Theory]
+    [InlineData("YUAx 0123456789abcde")] // a version one character short
+    [InlineData("YUAx 0123456789abcdef0")] // a version one character long
+    [InlineData("YUAx 0123456789abcdef\nYUAx 0123456789abcdef")] // the identity a@1 twice
+    [InlineData("YUAx 0123456789abcdef\n")] // an empty line
+    [InlineData("YUAx0123456789abcdef")] // no separator
+    [InlineData("!!! 0123456789abcdef")] // an identity that is not base64url
+    [InlineData("bm9kZQ 0123456789abcdef")] // "node", which is no identity
+    public async Task should_refuse_a_cursor_with_an_invalid_line(string payload)
+    {
+        // given
+        _membership.SetSnapshot(FakeMembership.Node("a@1"));
+        var source = _Source();
+        var cursor = "v1:" + System.Buffers.Text.Base64Url.EncodeToString(Encoding.UTF8.GetBytes(payload));
+
+        // when
+        var read = () => source.ReadChangesAsync(cursor, AbortToken);
+
+        // then
+        await read.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_read_a_cursor_whose_lines_are_all_valid()
+    {
+        // given the identity a@1 at a version the store does not show
+        _membership.SetSnapshot(FakeMembership.Node("a@1"));
+        var source = _Source();
+        var cursor =
+            "v1:" + System.Buffers.Text.Base64Url.EncodeToString(Encoding.UTF8.GetBytes("YUAx 0123456789abcdef"));
+
+        // when
+        var batch = await source.ReadChangesAsync(cursor, AbortToken);
+
+        // then
+        batch.Changes.Should().ContainSingle().Which.Target.Id.Should().Be("a@1");
+    }
+
     [Fact]
     public async Task should_read_nothing_from_a_host_without_coordination()
     {

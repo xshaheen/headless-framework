@@ -201,6 +201,53 @@ describe('cluster health', () => {
     await waitFor(() => expect(reads(view, 'cluster/health/checks')).toBe(before + 1))
   })
 
+  it('reads the checks again on returning to the view, so a probe recorded meanwhile is not hidden', async () => {
+    let checks: HealthCheck[] = [check('jobs', { latest: result('Healthy') })]
+    const view = open(
+      {
+        get checks() {
+          return checks
+        },
+      },
+      { path: 'health?open=jobs' },
+    )
+    await waitFor(() => expect(screen.getByRole('row', { name: /jobs/ }).textContent).toContain('Healthy'))
+
+    await act(() => view.navigate(''))
+    await screen.findByRole('heading', { name: 'Nodes' })
+    // Another operator's probe, recorded while this tab showed another view, so its change never reached Health.
+    checks = [check('jobs', { latest: result('Unhealthy', { completedAt: '2026-11-27T09:59:30Z' }) })]
+    await act(() => view.navigate('health?open=jobs'))
+
+    await waitFor(() => expect(screen.getByRole('row', { name: /jobs/ }).textContent).toContain('Unhealthy'))
+    const panel = await screen.findByRole('region', { name: 'Check jobs' })
+    await waitFor(() => expect(panel.textContent).toContain('Unhealthy'))
+    const strip = await screen.findByRole('region', { name: 'Health at a glance' })
+    await waitFor(() => expect(within(strip).getByRole('link', { name: /Unhealthy/ }).textContent).toContain('1'))
+    expect(within(strip).getByRole('link', { name: /Healthy/ }).textContent).toContain('0')
+  })
+
+  it('shows a failed health summary read as an error with Retry while the checks still list', async () => {
+    open(
+      {
+        checks: [check('jobs', { latest: result('Healthy') })],
+        extra: (request) => {
+          if (request.path === 'cluster/health') {
+            throw new Error('The monitor did not answer.')
+          }
+
+          return undefined
+        },
+      },
+      { path: 'health' },
+    )
+
+    await screen.findByRole('row', { name: /jobs/ })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('The health summary did not load')
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy()
+  })
+
   it('shows Stale and keeps the rows while the stream is down', async () => {
     const view = open({ checks: [check('jobs', { latest: result('Healthy') })] }, { path: 'health' })
     await screen.findByRole('row', { name: /jobs/ })

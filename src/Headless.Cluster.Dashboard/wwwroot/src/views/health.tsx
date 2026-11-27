@@ -8,6 +8,7 @@ import {
   FieldGrid,
   GridField,
   HistoryList,
+  LoadError,
   Mono,
   PageFrame,
   PageHeader,
@@ -70,7 +71,13 @@ export default function HealthView() {
   const canRead = registration?.monitor === true
   const health = useHostHealth(canRead)
   const checks = useChecks(status, canRead)
-  const kept = useKeptOpenRow(checks.data ?? [], params.get('open'))
+  const openName = params.get('open')
+  // The panel's own read, shared through the cache: its 404 says the open check is gone, not merely filtered out.
+  const openDetail = useCheckDetail(canRead ? (openName ?? undefined) : undefined)
+  const kept = useKeptOpenRow(checks.data ?? [], openName, {
+    isFiltered: status !== undefined,
+    isGone: isNotFound(openDetail.error),
+  })
   const frame = usePageFrame({ viewId: 'cluster.health', rows: kept.rows })
   const announcer = useProbeAnnouncer()
   const host = summary.data?.host
@@ -146,6 +153,13 @@ export default function HealthView() {
         failed={checks.isError || health.isError || summary.isError}
       />
       <Announcer message={announcer.said.text} id={announcer.said.round} />
+      {health.isError ? (
+        <LoadError
+          message={`The health summary did not load: ${health.error.message}`}
+          kept={health.data !== undefined}
+          onRetry={() => void health.refetch()}
+        />
+      ) : null}
       {registration && !registration.monitor ? (
         <Banner tone="warn">
           The health check monitor is not registered, so no check can be probed or shown. Call
@@ -238,6 +252,10 @@ export default function HealthView() {
   )
 }
 
+function isNotFound(error: unknown) {
+  return error instanceof DashboardApiError && error.status === 404
+}
+
 function NotProbed() {
   return <Text tone="faint">Not probed</Text>
 }
@@ -327,7 +345,7 @@ function CheckPanel({ name, onProbed }: { name: string; onProbed: (rows: RowResu
   const detail = useCheckDetail(name)
   const probe = commands.find('cluster.probe')
   const allowed = useAllowedActions('check', [{ id: name }])
-  const gone = detail.error instanceof DashboardApiError && detail.error.status === 404
+  const gone = isNotFound(detail.error)
 
   if (gone) {
     return (

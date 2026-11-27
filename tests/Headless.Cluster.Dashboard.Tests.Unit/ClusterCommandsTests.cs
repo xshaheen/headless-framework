@@ -119,6 +119,70 @@ public sealed class ClusterCommandsTests : TestBase
         _log.Entries.Should().ContainSingle(static entry => entry.CommandId == "cluster.probe-all");
     }
 
+    [Theory]
+    [InlineData("replica-b")]
+    [InlineData(null)]
+    public async Task should_refuse_probe_all_unrun_when_it_does_not_name_exactly_the_serving_host(string? other)
+    {
+        // given
+        await using var app = await _StartAsync();
+        using var client = ClusterDashboardHost.Client(app);
+        var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);
+        // another replica's label, or the serving host together with another one
+        var ids = other is null ? new[] { Environment.MachineName, "replica-b" } : [other];
+
+        // when
+        using var response = await ClusterDashboardHost.PostAsync(
+            client,
+            _Commands + "/cluster.probe-all",
+            new { ids },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, body);
+        body.Should().Contain($"This request reached host '{Environment.MachineName}'");
+        _dependency.Runs.Should().Be(0);
+        _scheduler.Runs.Should().Be(0);
+        _log.Entries.Should().BeEmpty();
+        _publisher.Changes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_disable_probe_all_for_a_host_other_than_the_serving_one_naming_the_serving_host()
+    {
+        // given
+        await using var app = await _StartAsync();
+        using var client = ClusterDashboardHost.Client(app);
+        var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await ClusterDashboardHost.GetAsync(
+            client,
+            _Commands + "/allowed?kind=health&id=replica-b",
+            cookie,
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(AbortToken));
+        var command = (await ClusterDashboardHost.ReadAsync(response, AbortToken))
+            .GetProperty("objects")[0]
+            .GetProperty("commands")
+            .EnumerateArray()
+            .Single(static command =>
+                string.Equals(command.GetProperty("id").GetString(), "cluster.probe-all", StringComparison.Ordinal)
+            );
+        command.GetProperty("allowed").GetBoolean().Should().BeFalse();
+        command
+            .GetProperty("disabledReason")
+            .GetString()
+            .Should()
+            .Contain($"This request reached host '{Environment.MachineName}', not 'replica-b'");
+    }
+
     [Fact]
     public async Task should_publish_one_check_change_per_probed_check_with_a_later_version_each_time()
     {
@@ -132,7 +196,7 @@ public sealed class ClusterCommandsTests : TestBase
         using var all = await ClusterDashboardHost.PostAsync(
             client,
             _Commands + "/cluster.probe-all",
-            new { ids = new[] { "host" } },
+            new { ids = new[] { Environment.MachineName } },
             cookie,
             AbortToken
         );
@@ -177,7 +241,7 @@ public sealed class ClusterCommandsTests : TestBase
         using var response = await ClusterDashboardHost.PostAsync(
             client,
             _Commands + "/cluster.probe-all",
-            new { ids = new[] { "host" } },
+            new { ids = new[] { Environment.MachineName } },
             cookie,
             AbortToken
         );
@@ -209,7 +273,7 @@ public sealed class ClusterCommandsTests : TestBase
         );
         using var allowedHost = await ClusterDashboardHost.GetAsync(
             client,
-            _Commands + "/allowed?kind=health&id=host",
+            _Commands + "/allowed?kind=health&id=" + Uri.EscapeDataString(Environment.MachineName),
             cookie,
             AbortToken
         );
@@ -260,7 +324,7 @@ public sealed class ClusterCommandsTests : TestBase
         );
         using var allowedHost = await ClusterDashboardHost.GetAsync(
             client,
-            _Commands + "/allowed?kind=health&id=host",
+            _Commands + "/allowed?kind=health&id=" + Uri.EscapeDataString(Environment.MachineName),
             cookie,
             AbortToken
         );

@@ -6,6 +6,7 @@ import {
   GridField,
   HistoryList,
   KeyValueTable,
+  LoadError,
   Mono,
   PageFrame,
   PageHeader,
@@ -57,7 +58,13 @@ export default function ClusterView() {
     coordination ? Math.max(MIN_REFRESH_MS, coordination.heartbeatIntervalMilliseconds) : false,
   )
   const agreement = useMetadataAgreement(hasCoordination)
-  const kept = useKeptOpenRow(nodes.data ?? [], params.get('open'))
+  const openId = params.get('open')
+  // The panel's own read, shared through the cache: its 404 says the open node is gone, not merely filtered out.
+  const openDetail = useNodeDetail(hasCoordination ? (openId ?? undefined) : undefined)
+  const kept = useKeptOpenRow(nodes.data ?? [], openId, {
+    isFiltered: state !== undefined,
+    isGone: isNotFound(openDetail.error),
+  })
   const frame = usePageFrame({ viewId: 'cluster.nodes', rows: kept.rows })
   // Only the unfiltered list holds every incarnation, so only it can tell this node is missing.
   const localMissing =
@@ -103,7 +110,11 @@ export default function ClusterView() {
           description="Read-only. Coordination reports liveness; times come from the membership store's clock."
         />
       }
-      panel={frame.openId ? <NodePanel id={frame.openId} /> : undefined}
+      panel={
+        frame.openId ? (
+          <NodePanel id={frame.openId} listed={nodes.data?.find((row) => row.id === frame.openId)} />
+        ) : undefined
+      }
     >
       <StaleNotice
         what="these nodes"
@@ -178,6 +189,13 @@ export default function ClusterView() {
           </QueryState>
         )}
       </QueryState>
+      {agreement.isError ? (
+        <LoadError
+          message={`The metadata agreement did not load: ${agreement.error.message}`}
+          kept={agreement.data !== undefined}
+          onRetry={() => void agreement.refetch()}
+        />
+      ) : null}
       {agreement.data && agreement.data.some((key) => !key.isUnanimous) ? (
         <Section label="Metadata agreement" description="Values that differ across the alive and suspected nodes.">
           <KeyValueTable
@@ -240,12 +258,12 @@ function eventItems(events: readonly MembershipEvent[]): HistoryItem[] {
     key: String(event.sequence),
     time: <Timestamp value={event.observedAt} />,
     tone: event.state ? nodeMark(event.state).tone : 'off',
-    state: event.isFirstObservation ? `${event.state ?? 'Seen'} (starting state)` : eventLabel(event.kind),
+    state: event.isFirstObservation ? `${event.state ?? 'Seen'} (starting state)` : eventLabel(event),
     note: event.state && !event.isFirstObservation ? event.state : undefined,
   }))
 }
 
-function eventLabel(kind: string) {
+function eventLabel({ kind, state }: MembershipEvent) {
   switch (kind) {
     case 'NodeJoined':
       return 'Joined'
@@ -254,7 +272,9 @@ function eventLabel(kind: string) {
     case 'NodeRecovered':
       return 'Recovered'
     case 'NodeLeft':
-      return 'Left the snapshot'
+      // Coordination reports a death as NodeLeft too, while the dead incarnation is still in the snapshot; only a
+      // NodeLeft with no state is the incarnation leaving it.
+      return state === 'Dead' ? 'Marked dead' : 'Left the snapshot'
     case 'LocalMembershipLost':
       return 'Membership lost'
     default:
@@ -262,10 +282,15 @@ function eventLabel(kind: string) {
   }
 }
 
-function NodePanel({ id }: { id: string }) {
+function isNotFound(error: unknown) {
+  return error instanceof DashboardApiError && error.status === 404
+}
+
+/** `listed` is the open node's row in the polled list, when the list holds it: its heartbeat is the current one. */
+function NodePanel({ id, listed }: { id: string; listed: ClusterNode | undefined }) {
   const detail = useNodeDetail(id)
   const summary = useSummary()
-  const gone = detail.error instanceof DashboardApiError && detail.error.status === 404
+  const gone = isNotFound(detail.error)
 
   if (gone) {
     return (
@@ -288,7 +313,7 @@ function NodePanel({ id }: { id: string }) {
           label: 'Overview',
           content: (
             <QueryState query={detail} label="Loading the node" rows={4} shape="fields">
-              {(data) => <NodeOverview node={data.node} />}
+              {(data) => <NodeOverview node={data.node} lastHeartbeatAt={listed?.lastHeartbeatAt} />}
             </QueryState>
           ),
         },
@@ -315,7 +340,11 @@ function NodePanel({ id }: { id: string }) {
   )
 }
 
-function NodeOverview({ node }: { node: ClusterNode }) {
+/**
+ * The detail read is refreshed only by a change, which a heartbeat is not, so the list's polled heartbeat wins when
+ * the caller has one.
+ */
+function NodeOverview({ node, lastHeartbeatAt }: { node: ClusterNode; lastHeartbeatAt: string | undefined }) {
   const format = useFormat()
 
   return (
@@ -325,7 +354,7 @@ function NodeOverview({ node }: { node: ClusterNode }) {
       </GridField>
       <GridField label="Role">{node.role ?? 'None'}</GridField>
       <GridField label="Last heartbeat">
-        <Timestamp value={node.lastHeartbeatAt} />
+        <Timestamp value={lastHeartbeatAt ?? node.lastHeartbeatAt} />
       </GridField>
       <GridField label="Incarnation">{format.number(node.incarnation)}</GridField>
       <GridField label="Owner tag" span={2}>

@@ -12,8 +12,14 @@ namespace Headless.Cluster;
 /// line per incarnation, in ordinal order, so every node builds the same cursor from the same store read.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The store has no change marker to read from: Suspected and Dead are derived from a heartbeat's age at read time,
 /// so no write ever marks them. The cursor therefore carries the last view and each read compares against it.
+/// </para>
+/// <para>
+/// Each identity is itself base64url-encoded inside its line: a node id may hold an interior space or line break, and
+/// written verbatim either one would split the identity from its version or one incarnation into two.
+/// </para>
 /// </remarks>
 internal static class NodeChangeCursor
 {
@@ -26,7 +32,7 @@ internal static class NodeChangeCursor
             '\n',
             versions
                 .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
-                .Select(static pair => pair.Key + " " + pair.Value)
+                .Select(static pair => Base64Url.EncodeToString(Encoding.UTF8.GetBytes(pair.Key)) + " " + pair.Value)
         );
 
         return _Prefix + Base64Url.EncodeToString(Encoding.UTF8.GetBytes(text));
@@ -65,9 +71,10 @@ internal static class NodeChangeCursor
 
             if (
                 separator <= 0
-                || !NodeIdentity.TryParse(line[..separator], out _)
                 || line.Length - separator - 1 != _VersionLength
-                || !versions.TryAdd(line[..separator], line[(separator + 1)..])
+                || _DecodeIdentity(line.AsSpan(0, separator)) is not { } identity
+                || !NodeIdentity.TryParse(identity, out _)
+                || !versions.TryAdd(identity, line[(separator + 1)..])
             )
             {
                 throw _Invalid(cursor);
@@ -97,6 +104,18 @@ internal static class NodeChangeCursor
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()));
 
         return Convert.ToHexStringLower(hash.AsSpan(0, _VersionLength / 2));
+    }
+
+    private static string? _DecodeIdentity(ReadOnlySpan<char> encoded)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Base64Url.DecodeFromChars(encoded));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     private static ArgumentException _Invalid(string cursor) =>

@@ -346,6 +346,46 @@ export function readHealth(value: unknown): HostHealth {
   }
 }
 
+/** One sidebar count; `unavailable` names the sources it leaves out, which makes it a lower bound. */
+export interface ClusterCount {
+  value: number
+  capped: boolean
+  unavailable?: string[]
+}
+
+export interface ClusterCounts {
+  counts: Readonly<Record<string, ClusterCount>>
+  stale: { id: string; displayName: string }[]
+}
+
+/**
+ * The shell's counts answer, mapped as the shell's sidebar maps it, because both read one cached entry: a count that
+ * leaves a source out reads as capped, so it shows as `N+` and never as an exact number.
+ */
+export function readCounts(value: unknown): ClusterCounts {
+  const item = record(value, 'counts')
+
+  return {
+    counts: Object.fromEntries(
+      Object.entries(record(item.counts, 'counts')).map(([key, entry]) => {
+        const answer = record(entry, 'count')
+        const unavailable =
+          answer.unavailable == null
+            ? undefined
+            : list(answer.unavailable, 'unavailable sources', (source) => text(source, 'unavailable source'))
+        const capped = flag(answer.capped, 'capped flag') || unavailable !== undefined
+
+        return [key, { value: count(answer.count, 'count'), capped, unavailable }]
+      }),
+    ),
+    stale: list(item.stale ?? [], 'stale modules', (entry) => {
+      const module = record(entry, 'stale module')
+
+      return { id: text(module.id, 'stale module id'), displayName: text(module.displayName, 'stale module name') }
+    }),
+  }
+}
+
 async function read<T>(api: DashboardApi, path: string, parse: (value: unknown) => T, query?: Record<string, string>) {
   return parse(await api.request<unknown>({ method: 'GET', path, query }))
 }
@@ -424,10 +464,21 @@ export function useEventLog(enabled: boolean) {
   })
 }
 
+/**
+ * Health results change only by a probe, whose change reaches only a mounted view, so a view that mounts again reads
+ * them again instead of showing what the cache held when it left.
+ */
+const refetchHealthOnMount = 'always'
+
 export function useHostHealth(enabled: boolean) {
   const { api } = useDashboard()
 
-  return useQuery({ queryKey: queryKeys.health, queryFn: () => read(api, 'cluster/health', readHealth), enabled })
+  return useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => read(api, 'cluster/health', readHealth),
+    enabled,
+    refetchOnMount: refetchHealthOnMount,
+  })
 }
 
 export function useChecks(status: CheckFilter | undefined, enabled: boolean) {
@@ -443,6 +494,7 @@ export function useChecks(status: CheckFilter | undefined, enabled: boolean) {
         status ? { status } : undefined,
       ),
     enabled,
+    refetchOnMount: refetchHealthOnMount,
   })
 }
 
@@ -454,6 +506,7 @@ export function useCheckDetail(name: string | undefined) {
     queryFn: () => read(api, `cluster/health/checks/${encodeURIComponent(name ?? '')}`, readCheckDetail),
     enabled: name !== undefined,
     retry: false,
+    refetchOnMount: refetchHealthOnMount,
   })
 }
 

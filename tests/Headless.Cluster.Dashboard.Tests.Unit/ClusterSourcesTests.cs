@@ -208,6 +208,26 @@ public sealed class ClusterSourcesTests : TestBase
             .BeEquivalentTo("nodes", "Alive", "Suspected", "Dead");
     }
 
+    [Fact]
+    public async Task should_answer_the_module_as_stale_on_a_coordination_only_host_whose_store_does_not_answer()
+    {
+        // given no health counts answer in the store's place, so the module has no count to keep
+        await using var app = await ClusterDashboardHost.StartAsync(AbortToken, membership: _membership);
+        _membership.IsUnreachable = true;
+
+        // when
+        var answer = await ClusterDashboardHost.GetJsonAsync(app, "/headless/api/counts?product=cluster", AbortToken);
+
+        // then
+        answer.GetProperty("counts").EnumerateObject().Should().BeEmpty();
+        answer
+            .GetProperty("stale")
+            .EnumerateArray()
+            .Select(static module => module.GetProperty("id").GetString())
+            .Should()
+            .Equal("cluster");
+    }
+
     [Theory]
     [InlineData("orders-api-0@14", new[] { "node:orders-api-0@14" })]
     [InlineData("orders-api-0", new[] { "node:orders-api-0@13", "node:orders-api-0@14" })]

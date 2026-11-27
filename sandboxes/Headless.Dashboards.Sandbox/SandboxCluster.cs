@@ -77,7 +77,7 @@ public static class SandboxCluster
             metadata["app.version"] = version;
         }
 
-        await store.UpsertDescriptorAsync(
+        var registered = await store.UpsertDescriptorAsync(
             new NodeDescriptor
             {
                 Identity = identity,
@@ -87,7 +87,13 @@ public static class SandboxCluster
             cancellationToken
         );
 
-        return identity;
+        // A concurrent seed allocated a newer incarnation between this allocation and its registration, so this one
+        // was never written and must not be reported as a peer.
+        return registered
+            ? identity
+            : throw new SandboxScenarioUnavailableException(
+                $"Another seed superseded {identity} before it registered. Run the scenario again."
+            );
     }
 
     private static async Task _BeatAsync(
@@ -105,7 +111,12 @@ public static class SandboxCluster
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                await store.HeartbeatAsync(steady, cancellationToken);
+                // A later seed superseded these peers and runs its own loop, so this one stops instead of beating for
+                // an identity the store refuses until the host stops.
+                if (!await store.HeartbeatAsync(steady, cancellationToken))
+                {
+                    return;
+                }
 
                 // One beat after registering, then silence: it turns suspected, then dead, while the steady peer stays.
                 if (beats++ == 0)

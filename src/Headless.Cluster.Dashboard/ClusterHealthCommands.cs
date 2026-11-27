@@ -52,7 +52,8 @@ internal sealed class ClusterHealthCommands(
 
     public IReadOnlyList<DashboardCommandAvailability> GetAllowed(IReadOnlyList<ObjectRef> targets)
     {
-        var reason = _services.Monitor is null ? HealthEndpoints.MissingMonitor : null;
+        var missing = _services.Monitor is null ? HealthEndpoints.MissingMonitor : null;
+        var host = _services.HostLabel;
         var answers = new List<DashboardCommandAvailability>(targets.Count);
 
         foreach (var target in targets)
@@ -66,6 +67,15 @@ internal sealed class ClusterHealthCommands(
 
             if (commandId is not null)
             {
+                var reason =
+                    missing
+                    ?? (
+                        string.Equals(commandId, ProbeAllId, StringComparison.Ordinal)
+                        && !string.Equals(target.Id, host, StringComparison.Ordinal)
+                            ? _OtherHost(host, target.Id)
+                            : null
+                    );
+
                 answers.Add(
                     new DashboardCommandAvailability
                     {
@@ -93,9 +103,22 @@ internal sealed class ClusterHealthCommands(
 
         if (string.Equals(request.CommandId, ProbeAllId, StringComparison.Ordinal))
         {
+            // The monitor probes only the host serving this request, so a run aimed at another replica (a page read
+            // from one host, a request routed to another after failover) or at several hosts is refused unrun rather
+            // than credited to a host it never probed.
+            var host = _services.HostLabel;
+
+            if (request.Ids is not [var target] || !string.Equals(target, host, StringComparison.Ordinal))
+            {
+                return new DashboardCommandResult
+                {
+                    Rows = [],
+                    Refusal = _OtherHost(host, string.Join(", ", request.Ids)),
+                };
+            }
+
             var report = await monitor.ProbeAllAsync(cancellationToken).ConfigureAwait(false);
             _PublishProbed(report.Entries.Keys);
-            var host = request.Ids.Count > 0 ? request.Ids[0] : _services.HostLabel;
 
             return new DashboardCommandResult
             {
@@ -147,6 +170,9 @@ internal sealed class ClusterHealthCommands(
 
         return new DashboardCommandResult { Rows = rows };
     }
+
+    private static string _OtherHost(string host, string requested) =>
+        $"This request reached host '{host}', not '{requested}'. Refresh the page to probe the host that answers it.";
 
     /// <summary>
     /// Publishes one change per probed check, versioned by its recorded result's completion time so the shell, which
