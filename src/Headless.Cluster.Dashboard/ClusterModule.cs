@@ -23,6 +23,12 @@ internal sealed class ClusterModule
         IDashboardCommandSource,
         IDashboardChangeSource
 {
+    private readonly ClusterEndpoints _cluster;
+    private readonly HealthEndpoints _health;
+    private readonly ClusterHealthCommands _commands;
+    private readonly ClusterSources _sources;
+    private readonly NodeChangeSource _changes;
+
     public ClusterModule(
         ClusterServices services,
         IDashboardEventPublisher publisher,
@@ -34,6 +40,12 @@ internal sealed class ClusterModule
         Argument.IsNotNull(publisher);
         Argument.IsNotNull(timeProvider);
         Argument.IsNotNull(options);
+
+        _cluster = new ClusterEndpoints(services);
+        _health = new HealthEndpoints(services);
+        _commands = new ClusterHealthCommands(Id, services, publisher);
+        _sources = new ClusterSources(Id, services);
+        _changes = new NodeChangeSource(Id, services, timeProvider, options.ChangePageSize);
     }
 
     public string Id => ClusterDashboardOptions.ModuleId;
@@ -42,19 +54,30 @@ internal sealed class ClusterModule
 
     public DashboardModuleAssets Assets { get; } = ClusterAssets.Create();
 
-    public IReadOnlyList<DashboardCommand> Commands => [];
+    public IReadOnlyList<DashboardCommand> Commands => _commands.Commands;
 
     public void MapEndpoints(DashboardModuleEndpoints endpoints)
     {
         Argument.IsNotNull(endpoints);
+
+        _cluster.Map(endpoints);
+        _health.Map(endpoints);
     }
 
-    public Task<IReadOnlyList<DashboardAttentionItem>> GetAttentionAsync(
+    public async Task<IReadOnlyList<DashboardAttentionItem>> GetAttentionAsync(
         DashboardAttentionRequest request,
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult<IReadOnlyList<DashboardAttentionItem>>([]);
+        return (await _sources.GetAttentionAsync(cancellationToken).ConfigureAwait(false)).Items;
+    }
+
+    public Task<DashboardAttentionAnswer> GetAttentionAnswerAsync(
+        DashboardAttentionRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _sources.GetAttentionAsync(cancellationToken);
     }
 
     public Task<IReadOnlyDictionary<string, DashboardCount>> GetCountsAsync(
@@ -62,9 +85,7 @@ internal sealed class ClusterModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult<IReadOnlyDictionary<string, DashboardCount>>(
-            new Dictionary<string, DashboardCount>(StringComparer.Ordinal)
-        );
+        return _sources.GetCountsAsync(cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardObject>> ResolveAsync(
@@ -72,7 +93,9 @@ internal sealed class ClusterModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult<IReadOnlyList<DashboardObject>>([]);
+        Argument.IsNotNull(request);
+
+        return _sources.ResolveAsync(request.Query, cancellationToken);
     }
 
     public Task<IReadOnlyList<DashboardCommandAvailability>> GetAllowedCommandsAsync(
@@ -80,7 +103,9 @@ internal sealed class ClusterModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult<IReadOnlyList<DashboardCommandAvailability>>([]);
+        Argument.IsNotNull(request);
+
+        return Task.FromResult(_commands.GetAllowed(request.Targets));
     }
 
     public Task<DashboardCommandResult> ExecuteAsync(
@@ -88,16 +113,20 @@ internal sealed class ClusterModule
         CancellationToken cancellationToken
     )
     {
-        return Task.FromResult(new DashboardCommandResult { Rows = [] });
+        Argument.IsNotNull(request);
+
+        return _commands.ExecuteAsync(request, cancellationToken);
     }
 
     public Task<string> GetStartCursorAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult("v1:");
+        return _changes.GetStartCursorAsync(cancellationToken);
     }
 
     public Task<DashboardChangeBatch> ReadChangesAsync(string cursor, CancellationToken cancellationToken)
     {
-        return Task.FromResult(new DashboardChangeBatch { Changes = [], Cursor = cursor });
+        Argument.IsNotNull(cursor);
+
+        return _changes.ReadChangesAsync(cursor, cancellationToken);
     }
 }
