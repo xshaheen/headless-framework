@@ -199,11 +199,7 @@ public static class SandboxScenarios
             "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),
             "cluster-peers" => await SandboxCluster.AddPeersAsync(provider, cancellationToken),
-            "dev-inbox" or "dev-inbox-send" => await SandboxDevInbox.RunAsync(
-                name,
-                provider,
-                cancellationToken
-            ),
+            "dev-inbox" or "dev-inbox-send" => await SandboxDevInbox.RunAsync(name, provider, cancellationToken),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
