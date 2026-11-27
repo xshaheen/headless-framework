@@ -28,17 +28,20 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { DashboardApiError, useDashboardKeysetList } from '@headless/dashboard-sdk/data'
 import { ListIcon } from '@headless/dashboard-sdk/icons'
-import { useFormat } from '@headless/dashboard-sdk/locale'
+import { isTimeZone, useFormat } from '@headless/dashboard-sdk/locale'
+import { useQueryClient } from '@headless/dashboard-sdk/query'
 import { useSearchParams } from '@headless/dashboard-sdk/router'
 import { DataTable, SearchField } from '@headless/dashboard-sdk/table'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
   countersTopic,
   fetchCounters,
   fetchPartitions,
   isReadable,
   modeLabels,
+  partitionsTopic,
   readFilter,
+  refreshSequences,
   resetLabels,
   sequenceModes,
   useCounter,
@@ -158,25 +161,32 @@ function Page({ filter, counters }: { filter: CounterFilter; counters: CounterLi
 
   const list = counters.kind === 'read' ? counters.list : undefined
   const listed = list?.rows.find((row) => row.id === frame.openId)
-  const refetchSummary = summary.refetch
-  const refetchList = list?.query.refetch
+  const client = useQueryClient()
+  const isReadableFilter = isReadable(filter)
+
+  // A tenant scope with no id names nothing to read, so neither Refresh nor focus sends a request for it, an open
+  // panel's reads included.
+  const refresh = useCallback(() => {
+    if (isReadableFilter) {
+      refreshSequences(client)
+    }
+  }, [client, isReadableFilter])
 
   // The inspector serves no change feed, so the view reads again when the operator comes back to the window.
   useEffect(() => {
-    function refresh() {
-      void refetchSummary()
-      void refetchList?.()
+    if (!isReadableFilter) {
+      return
     }
 
     window.addEventListener('focus', refresh)
 
     return () => window.removeEventListener('focus', refresh)
-  }, [refetchSummary, refetchList])
+  }, [refresh, isReadableFilter])
 
   return (
     <PageFrame
       frame={frame}
-      stats={<SummaryStats summary={summary.data} />}
+      stats={<SummaryStats summary={summary.data} filter={filter} />}
       header={
         <PageHeader
           title="Sequences"
@@ -186,16 +196,7 @@ function Page({ filter, counters }: { filter: CounterFilter; counters: CounterLi
               : undefined
           }
           description={<ReadAt list={list} />}
-          actions={
-            <Button
-              onPress={() => {
-                void refetchSummary()
-                void refetchList?.()
-              }}
-            >
-              Refresh
-            </Button>
-          }
+          actions={<Button onPress={refresh}>Refresh</Button>}
           toolbar={
             <FilterToolbar
               active={active}
@@ -275,7 +276,31 @@ function ReadAt({ list }: { list: ReturnType<typeof useCounterList> | undefined 
   )
 }
 
-function SummaryStats({ summary }: { summary: SequencesSummary | undefined }) {
+/**
+ * The list a mode card counted: the summary reads the scope, tenant, and search and ignores the current filter, so the
+ * link keeps those three, sets the mode, and leaves `current` and an open panel behind.
+ */
+function modeLink(filter: CounterFilter, mode: SequenceMode) {
+  const next = new URLSearchParams()
+
+  if (filter.scope) {
+    next.set('scope', filter.scope)
+  }
+
+  if (filter.tenant) {
+    next.set('tenant', filter.tenant)
+  }
+
+  if (filter.q) {
+    next.set('q', filter.q)
+  }
+
+  next.set('mode', mode)
+
+  return `?${next.toString()}`
+}
+
+function SummaryStats({ summary, filter }: { summary: SequencesSummary | undefined; filter: CounterFilter }) {
   const format = useFormat()
 
   function value(count: number | undefined, capped = summary?.capped ?? false) {
@@ -286,9 +311,9 @@ function SummaryStats({ summary }: { summary: SequencesSummary | undefined }) {
     <StatStrip label="Sequences at a glance">
       <StatCard label="Counters" value={value(summary?.total)} />
       <StatCard label="Current partitions" value={value(summary?.current, summary?.currentCapped)} />
-      <StatCard label="Gap-free" value={value(summary?.gapFree)} to="?mode=GapFree" />
-      <StatCard label="Fast" value={value(summary?.fast)} to="?mode=Fast" />
-      <StatCard label="Reported" value={value(summary?.reported)} to="?mode=Reported" />
+      <StatCard label="Gap-free" value={value(summary?.gapFree)} to={modeLink(filter, 'GapFree')} />
+      <StatCard label="Fast" value={value(summary?.fast)} to={modeLink(filter, 'Fast')} />
+      <StatCard label="Reported" value={value(summary?.reported)} to={modeLink(filter, 'Reported')} />
       <StatCard
         label="Next reset"
         value={summary ? <Timestamp value={summary.nextResetAt} scheduled missing="None" /> : '–'}
@@ -506,8 +531,14 @@ function CounterPanel({ id, listed }: { id: string; listed: SequenceCounter | un
     )
   }
 
+  // A failed refresh keeps the last good read on screen under the error, so the panel never passes stale data as fresh.
   return read.data ? (
-    <CounterDetail counter={read.data} />
+    <CounterDetail
+      counter={read.data}
+      notice={
+        read.isError ? <LoadError message={read.error.message} kept onRetry={() => void read.refetch()} /> : undefined
+      }
+    />
   ) : (
     <DetailPanel label="Sequence counter" name={id}>
       <QueryState query={read} label="Loading the counter" rows={6} shape="fields">
@@ -517,9 +548,12 @@ function CounterPanel({ id, listed }: { id: string; listed: SequenceCounter | un
   )
 }
 
-function CounterDetail({ counter }: { counter: SequenceCounter }) {
+function CounterDetail({ counter, notice }: { counter: SequenceCounter; notice?: ReactNode }) {
   const format = useFormat()
   const { policy } = counter
+  // A policy may name a Windows zone id, which the browser's Intl API does not know: the exact time then reads in the
+  // display zone, and the configured id stays visible in the policy's Time zone field.
+  const zone = isTimeZone(policy.timeZone) ? policy.timeZone : undefined
 
   return (
     <DetailPanel
@@ -528,8 +562,11 @@ function CounterDetail({ counter }: { counter: SequenceCounter }) {
       id={counter.id}
       status={partitionMark(counter)}
     >
+      {notice}
       <FieldGrid label="Counter">
-        <GridField label="Scope">{counter.isHost ? 'Host' : <Mono>{counter.tenantId}</Mono>}</GridField>
+        <GridField label="Scope">
+          <TenantText counter={counter} />
+        </GridField>
         <GridField label="Partition">{counter.partition ? <Mono>{counter.partition}</Mono> : 'None'}</GridField>
         <GridField label="Value">{format.number(counter.value)}</GridField>
         <GridField label="Last issued">
@@ -539,7 +576,7 @@ function CounterDetail({ counter }: { counter: SequenceCounter }) {
           <Timestamp value={counter.updatedAt} />
         </GridField>
         <GridField label="Next reset">
-          <Timestamp value={counter.nextResetAt} zone={policy.timeZone} scheduled missing="Never" />
+          <Timestamp value={counter.nextResetAt} zone={zone} scheduled missing="Never" />
         </GridField>
       </FieldGrid>
       {policy.blockSize > 1 ? (
@@ -576,7 +613,7 @@ function Partitions({ counter }: { counter: SequenceCounter }) {
   const { api } = useDashboard()
   const format = useFormat()
   const partitions = useDashboardKeysetList<SequenceCounter>({
-    topic: 'sequences.partition',
+    topic: partitionsTopic,
     params: { id: counter.id },
     fetchPage: (cursor) => fetchPartitions(api, counter.id, cursor),
   })

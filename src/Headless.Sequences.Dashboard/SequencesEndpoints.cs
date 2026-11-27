@@ -56,16 +56,12 @@ internal sealed class SequencesEndpoints(
         Results<JsonHttpResult<SequencesSummaryView>, ValidationProblem, ProblemHttpResult>
     > _SummaryAsync(string? scope, string? tenant, string? q, CancellationToken cancellationToken)
     {
-        if (_ParseScope(scope, tenant) is not { } tenantFilter)
+        if (_ParseScope(scope, tenant, out var tenantId) is { } scopeProblem)
         {
-            return _ScopeProblem(scope, tenant);
+            return scopeProblem;
         }
 
-        var query = new SequenceSummaryQuery
-        {
-            TenantId = tenantFilter.TenantId,
-            Search = string.IsNullOrEmpty(q) ? null : q,
-        };
+        var query = new SequenceSummaryQuery { TenantId = tenantId, Search = string.IsNullOrEmpty(q) ? null : q };
 
         try
         {
@@ -90,7 +86,7 @@ internal sealed class SequencesEndpoints(
         }
         catch (ArgumentException exception)
         {
-            return _Refused(exception, hasTenant: tenantFilter.TenantId is { Length: > 0 }, cursorField: null);
+            return _Refused(exception, hasTenant: tenantId is { Length: > 0 }, cursorField: null);
         }
         catch (Exception exception) when (_IsStoreFailure(exception, cancellationToken))
         {
@@ -111,9 +107,9 @@ internal sealed class SequencesEndpoints(
         CancellationToken cancellationToken
     )
     {
-        if (_ParseScope(scope, tenant) is not { } tenantFilter)
+        if (_ParseScope(scope, tenant, out var tenantId) is { } scopeProblem)
         {
-            return _ScopeProblem(scope, tenant);
+            return scopeProblem;
         }
 
         SequenceMode? modeFilter = null;
@@ -168,7 +164,7 @@ internal sealed class SequencesEndpoints(
                 .ListCountersAsync(
                     new SequenceCounterQuery
                     {
-                        TenantId = tenantFilter.TenantId,
+                        TenantId = tenantId,
                         Search = string.IsNullOrEmpty(q) ? null : q,
                         Mode = modeFilter,
                         CurrentPartitionsOnly = currentOnly,
@@ -179,21 +175,13 @@ internal sealed class SequencesEndpoints(
                 )
                 .ConfigureAwait(false);
 
-            var settings = _options.CurrentValue;
-
-            return TypedResults.Json(
-                new SequenceCounterList(
-                    [.. page.Items.Select(counter => SequenceCounterView.From(counter, settings))],
-                    page.Next is { } next ? SequenceCounterId.FormatListCursor(next) : null
-                ),
-                SequencesDashboardJsonContext.Default.SequenceCounterList
-            );
+            return _List(page.Items, page.Next is { } next ? SequenceCounterId.FormatListCursor(next) : null);
         }
         catch (ArgumentException exception)
         {
             return _Refused(
                 exception,
-                hasTenant: tenantFilter.TenantId is { Length: > 0 },
+                hasTenant: tenantId is { Length: > 0 },
                 cursorField: afterKey is null ? null : "after"
             );
         }
@@ -281,15 +269,7 @@ internal sealed class SequencesEndpoints(
                 )
                 .ConfigureAwait(false);
 
-            var settings = _options.CurrentValue;
-
-            return TypedResults.Json(
-                new SequenceCounterList(
-                    [.. page.Items.Select(counter => SequenceCounterView.From(counter, settings))],
-                    page.Next is { } next ? SequenceCounterId.FormatPartitionCursor(next) : null
-                ),
-                SequencesDashboardJsonContext.Default.SequenceCounterList
-            );
+            return _List(page.Items, page.Next is { } next ? SequenceCounterId.FormatPartitionCursor(next) : null);
         }
         catch (ArgumentException exception)
         {
@@ -355,52 +335,56 @@ internal sealed class SequencesEndpoints(
         && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
 
     /// <summary>
-    /// The tenant filter a scope names: every tenant (<see langword="null"/>), the host scope (empty), or one exact
-    /// tenant id; or <see langword="null"/> itself when the pair is refused.
+    /// Reads the tenant filter a scope names into <paramref name="tenantId"/>: every tenant (<see langword="null"/>),
+    /// the host scope (empty), or one exact tenant id.
     /// </summary>
-    private static TenantFilter? _ParseScope(string? scope, string? tenant)
+    /// <returns>The problem naming the refused field, or <see langword="null"/> when the pair is accepted.</returns>
+    private static ValidationProblem? _ParseScope(string? scope, string? tenant, out string? tenantId)
     {
+        tenantId = null;
+
         if (string.IsNullOrEmpty(scope))
         {
-            return string.IsNullOrEmpty(tenant) ? new TenantFilter(TenantId: null) : null;
+            return string.IsNullOrEmpty(tenant) ? null : _TenantNotAcceptedProblem();
         }
 
         if (string.Equals(scope, "host", StringComparison.OrdinalIgnoreCase))
         {
-            return string.IsNullOrEmpty(tenant) ? new TenantFilter(string.Empty) : null;
+            if (!string.IsNullOrEmpty(tenant))
+            {
+                return _TenantNotAcceptedProblem();
+            }
+
+            tenantId = string.Empty;
+
+            return null;
         }
 
         if (string.Equals(scope, "tenant", StringComparison.OrdinalIgnoreCase))
         {
-            return string.IsNullOrEmpty(tenant) ? null : new TenantFilter(tenant);
+            if (string.IsNullOrEmpty(tenant))
+            {
+                return DashboardValidation.Problem(
+                    "tenant",
+                    DashboardValidation.RequiredRule,
+                    "tenant is required when scope is tenant."
+                );
+            }
+
+            tenantId = tenant;
+
+            return null;
         }
 
-        return null;
+        return DashboardValidation.Problem("scope", DashboardValidation.EnumRule, "scope must be host or tenant.");
     }
 
-    private static ValidationProblem _ScopeProblem(string? scope, string? tenant)
-    {
-        if (
-            !string.IsNullOrEmpty(scope)
-            && !string.Equals(scope, "host", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(scope, "tenant", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return DashboardValidation.Problem("scope", DashboardValidation.EnumRule, "scope must be host or tenant.");
-        }
-
-        return string.IsNullOrEmpty(tenant)
-            ? DashboardValidation.Problem(
-                "tenant",
-                DashboardValidation.RequiredRule,
-                "tenant is required when scope is tenant."
-            )
-            : DashboardValidation.Problem(
-                "tenant",
-                DashboardValidation.InvalidRule,
-                "tenant is accepted only when scope is tenant."
-            );
-    }
+    private static ValidationProblem _TenantNotAcceptedProblem() =>
+        DashboardValidation.Problem(
+            "tenant",
+            DashboardValidation.InvalidRule,
+            "tenant is accepted only when scope is tenant."
+        );
 
     private static bool _TryParseBoolean(string? value, out bool result)
     {
@@ -450,6 +434,16 @@ internal sealed class SequencesEndpoints(
         return DashboardValidation.Problem(field, DashboardValidation.InvalidRule, exception.Message);
     }
 
+    private JsonHttpResult<SequenceCounterList> _List(IEnumerable<SequenceCounter> counters, string? next)
+    {
+        var settings = _options.CurrentValue;
+
+        return TypedResults.Json(
+            new SequenceCounterList([.. counters.Select(counter => SequenceCounterView.From(counter, settings))], next),
+            SequencesDashboardJsonContext.Default.SequenceCounterList
+        );
+    }
+
     private static bool _IsStoreFailure(Exception exception, CancellationToken cancellationToken) =>
         exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
 
@@ -461,8 +455,6 @@ internal sealed class SequencesEndpoints(
         // the view can say; the fixed message keeps key text and SQL out of the response.
         return TypedResults.Problem(detail: Unavailable, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
-
-    private sealed record TenantFilter(string? TenantId);
 }
 
 internal static partial class SequencesEndpointsLogs

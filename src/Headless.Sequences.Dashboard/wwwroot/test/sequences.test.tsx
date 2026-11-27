@@ -1,3 +1,4 @@
+import { DashboardApiError } from '@headless/dashboard-sdk/data'
 import { screen, waitFor, within } from '@testing-library/react'
 import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +8,7 @@ import {
   counter,
   globexOrder,
   hostTicket,
+  invoicePolicy,
   now,
   open,
   summaryOf,
@@ -28,7 +30,41 @@ const rows = [acmeInvoice, acmeInvoiceLastYear, globexOrder, hostTicket]
 const fake: FakeServer = { counters: rows }
 
 function counterRequests(view: ReturnType<typeof open>) {
-  return view.requests.filter((request) => request.path === 'sequences/counters')
+  return requestsTo(view, 'sequences/counters')
+}
+
+function requestsTo(view: ReturnType<typeof open>, path: string) {
+  return view.requests.filter((request) => request.path === path)
+}
+
+function moduleRequests(view: ReturnType<typeof open>) {
+  return view.requests.filter((request) => request.path.startsWith('sequences/'))
+}
+
+/** The query of the link a stat card leads to, as the browser would follow it. */
+function statLink(label: string) {
+  const link = within(screen.getByRole('region', { name: 'Sequences at a glance' })).getByRole('link', {
+    name: new RegExp(`^${label}`),
+  })
+
+  return new URL(link.getAttribute('href') ?? '', 'http://dashboard.test').searchParams
+}
+
+/** A fake whose one path fails, so a single read can fail while the rest of the page answers. */
+function failing(path: string, base: FakeServer = fake): FakeServer & { isFailing: boolean } {
+  const state: FakeServer & { isFailing: boolean } = {
+    ...base,
+    isFailing: false,
+    extra: (request) => {
+      if (state.isFailing && request.path === path) {
+        throw new DashboardApiError(503, `The ${path} read failed.`)
+      }
+
+      return undefined
+    },
+  }
+
+  return state
 }
 
 function queryRow(text: RegExp) {
@@ -141,7 +177,6 @@ describe('the counter list', () => {
 
     await actor.click(within(screen.getByRole('group', { name: 'Scope' })).getByRole('button', { name: 'Tenant' }))
 
-    // The previous list stays, and nothing is read until an id is submitted.
     expect(view.requests).toHaveLength(before)
     expect(getRow(/ticket/)).toBeTruthy()
 
@@ -216,6 +251,48 @@ describe('the counter list', () => {
     await waitFor(() => expect(counterRequests(view).length).toBeGreaterThan(before))
   })
 
+  it('sends no request on Refresh or focus while the tenant scope names no tenant', async () => {
+    const actor = user()
+    const view = open(fake, { path: '?scope=tenant' })
+    expect(await screen.findByText('Enter a tenant id')).toBeTruthy()
+
+    await actor.click(screen.getByRole('button', { name: 'Refresh' }))
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(moduleRequests(view)).toEqual([])
+  })
+
+  it('reads nothing again on Refresh or focus for an open panel while the tenant scope names no tenant', async () => {
+    const actor = user()
+    const view = open(fake, { path: `?scope=tenant&open=${encodeURIComponent(acmeInvoice.id)}` })
+    const panel = await findPanel('invoice')
+    await waitFor(() => expect(panel.getAllByRole('row').length).toBeGreaterThan(1))
+    const before = moduleRequests(view).length
+
+    await actor.click(screen.getByRole('button', { name: 'Refresh' }))
+    window.dispatchEvent(new Event('focus'))
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(moduleRequests(view)).toHaveLength(before)
+  })
+
+  it('links each mode card to its mode in the same scope, tenant, and search', async () => {
+    open(fake, {
+      path: `?scope=tenant&tenant=acme&q=inv&current=true&open=${encodeURIComponent(acmeInvoice.id)}`,
+    })
+    await findRow(/INV-2026/)
+
+    for (const [label, mode] of [
+      ['Gap-free', 'GapFree'],
+      ['Fast', 'Fast'],
+      ['Reported', 'Reported'],
+    ] as const) {
+      const query = statLink(label)
+      expect(Object.fromEntries(query)).toEqual({ scope: 'tenant', tenant: 'acme', q: 'inv', mode })
+    }
+  })
+
   it('marks a counter whose name has no registered policy', async () => {
     open({ counters: [counter({ name: 'adhoc', policySource: 'default' })] })
 
@@ -286,6 +363,101 @@ describe('empty and failed reads', () => {
 })
 
 describe('the counter panel', () => {
+  it("reads the open panel's partitions again on Refresh", async () => {
+    const actor = user()
+    const view = open(fake, { path: `?open=${encodeURIComponent(acmeInvoice.id)}` })
+    const panel = await findPanel('invoice')
+    await waitFor(() =>
+      expect(within(panel.getByRole('table', { name: 'Partitions' })).getAllByRole('row')).toHaveLength(3),
+    )
+    const before = requestsTo(view, 'sequences/counter/partitions').length
+
+    await actor.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    await waitFor(() => expect(requestsTo(view, 'sequences/counter/partitions').length).toBeGreaterThan(before))
+  })
+
+  it('reads a counter opened from the URL again on Refresh and on focus', async () => {
+    const actor = user()
+    const view = open(fake, { path: `?mode=Fast&open=${encodeURIComponent(acmeInvoice.id)}` })
+    const panel = await findPanel('invoice')
+    expect(await panel.findByText('INV-{yyyy}-{seq:D6}')).toBeTruthy()
+    expect(requestsTo(view, 'sequences/counter')).toHaveLength(1)
+
+    await actor.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(requestsTo(view, 'sequences/counter')).toHaveLength(2))
+
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(requestsTo(view, 'sequences/counter')).toHaveLength(3))
+  })
+
+  it('keeps a counter opened from the URL under the error when its refresh fails', async () => {
+    const actor = user()
+    const state = failing('sequences/counter')
+    open(state, { path: `?mode=Fast&open=${encodeURIComponent(acmeInvoice.id)}` })
+    const panel = await findPanel('invoice')
+    expect(await panel.findByText('INV-{yyyy}-{seq:D6}')).toBeTruthy()
+
+    state.isFailing = true
+    await actor.click(screen.getByRole('button', { name: 'Refresh' }))
+
+    const alert = await panel.findByRole('alert')
+    expect(alert.textContent).toContain('The sequences/counter read failed.')
+    expect(alert.textContent).toContain('What is shown is from the last successful read.')
+    expect(panel.getByText('INV-{yyyy}-{seq:D6}')).toBeTruthy()
+  })
+
+  it('shows a policy with a Windows zone id without failing the panel', async () => {
+    const actor = user()
+    const windows = counter({
+      name: 'receipt',
+      nextResetAt: '2026-12-31T22:00:00Z',
+      policy: { ...invoicePolicy, timeZone: 'Egypt Standard Time' },
+    })
+    open({ counters: [windows] }, { path: `?open=${encodeURIComponent(windows.id)}` })
+    const panel = await findPanel('receipt')
+    expect(panel.getByText('Egypt Standard Time')).toBeTruthy()
+    const nextReset = panel
+      .getAllByRole('button')
+      .find((button) => button.querySelector('time')?.getAttribute('datetime') === windows.nextResetAt)
+
+    await actor.click(nextReset!)
+
+    expect((await screen.findByRole('tooltip')).textContent).toContain('2026')
+  })
+
+  it('loads more partitions with the cursor the last page returned', async () => {
+    const actor = user()
+    const older = counter({ name: 'invoice', partition: '2024', isCurrentPartition: false, policy: invoicePolicy })
+    const view = open(
+      { counters: [acmeInvoice, acmeInvoiceLastYear, older], partitionPageSize: 2 },
+      { path: `?open=${encodeURIComponent(acmeInvoice.id)}` },
+    )
+    const panel = await findPanel('invoice')
+    const table = within(panel.getByRole('table', { name: 'Partitions' }))
+    await waitFor(() => expect(table.getAllByRole('row')).toHaveLength(3))
+
+    await actor.click(panel.getByRole('button', { name: 'Load more partitions' }))
+
+    await waitFor(() => expect(table.getAllByRole('row')).toHaveLength(4))
+    expect(requestsTo(view, 'sequences/counter/partitions').map((request) => request.query?.before)).toEqual([
+      undefined,
+      '2025',
+    ])
+    expect(panel.queryByRole('button', { name: 'Load more partitions' })).toBeNull()
+  })
+
+  it('shows a failed partitions read as an error, not as no partitions', async () => {
+    const state = failing('sequences/counter/partitions')
+    state.isFailing = true
+    open(state, { path: `?open=${encodeURIComponent(acmeInvoice.id)}` })
+    const panel = await findPanel('invoice')
+
+    expect((await panel.findByRole('alert')).textContent).toContain('The sequences/counter/partitions read failed.')
+    expect(panel.queryByRole('table', { name: 'Partitions' })).toBeNull()
+    expect(panel.getByRole('button', { name: 'Retry' })).toBeTruthy()
+  })
+
   it('opens a clicked row with its policy and partitions, without reading the counter by id', async () => {
     const actor = user()
     const view = open(fake)

@@ -3,6 +3,8 @@
 using System.Net;
 using Headless.Sequences;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Tests;
@@ -135,6 +137,103 @@ public sealed class SequencesDetailTests : TestBase
         problem.GetProperty("errors").TryGetProperty("id", out _).Should().BeTrue();
         noId.Should().Be(HttpStatusCode.BadRequest);
         badBefore.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    public static TheoryData<string, string> UnstorablePartitionIds =>
+        new()
+        {
+            { "/counter", "acme/invoice/" + new string('9', SequenceFieldLimits.PartitionMaxLength + 1) },
+            { "/counter/partitions", "acme/invoice/" + new string('9', SequenceFieldLimits.PartitionMaxLength + 1) },
+            { "/counter", "acme/invoice/%202026" },
+            { "/counter/partitions", "acme/invoice/%202026" },
+            { "/counter", "acme/invoice/2026%20" },
+            { "/counter/partitions", "acme/invoice/2026%20" },
+            { "/counter", "acme/invoice/%20" },
+            { "/counter/partitions", "acme/invoice/%20" },
+        };
+
+    [Theory]
+    [MemberData(nameof(UnstorablePartitionIds))]
+    public async Task should_answer_400_naming_id_without_a_store_read_when_the_partition_cannot_be_stored(
+        string path,
+        string id
+    )
+    {
+        // given
+        var inspector = Substitute.For<ISequenceInspector>();
+        await using var host = await SequencesHost.StartAsync(AbortToken, inspector: inspector);
+
+        // when
+        var (status, problem) = await host.GetAsync($"{path}?id={Uri.EscapeDataString(id)}", AbortToken);
+
+        // then
+        status.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("errors").TryGetProperty("id", out _).Should().BeTrue();
+        await inspector
+            .DidNotReceiveWithAnyArgs()
+            .ListPartitionsAsync(Arg.Any<SequencePartitionQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("/counter")]
+    [InlineData("/counter/partitions")]
+    public async Task should_read_a_counter_with_no_partition_by_its_id(string path)
+    {
+        // given
+        await using var host = await SequencesHost.StartAsync(AbortToken);
+        await host.IssueFastAsync("", "ticket", 2, AbortToken);
+
+        // when
+        var (status, _) = await host.GetAsync($"{path}?id={Uri.EscapeDataString("/ticket/")}", AbortToken);
+
+        // then
+        status.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_let_a_cancelled_request_end_instead_of_answering_503()
+    {
+        // given: the store read is still running when the client goes away
+        using var aborted = new CancellationTokenSource();
+        var inspector = Substitute.For<ISequenceInspector>();
+        inspector
+            .ListCountersAsync(Arg.Any<SequenceCounterQuery>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<SequenceCounterPage>>(call =>
+            {
+                aborted.Cancel();
+
+                throw new OperationCanceledException(call.Arg<CancellationToken>());
+            });
+        await using var host = await SequencesHost.StartAsync(
+            AbortToken,
+            inspector: inspector,
+            configureApp: app =>
+                app.Use(
+                    (HttpContext context, RequestDelegate next) =>
+                    {
+                        context.RequestAborted = aborted.Token;
+
+                        return next(context);
+                    }
+                )
+        );
+        var cookie = await host.SignInAsync("viewer", AbortToken);
+
+        // when
+        var send = async () =>
+        {
+            using var response = await host.SendAsync(
+                HttpMethod.Get,
+                SequencesHost.Api + "/counters",
+                cookie,
+                AbortToken
+            );
+
+            return response.StatusCode;
+        };
+
+        // then
+        await send.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]

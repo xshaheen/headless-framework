@@ -18,27 +18,17 @@ namespace Headless.Sequences;
 /// <c>sequence-counter</c>, identified by <see cref="SequenceCounterId"/>. Its API is mapped by
 /// <see cref="SequencesEndpoints"/>.
 /// </remarks>
-internal sealed class SequencesModule : IDashboardModule, IDashboardCountSource, IDashboardObjectResolver
+internal sealed class SequencesModule(
+    ISequenceInspector inspector,
+    IOptionsMonitor<SequencesOptions> options,
+    ILogger<SequencesEndpoints> logger
+) : IDashboardModule, IDashboardCountSource, IDashboardObjectResolver
 {
     /// <summary>The sidebar count key of the stored counters.</summary>
     public const string CountersCountKey = "counters";
 
-    private readonly ISequenceInspector _inspector;
-    private readonly SequencesEndpoints _endpoints;
-
-    public SequencesModule(
-        ISequenceInspector inspector,
-        IOptionsMonitor<SequencesOptions> options,
-        ILogger<SequencesEndpoints> logger
-    )
-    {
-        Argument.IsNotNull(inspector);
-        Argument.IsNotNull(options);
-        Argument.IsNotNull(logger);
-
-        _inspector = inspector;
-        _endpoints = new SequencesEndpoints(inspector, options, logger);
-    }
+    // The endpoints class validates the dependencies, so the module does not repeat the checks.
+    private readonly SequencesEndpoints _endpoints = new(inspector, options, logger);
 
     public string Id => SequencesDashboardOptions.ModuleId;
 
@@ -58,7 +48,7 @@ internal sealed class SequencesModule : IDashboardModule, IDashboardCountSource,
         CancellationToken cancellationToken
     )
     {
-        var summary = await _inspector
+        var summary = await inspector
             .GetSummaryAsync(new SequenceSummaryQuery(), cancellationToken)
             .ConfigureAwait(false);
 

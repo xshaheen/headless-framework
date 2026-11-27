@@ -3,6 +3,7 @@
 using System.Net;
 using Headless.Sequences;
 using Headless.Testing.Tests;
+using NSubstitute;
 
 namespace Tests;
 
@@ -181,6 +182,50 @@ public sealed class SequencesCountersTests : TestBase
         // then
         _Names(byName).Should().Equal("acme/invoice", "acme/invoice");
         _Names(byTenant).Should().Equal("globex/order");
+    }
+
+    [Fact]
+    public async Task should_pass_a_non_ascii_search_to_the_inspector_as_typed()
+    {
+        // given
+        const string search = "فاتورة-Ä";
+        var inspector = Substitute.For<ISequenceInspector>();
+        inspector
+            .ListCountersAsync(Arg.Any<SequenceCounterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new SequenceCounterPage([], Next: null));
+        inspector
+            .GetSummaryAsync(Arg.Any<SequenceSummaryQuery>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new SequenceCounterSummary
+                {
+                    Total = 0,
+                    Fast = 0,
+                    GapFree = 0,
+                    Reported = 0,
+                    Capped = false,
+                }
+            );
+        await using var host = await SequencesHost.StartAsync(AbortToken, inspector: inspector);
+
+        // when
+        var (countersStatus, _) = await host.GetAsync("/counters?q=" + Uri.EscapeDataString(search), AbortToken);
+        var (summaryStatus, _) = await host.GetAsync("/summary?q=" + Uri.EscapeDataString(search), AbortToken);
+
+        // then
+        countersStatus.Should().Be(HttpStatusCode.OK);
+        summaryStatus.Should().Be(HttpStatusCode.OK);
+        await inspector
+            .Received(1)
+            .ListCountersAsync(
+                Arg.Is<SequenceCounterQuery>(static query => query.Search == search),
+                Arg.Any<CancellationToken>()
+            );
+        await inspector
+            .Received(2)
+            .GetSummaryAsync(
+                Arg.Is<SequenceSummaryQuery>(static query => query.Search == search),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

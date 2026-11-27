@@ -38,6 +38,8 @@ public sealed class SequenceCounterIdTests : TestBase
     [InlineData("a/b/c/d")]
     [InlineData("acme/in%2voice/2026")]
     [InlineData("acme/in voice/2026")]
+    [InlineData("acme/invoice/%202026")]
+    [InlineData("acme/invoice/%20")]
     public void should_refuse_text_that_is_not_an_id_this_module_served(string? id)
     {
         SequenceCounterId.TryParse(id, out _).Should().BeFalse();

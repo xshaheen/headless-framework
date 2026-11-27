@@ -23,11 +23,15 @@ namespace Tests;
 
 /// <summary>
 /// A real host serving the unified dashboard at <c>/headless</c> under host authentication with the Sequences module
-/// over SQLite on a temporary file. <c>Bearer ops</c> and <c>Bearer viewer</c> may both view.
+/// over SQLite on a temporary file. <c>Bearer ops</c> and <c>Bearer viewer</c> may both view; the stricter
+/// <see cref="OperatorsPolicy"/> admits only <c>Bearer ops</c>, for a module whose view policy narrows the shell's.
 /// </summary>
 internal sealed class SequencesHost : IAsyncDisposable
 {
     public const string Api = "/headless/api/sequences";
+
+    /// <summary>A host policy only <c>Bearer ops</c> passes.</summary>
+    public const string OperatorsPolicy = "Operators";
 
     /// <summary>The app clock: mid-2026, so the current yearly partition is <c>2026</c>.</summary>
     public static readonly DateTimeOffset Now = new(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
@@ -69,13 +73,15 @@ internal sealed class SequencesHost : IAsyncDisposable
     /// <summary>
     /// Starts the host. With <paramref name="inspector"/> the module reads that inspector and no sequences are
     /// registered; with neither it and <paramref name="addSequences"/> false, nothing registers an inspector.
+    /// <paramref name="configureApp"/> adds middleware ahead of the dashboard's endpoints.
     /// </summary>
     public static async Task<SequencesHost> StartAsync(
         CancellationToken cancellationToken,
         bool addSequences = true,
         ISequenceInspector? inspector = null,
         Action<SequencesOptions>? policies = null,
-        Action<HeadlessDashboardSetupBuilder>? addModule = null
+        Action<HeadlessDashboardSetupBuilder>? addModule = null,
+        Action<WebApplication>? configureApp = null
     )
     {
         var database = addSequences && inspector is null ? SqliteTestDatabase.Create() : null;
@@ -87,7 +93,10 @@ internal sealed class SequencesHost : IAsyncDisposable
         builder
             .Services.AddAuthentication(RoleBearerHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, RoleBearerHandler>(RoleBearerHandler.SchemeName, _ => { });
-        builder.Services.AddAuthorizationBuilder().AddPolicy("Viewers", policy => policy.RequireRole("ops", "viewer"));
+        builder
+            .Services.AddAuthorizationBuilder()
+            .AddPolicy("Viewers", policy => policy.RequireRole("ops", "viewer"))
+            .AddPolicy(OperatorsPolicy, policy => policy.RequireRole("ops"));
 
         if (database is not null)
         {
@@ -123,6 +132,7 @@ internal sealed class SequencesHost : IAsyncDisposable
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
+        configureApp?.Invoke(app);
 
         try
         {

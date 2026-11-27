@@ -91,6 +91,8 @@ export interface FakeServer {
   summary?: SequencesSummary
   /** The page size of the counter list; every counter on one page by default. */
   pageSize?: number
+  /** The page size of a counter's partition list, when the request sends no `limit`; every partition by default. */
+  partitionPageSize?: number
   /** A status the module's reads fail with, as the server's problem answers. */
   failure?: { status: number; message: string }
   extra?: (request: ApiRequest) => unknown
@@ -150,13 +152,16 @@ export function server(fake: FakeServer) {
 
     if (request.path === 'sequences/counter/partitions') {
       const found = rows.find((row) => row.id === query.id)
+      // Newest first, and `before` resumes after the partition the last page ended on, as the server's keyset does.
+      const before = typeof query.before === 'string' ? query.before : undefined
+      const matching = rows
+        .filter((row) => found && row.tenantId === found.tenantId && row.name === found.name)
+        .filter((row) => before === undefined || row.partition.localeCompare(before) < 0)
+        .sort((a, b) => b.partition.localeCompare(a.partition))
+      const size = typeof query.limit === 'string' ? Number(query.limit) : (fake.partitionPageSize ?? matching.length)
+      const items = matching.slice(0, size)
 
-      return {
-        items: rows
-          .filter((row) => found && row.tenantId === found.tenantId && row.name === found.name)
-          .sort((a, b) => b.partition.localeCompare(a.partition)),
-        nextCursor: null,
-      }
+      return { items, nextCursor: items.length < matching.length ? (items.at(-1)?.partition ?? null) : null }
     }
 
     throw new DashboardApiError(404, `No fake for ${request.method} ${request.path}`)

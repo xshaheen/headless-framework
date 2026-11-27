@@ -1,6 +1,6 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import type { DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/data'
-import { useQuery } from '@headless/dashboard-sdk/query'
+import { listKey, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
+import { useQuery, type QueryClient } from '@headless/dashboard-sdk/query'
 
 export const sequenceModes = ['Fast', 'GapFree', 'Reported'] as const
 export type SequenceMode = (typeof sequenceModes)[number]
@@ -16,6 +16,9 @@ export type PolicySource = (typeof policySources)[number]
 
 /** The stream topic the counter list keys its cache under; the module serves no changes, so nothing patches it. */
 export const countersTopic = 'sequences.sequence-counter'
+
+/** The topic an open panel's partition list keys its cache under. */
+export const partitionsTopic = 'sequences.partition'
 
 export interface SequencesSummary {
   total: number
@@ -213,8 +216,17 @@ export function isReadable(filter: CounterFilter) {
 export const queryKeys = {
   summary: ['sequences', 'summary'],
   counter: (id: string) => ['sequences', 'counter', id],
-  partitions: (id: string) => ['sequences', 'partitions', id],
 } as const
+
+/**
+ * Reads every mounted query of the module again: the summary, the counter list, an open panel's partitions, and a
+ * counter read by id. Invalidation refetches only enabled queries, so a read the view holds back stays unsent.
+ */
+export function refreshSequences(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: ['sequences'] })
+  void client.invalidateQueries({ queryKey: listKey(countersTopic) })
+  void client.invalidateQueries({ queryKey: listKey(partitionsTopic) })
+}
 
 /** The counts for the scope and search; the summary leaves the mode and current filters out, so the chips keep theirs. */
 export function useSummary(filter: CounterFilter) {

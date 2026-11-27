@@ -83,4 +83,60 @@ public sealed class SequencesObjectsTests : TestBase
         // then
         module.Should().NotBeAssignableTo<IDashboardCommandSource>();
     }
+
+    [Fact]
+    public async Task should_resolve_an_id_whose_key_part_the_inspector_refuses_to_none()
+    {
+        // given: an id in the canonical form whose name is longer than any stored name
+        await using var host = await SequencesHost.StartAsync(AbortToken);
+        await host.IssueGapFreeAsync("acme", "invoice", 1, AbortToken);
+        var module = host.App.Services.GetRequiredService<SequencesModule>();
+        var id = "acme/" + new string('n', SequenceFieldLimits.NameMaxLength + 1) + "/2026";
+
+        // when
+        var resolve = () => module.ResolveAsync(new() { Query = id, User = _User }, AbortToken);
+
+        // then
+        (await resolve.Should().NotThrowAsync())
+            .Subject.Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_every_read_and_hide_the_count_from_a_viewer_the_module_policy_refuses()
+    {
+        // given: the shell admits viewers, the module only operators
+        await using var host = await SequencesHost.StartAsync(
+            AbortToken,
+            addModule: static dashboard =>
+                dashboard.AddSequences(static options => options.ViewPolicy = SequencesHost.OperatorsPolicy)
+        );
+        await host.IssueGapFreeAsync("acme", "invoice", 1, AbortToken);
+        var viewer = await host.SignInAsync("viewer", AbortToken);
+        var id = Uri.EscapeDataString("acme/invoice/2026");
+        string[] paths = ["/summary", "/counters", $"/counter?id={id}", $"/counter/partitions?id={id}"];
+
+        // when
+        var statuses = new List<HttpStatusCode>();
+
+        foreach (var path in paths)
+        {
+            using var response = await host.SendAsync(HttpMethod.Get, SequencesHost.Api + path, viewer, AbortToken);
+            statuses.Add(response.StatusCode);
+        }
+
+        using var counts = await host.SendAsync(
+            HttpMethod.Get,
+            "/headless/api/counts?product=platform",
+            viewer,
+            AbortToken
+        );
+
+        // then
+        statuses.Should().AllSatisfy(static status => ((int)status).Should().BeInRange(400, 499));
+        statuses.Should().NotContain(HttpStatusCode.NotFound);
+        // Sequences is the product's only module here, so the shell refuses the whole product's counts.
+        counts.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await counts.Content.ReadAsStringAsync(AbortToken)).Should().NotContain("counters");
+    }
 }

@@ -2,6 +2,7 @@
 
 using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
+using Headless.Checks;
 
 namespace Headless.Sequences;
 
@@ -13,7 +14,8 @@ namespace Headless.Sequences;
 /// An id is the tenant id, name, and partition, each escaped with <see cref="Uri.EscapeDataString(string)"/> and
 /// joined by <c>/</c>: <c>acme/invoice/2026</c>, or <c>/ticket/</c> for a host counter with no partition. Escaping
 /// keeps a <c>/</c> or <c>%</c> inside a part from reading as a separator, so every key has exactly one id and reads
-/// back exact. Only the canonical form parses, so an id never names a key through two spellings.
+/// back exact. Only the canonical form parses, so an id never names a key through two spellings, and a partition parses
+/// only when a counter can be stored under it.
 /// </para>
 /// <para>
 /// The id travels as a query value, never a path segment: a router decodes an escaped <c>/</c> in a path into a
@@ -59,12 +61,41 @@ internal static class SequenceCounterId
 
         // UnescapeDataString leaves a malformed escape as typed, so an id that does not format back is not one the
         // module served.
-        if (!string.Equals(Format(parsed), id, StringComparison.Ordinal))
+        if (!string.Equals(Format(parsed), id, StringComparison.Ordinal) || !_IsStorablePartition(parsed.Partition))
         {
             return false;
         }
 
         key = parsed;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a partition is one a counter can be stored under: empty for none, else within
+    /// <see cref="SequenceFieldLimits.PartitionMaxLength"/> and portable key text. The partitions read takes no
+    /// partition, so nothing downstream checks the one an id carries, and an id holding any other text names no counter.
+    /// </summary>
+    private static bool _IsStorablePartition(string partition)
+    {
+        if (partition.Length == 0)
+        {
+            return true;
+        }
+
+        if (partition.Length > SequenceFieldLimits.PartitionMaxLength)
+        {
+            return false;
+        }
+
+        try
+        {
+            Argument.IsPortableKey(partition);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
 
         return true;
     }
