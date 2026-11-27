@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.EntityFramework.Internal;
 using Headless.Hosting;
 using Headless.Permissions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -16,7 +17,8 @@ public static class HeadlessPermissionsModelBuilderExtensions
         /// <summary>
         /// Applies the Headless permissions entity configurations, resolving <see cref="PermissionsStorageOptions"/>
         /// from the <paramref name="context"/>'s service provider and the naming style from its database provider
-        /// (snake_case on PostgreSQL, PascalCase elsewhere). Call from <c>OnModelCreating</c> with
+        /// (snake_case on PostgreSQL, PascalCase elsewhere). On SQL Server, maps tenant IDs with a binary
+        /// collation so IDs that differ in case or accent identify separate tenants. Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.ConfigureHeadlessPermissions(this)</c> to avoid injecting the options into the context.
         /// </summary>
         /// <param name="context">The <see cref="DbContext"/> whose service provider supplies <see cref="PermissionsStorageOptions"/>.</param>
@@ -28,9 +30,16 @@ public static class HeadlessPermissionsModelBuilderExtensions
             Argument.IsNotNull(context);
 
             var options = context.GetService<IOptions<PermissionsStorageOptions>>().Value;
-            var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
+            var provider = context.Database.ProviderName;
+            var style = HeadlessStorageNaming.ForProvider(provider);
 
-            return modelBuilder.ConfigureHeadlessPermissions(options, style);
+            modelBuilder.ConfigureHeadlessPermissions(options, style);
+            SqlServerScopeCollation.Configure(
+                modelBuilder.Entity<PermissionGrantRecord>().Property(x => x.TenantId),
+                provider
+            );
+
+            return modelBuilder;
         }
 
         /// <summary>
@@ -48,6 +57,8 @@ public static class HeadlessPermissionsModelBuilderExtensions
         /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
         /// </param>
         /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <remarks>On SQL Server, explicitly map <see cref="PermissionGrantRecord.TenantId"/> with the
+        /// <c>Latin1_General_100_BIN2</c> collation when using this overload.</remarks>
         /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
         public ModelBuilder ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)
         {
