@@ -1,6 +1,6 @@
 ---
 domain: Idempotency
-packages: Idempotency.Abstractions, Idempotency, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite, Idempotency.ResponseReplay
+packages: Idempotency.Abstractions, Idempotency, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite, Idempotency.ResponseReplay, Idempotency.Dashboard
 ---
 
 # Idempotency
@@ -61,6 +61,7 @@ switch (admission.Disposition)
 - `RenewAsync` is one guarded single-row update the store commits on its own connection. Call it from a heartbeat loop without an owned unit. It extends the lease only while the record is pending at the admission's generation with a live lease, and otherwise reports why (`IdempotentLeaseRenewal.Status`). The status describes the caller's own attempt: an attempt whose key a newer attempt took over and then completed or released answers `Stale`, not that newer attempt's `Completed` or `Released` (the cache provider answers `Released` there). It is the one autonomous-only member; there is no `unit.Idempotency.RenewAsync`.
 - The idempotency key, tenant id, and contract pass through `IdempotencyFieldLimits` (`TenantIdMaxLength` 128, `KeyMaxLength` 256, `ContractMaxLength` 256, `FingerprintAlgorithmMaxLength` 32, `FingerprintMaxLength` 64, `RecoveryPointMaxLength` 128, `RecoveryStateMaxLength` 64 KiB) before any SQL runs, and a lease duration must fall within `IdempotentOperationsOptions.MinimumLeaseDuration`/`MaximumLeaseDuration`. Lease durations and retentions are then applied truncated to whole microseconds, the finest resolution every provider stores, so a lease or retention ends at the same instant whichever provider holds the record; a retention under one microsecond is refused.
 - To show an operator one key (a dashboard lookup, a support tool), inject `IIdempotencyInspector` (package `Headless.Idempotency`, registered by `AddHeadlessIdempotency`) and call `InspectAsync(key, ct)`, not `IIdempotentOperations.GetResultAsync`. `InspectAsync` returns the record's metadata and the result's size and contract without its bytes; `GetResultAsync` returns the stored body, which can hold personal data. Neither admits an attempt. No API releases, expires, or deletes a record for an operator: releasing a live attempt could run its operation twice.
+- To give operators that lookup without writing one, add `dashboard.AddIdempotency()` from `Headless.Idempotency.Dashboard`; see [Headless.Idempotency.Dashboard](#headlessidempotencydashboard).
 - The key, tenant id, contract, and recovery point name must be text every provider keeps unchanged, on every provider including in-memory and cache. Surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException` before any write.
 
 ## How this differs from locks and fenced leases
@@ -156,7 +157,7 @@ With `Headless.UnitOfWork.Analyzers` referenced, [HF2005](unit-of-work.md#hf2005
 
 ## Inspecting a record
 
-`IIdempotencyInspector.InspectAsync(key, ct)` answers "was this operation admitted, is it running, or did it complete?" for one key in the current tenant. It takes no row lock, never admits or changes the record, and never returns the stored result or recovery-state bytes. A record whose retention elapsed while a live attempt still holds its lease is still returned, as `Pending` with `RetentionUntil` before `ObservedAt`, because the store keeps it until that attempt ends; once no live attempt holds it, it returns `null`. Keys cannot be listed. To inspect another tenant's key, change the current tenant around the call (`currentTenant.Change(tenantId)`) inside your own authorization check; there is no cross-tenant overload.
+`IIdempotencyInspector.InspectAsync(key, ct)` answers "was this operation admitted, is it running, or did it complete?" for one key in the current tenant. It takes no row lock, never admits or changes the record, and never returns the stored result or recovery-state bytes. A record whose retention elapsed while a live attempt still holds its lease is still returned, as `Pending` with `RetentionUntil` before `ObservedAt`, because the store keeps it until that attempt ends; once no live attempt holds it, it returns `null`. Keys cannot be listed. To inspect another tenant's key, change the current tenant around the call (`currentTenant.Change(tenantId)`) inside your own authorization check; there is no cross-tenant overload. The [Idempotency dashboard module](#headlessidempotencydashboard) does this for operators who pass its view policy.
 
 | `IdempotencyRecordSnapshot` field | Meaning |
 | --- | --- |
@@ -635,3 +636,42 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
 - On admission, sets `IHttpIdempotencyContext` as an `HttpContext` feature before invoking the handler, then renews the lease every third of `InFlightLease` while it runs; renewal stops before completion so it cannot race the settlement that ends the lease.
 - Completion runs after the handler's unit commits, with `CancellationToken.None` so a client disconnect cannot strand the admission until its lease expires. A `StaleAdmissionException` there (the lease expired or was taken over while the handler ran) is logged, never thrown. Only the owning attempt's result is ever stored.
 - When the **response** body exceeds `MaxBodySizeForHashing`, the body is not stored. For a response the cache predicate accepts (a success), the key still settles: it stores a `409` problem response with `g:idempotency_response_too_large`, which every retry replays, so the handler never runs a second time. A response the predicate refuses (a 5xx) releases the key as before. `OversizeBehavior` controls **request**-body handling only.
+
+---
+
+## Headless.Idempotency.Dashboard
+
+The Idempotency module of the unified dashboard: the store's settings and a read-only lookup of one key's record metadata in a tenant the operator names. Use it instead of writing the operator screen [Inspecting a record](#inspecting-a-record) describes.
+
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards/idempotency-module.md](dashboards/idempotency-module.md) lists the endpoints, the outcomes, and the screen's states.
+
+### Setup
+
+```bash
+dotnet add package Headless.Idempotency.Dashboard
+```
+
+```csharp
+using Headless.Dashboard;
+using Headless.Idempotency;
+
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(builder.Configuration.GetConnectionString("Default")!));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddIdempotency());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+**Verify:** start the host. Without `AddHeadlessIdempotency(...)` it fails to start naming that call. With it, the Platform tab shows Idempotency, and a signed-in viewer's `GET /headless/api/idempotency/store` answers `200` with the provider and its defaults.
+
+### Runtime behavior
+
+- The lookup is `POST {base}/api/idempotency/lookup` with `{ key, tenantId? }`, so the key never reaches a URL or a request log. It calls `IIdempotencyInspector.InspectAsync` inside `ICurrentTenant.Change(tenantId)`; an absent tenant reads the host scope, never the ambient tenant.
+- Every principal that passes the module's view policy reads any tenant's record metadata. Set a narrower `ViewPolicy` on the module when that is too wide.
+- The answer is the snapshot's metadata only, with the fingerprint as lowercase hex; it never carries the stored result or recovery-state bytes. A missing key answers `200` with `found: false`, and a store failure answers `503` with a fixed message that names neither the key nor the tenant.
+- The module has no command: no release, expire, or delete, because releasing a live attempt could run its operation twice.
+- HTTP middleware records are keyed by a hash of the request scope, so the client's `Idempotency-Key` alone does not find them on the screen.
