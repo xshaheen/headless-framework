@@ -169,9 +169,10 @@ export default function IdempotencyView() {
               onSubmit={submit}
               hint={
                 <>
-                  A blank Tenant reads the records admitted outside any tenant; it never searches every tenant. The read
-                  takes no lock and changes nothing. HTTP middleware records are keyed by a SHA-256 of the request scope
-                  under the caller's tenant claim, so the client's Idempotency-Key alone does not find them.
+                  A blank Tenant reads the host scope (no tenant), the records admitted outside any tenant; it never
+                  searches every tenant. The read takes no lock and changes nothing. HTTP middleware records are keyed
+                  by a SHA-256 of the request scope under the caller's tenant claim, so the client's Idempotency-Key
+                  alone does not find them.
                 </>
               }
               result={
@@ -185,7 +186,6 @@ export default function IdempotencyView() {
               <TextInputField
                 label="Tenant"
                 width="medium"
-                description="Leave blank for the host scope (no tenant)."
                 maxLength={128}
                 value={tenant}
                 onChange={(value) => edit(() => setTenant(value))}

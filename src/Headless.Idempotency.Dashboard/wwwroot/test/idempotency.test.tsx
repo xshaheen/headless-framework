@@ -81,7 +81,7 @@ describe('idempotency', () => {
     const actor = user()
     const { requests } = open({ lookups: [notFound()] })
 
-    expect(await screen.findByText('Leave blank for the host scope (no tenant).')).toBeTruthy()
+    expect(await screen.findByText(/A blank Tenant reads the host scope \(no tenant\)/)).toBeTruthy()
     expect(screen.getByText(/never searches every tenant/)).toBeTruthy()
     await lookUp(actor)
 
@@ -89,6 +89,17 @@ describe('idempotency', () => {
     expect(lookups(requests)[0]!.body).toEqual({ key })
     expect(within(region).getByText('No record for this key in the host scope (no tenant)')).toBeTruthy()
     expect(within(region).queryByText('Generation')).toBeNull()
+  })
+
+  // The search row aligns its fields to the bottom, so a field with its own helper line sits higher than the rest:
+  // the form-level hint carries the guidance instead, as the board draws it.
+  it('keeps helper text off the search fields so the row lines up', async () => {
+    open()
+
+    const form = await screen.findByRole('search', { name: 'Look up a key' })
+    for (const field of within(form).getAllByRole('textbox')) {
+      expect(field.getAttribute('aria-describedby')).toBeNull()
+    }
   })
 
   it('names the tenant it searched when a tenant lookup finds nothing', async () => {
