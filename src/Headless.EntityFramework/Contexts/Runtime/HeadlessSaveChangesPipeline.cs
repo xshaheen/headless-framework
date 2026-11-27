@@ -125,7 +125,6 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (!_RequiresExplicitTransaction(auditEntries, saveContext, hasHandledDomainEvent))
         {
-            _ValidateFinalTenantWrites(saveContext);
             var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
             _CompleteSuccessfulSave(context, saveContext, default, acceptAllChangesOnSuccess);
 
@@ -172,7 +171,6 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         if (!_RequiresExplicitTransaction(auditEntries, saveContext, hasHandledDomainEvent))
         {
-            _ValidateFinalTenantWrites(saveContext);
             var result = baseSaveChanges(acceptAllChangesOnSuccess);
             _CompleteSuccessfulSave(context, saveContext, default, acceptAllChangesOnSuccess);
 
@@ -724,7 +722,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     }
 
     /// <summary>
-    /// Validates and recaptures tracked entries when handlers or custom processors may have changed them.
+    /// Validates and recaptures tracked entries when the domain-event drain may have changed them.
     /// </summary>
     /// <remarks>
     /// With only the built-in processors, every framework write goes through the change tracker, so the entries
@@ -749,30 +747,20 @@ internal sealed class HeadlessSaveChangesPipeline(
                 : _SnapshotEntries(context);
         saveContext.TrackedEntries = entries;
 
-        _ValidateFinalTenantWrites(saveContext, entries);
-        auditEntries.Value = auditPersistence.CaptureEntries(entries, saveContext);
-    }
-
-    private void _ValidateFinalTenantWrites(
-        HeadlessSaveEntryContext saveContext,
-        IReadOnlyList<EntityEntry>? entries = null
-    )
-    {
-        // Direct saves with only built-ins already validated every pending write in the initial pass.
-        if (entries is null && _hasOnlyBuiltInProcessors)
+        if (saveContext.HandlerMayHaveChangedGraph)
         {
-            return;
-        }
-
-        // Handlers and custom processors can change entries after the first pass validates them. Recheck ownership
-        // without rerunning lifecycle processors that may emit events or overwrite stamps.
-        foreach (var processor in _entryProcessors)
-        {
-            if (processor is HeadlessEntitySaveEntryProcessor tenantGuard)
+            // Handlers can update entries the first pass already validated. Recheck ownership without
+            // rerunning lifecycle processors that may emit events or overwrite stamps.
+            foreach (var processor in _entryProcessors)
             {
-                tenantGuard.ValidateFinalWrites(saveContext, entries);
+                if (processor is HeadlessEntitySaveEntryProcessor tenantGuard)
+                {
+                    tenantGuard.ValidateFinalWrites(saveContext, entries);
+                }
             }
         }
+
+        auditEntries.Value = auditPersistence.CaptureEntries(entries, saveContext);
     }
 
     private static HashSet<object> _CollectEntities(IReadOnlyList<EntityEntry>? entries)
