@@ -624,6 +624,7 @@
     <Folder Name="/Sequences/">
         <Project Path="src\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
         <Project Path="src\Headless.Sequences\Headless.Sequences.csproj" />
+        <Project Path="src\Headless.Sequences.Dashboard\Headless.Sequences.Dashboard.csproj" />
         <Project Path="src\Headless.Sequences.Sql\Headless.Sequences.Sql.csproj" />
         <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
         <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
@@ -631,6 +632,7 @@
         <Project Path="benchmarks\Headless.Sequences.Benchmarks\Headless.Sequences.Benchmarks.csproj" />
     </Folder>
     <Folder Name="/Sequences/Tests/">
+        <Project Path="tests\Headless.Sequences.Dashboard.Tests.Unit\Headless.Sequences.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sequences.Tests.Unit\Headless.Sequences.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sequences.PostgreSql.Tests.Integration\Headless.Sequences.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sequences.SqlServer.Tests.Integration\Headless.Sequences.SqlServer.Tests.Integration.csproj" />
