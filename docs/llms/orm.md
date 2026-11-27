@@ -121,6 +121,8 @@ The constants are EF Core named-filter names (for example, `"MultiTenantFilter"`
 
 A processor you add with `AddSaveEntryProcessor<TProcessor>` runs before the last two, so lifecycle events and collected messages see its changes. It also costs every transactional save a second change-tracker scan before the final audit capture, because a custom processor may change entities without the change tracker seeing it. An audited save that opens its own transaction then captures its audit rows twice. The built-in chain skips both. Adding the same type again replaces the earlier entry.
 
+With the tenant write guard active, the pipeline reuses that scan to recheck tenant ownership before persisting transactional saves. A save outside an explicit transaction takes a fresh scan for the same check when the chain includes a custom processor.
+
 #### Skipping an actor stamp
 
 The `Skip{Property}Stamp()` extensions on `EntityEntry`, in `Microsoft.EntityFrameworkCore.ChangeTracking`, stop the processor from filling one actor ID from `ICurrentUser` for one entity. The matching timestamp is still stamped, and an explicitly set actor ID still wins.
@@ -393,7 +395,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTena
 - With the guard on, a missing tenant is stamped from `ICurrentTenant.Id` when the entry becomes `Added`, including a detached-to-Added transition. A supplied tenant value is kept. Adding under tenant A and saving under tenant B fails instead of changing ownership.
 - A missing ambient tenant, or a missing required tenant on an `Added` entry, throws `MissingTenantContextException`. A cross-tenant write, or a mismatch between an existing row's original and current tenant, throws `CrossTenantWriteException`. This covers updates, physical deletes, soft deletes, and changes inside supported owned graphs. A required tenant key can fail during tracking, before `SaveChanges`.
 - Entities owned only through metadata (`IsTenantOwned()` with no `IMultiTenant`) are stamped only under the guard. Without it, assign the tenant property before tracking. Without the guard, save-time stamping covers only `IMultiTenant` entities.
-- Guard errors raise before domain-event handlers run. A SQL concurrency failure can raise after handlers ran, because the business save follows dispatch. A failed save prevents the outbox rows from persisting, but does not undo local or external handler effects.
+- The first guard check runs before domain-event handlers. When a handler or custom processor runs, the guard checks the resulting writes again before EF Core persists them. A final guard error or SQL concurrency failure can occur after handlers ran. A failed save prevents the outbox rows from persisting, but does not undo local or external handler effects.
 
 For an intentional host or admin write, use `ITenantWriteGuardBypass.BeginBypass()`:
 

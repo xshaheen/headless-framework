@@ -55,12 +55,16 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
     }
 
-    internal void ValidateFinalWrites(HeadlessSaveEntryContext context, IReadOnlyList<EntityEntry> entries)
+    internal void ValidateFinalWrites(HeadlessSaveEntryContext context, IReadOnlyList<EntityEntry>? entries)
     {
         if (!tenantGuardOptions.Value.GuardWrites || tenantWriteGuardBypass.IsActive)
         {
             return;
         }
+
+        // Resolve owned rows against the same tracker snapshot as the final writes.
+        entries ??= [.. context.DbContext.ChangeTracker.Entries()];
+        context.TrackedEntries = entries;
 
         foreach (var entry in entries)
         {
