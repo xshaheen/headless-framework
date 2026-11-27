@@ -5,6 +5,7 @@ import {
   DetailPanel,
   EmptyState,
   FieldGrid,
+  Fields,
   FilterSelect,
   FilterToolbar,
   Mono,
@@ -235,7 +236,8 @@ export default function FencedLeasesView() {
                     ),
                     isRowHeader: true,
                     kind: 'id',
-                    width: '2fr',
+                    // Fixed, because a share falls to the 192 px floor below 1440 px, which cuts a 24-character name.
+                    width: 240,
                   },
                   {
                     id: 'state',
@@ -430,15 +432,18 @@ function LeasePanel({ id }: { id: string }) {
               </GridField>
               <GridField label="Progress">{progressText(lease, format.size)}</GridField>
             </FieldGrid>
-            <Text as="h3" tone="label">
-              Why there is no Release action
-            </Text>
-            <Text as="p" tone="hint">
-              A release here cannot stop what the holder is already doing outside the store: it would only let a second
-              worker start the same work while the first finishes. The holder releases or settles its lease from code,
-              and an expired lease ends through a takeover or a sweep. Purge ended leases from code with
-              IFencedLeases.PurgeAsync.
-            </Text>
+            {/* One section: the panel body lays out each direct child as a column, so the heading keeps its text. */}
+            <Fields label="Why there is no Release action">
+              <Text as="h3" tone="label">
+                Why there is no Release action
+              </Text>
+              <Text as="p" tone="hint">
+                A release here cannot stop what the holder is already doing outside the store: it would only let a
+                second worker start the same work while the first finishes. The holder releases or settles its lease
+                from code, and an expired lease ends through a takeover or a sweep. Purge ended leases from code with
+                IFencedLeases.PurgeAsync.
+              </Text>
+            </Fields>
           </>
         )}
       </QueryState>

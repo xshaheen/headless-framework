@@ -161,6 +161,16 @@ describe('fenced leases', () => {
     expect(within(panel).queryByRole('button', { name: /release|revoke|purge/i })).toBeNull()
   })
 
+  it('keeps the no-Release heading and its explanation in one panel section', async () => {
+    open(fake, { path: `?open=${encodeURIComponent(progress.id)}` })
+
+    const panel = await screen.findByRole('region', { name: 'Lease export/2026-11-03' })
+    // The panel body lays out each direct child as a column, so a heading apart from its text lands in another one.
+    const note = await within(panel).findByRole('region', { name: 'Why there is no Release action' })
+    expect(within(note).getByRole('heading', { name: 'Why there is no Release action' })).toBeTruthy()
+    expect(note.textContent).toContain('IFencedLeases.PurgeAsync')
+  })
+
   it('explains a purged lease instead of drawing a blank panel', async () => {
     open({ ...fake, goneLeases: [progress.id] }, { path: `?open=${encodeURIComponent(progress.id)}` })
 

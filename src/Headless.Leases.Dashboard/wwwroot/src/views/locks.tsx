@@ -84,7 +84,8 @@ export default function DistributedLocksView() {
         <PageHeader
           title="Distributed locks"
           count={total === undefined ? undefined : `${format.number(total)} held`}
-          description="Read-only. Time to live is as the provider reported it at read time; it does not count down here. Providers report a fencing token only on the holder's own handle, so none shows here."
+          // As short as Fenced leases' subtitle, so the Lease type switch keeps the title row on both views.
+          description="Read-only. Time to live is as the provider read it; it does not count down."
           actions={
             <>
               <LeaseTypeSwitch current="locks" summary={summary.data} />
@@ -128,7 +129,10 @@ export default function DistributedLocksView() {
                     header: 'lease id',
                     cell: (row) => <CellText title={row.leaseId ?? undefined}>{leaseIdText(row)}</CellText>,
                     kind: 'id',
-                    width: '1fr',
+                    // Fixed to a whole 32-character id, since ids share a prefix and a cut one reads like the next.
+                    // Below 768 px it drops, leaving the name its room, and the open lock's panel shows it whole.
+                    priority: 2,
+                    width: 260,
                   },
                   {
                     id: 'ttl',
