@@ -167,6 +167,35 @@ public sealed class IdempotencyLookupTests : TestBase
     }
 
     [Fact]
+    public async Task should_leave_a_stalled_key_unchanged_when_it_is_looked_up_twice()
+    {
+        // given
+        await using var app = await IdempotencyHost.StartAsync(_time, AbortToken);
+        var operations = app.Services.GetRequiredService<IIdempotentOperations>();
+        await operations.AdmitAsync(
+            _Key,
+            _Fingerprint,
+            leaseDuration: TimeSpan.FromSeconds(1),
+            cancellationToken: AbortToken
+        );
+        _time.Advance(TimeSpan.FromSeconds(2));
+
+        // when
+        var (_, _, first) = await _LookUpAsync(app, new { key = _Key });
+        var (_, _, second) = await _LookUpAsync(app, new { key = _Key });
+
+        // then: a lookup takes no lease over, so the next admission still sees the stalled attempt
+        var before = first.GetProperty("record");
+        var after = second.GetProperty("record");
+        after.GetProperty("status").GetString().Should().Be("Released");
+        after.GetProperty("generation").GetInt64().Should().Be(before.GetProperty("generation").GetInt64());
+        after.TryGetProperty("takeoverCount", out var takeovers).Should().BeTrue();
+        takeovers.GetInt64().Should().Be(before.GetProperty("takeoverCount").GetInt64());
+        var takeover = await operations.AdmitAsync(_Key, _Fingerprint, cancellationToken: AbortToken);
+        takeover.Generation.Should().Be(before.GetProperty("generation").GetInt64() + 1);
+    }
+
+    [Fact]
     public async Task should_read_a_released_key_with_its_generation_and_no_lease()
     {
         // given
@@ -374,6 +403,30 @@ public sealed class IdempotencyLookupTests : TestBase
         status.Should().Be(HttpStatusCode.BadRequest);
         text.Should().NotContain(_Key).And.NotContain("acme");
         body.GetProperty("errors").TryGetProperty("tenantId", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_answer_503_when_the_store_throws_an_argument_failure_that_names_no_input()
+    {
+        // given: a provider bug, not the operator's input
+        var inspector = Substitute.For<IIdempotencyInspector>();
+        inspector
+            .InspectAsync(default!, AbortToken)
+            .ReturnsForAnyArgs<ValueTask<IdempotencyRecordSnapshot?>>(_ =>
+                throw new ArgumentException("The stored hash has the wrong length.", "hash")
+            );
+        await using var app = await IdempotencyHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services => services.AddSingleton(inspector)
+        );
+
+        // when
+        var (status, _, body) = await _LookUpAsync(app, new { key = _Key });
+
+        // then
+        status.Should().Be(HttpStatusCode.ServiceUnavailable);
+        body.GetProperty("detail").GetString().Should().Be("The idempotency store is unavailable. Try again.");
     }
 
     [Theory]

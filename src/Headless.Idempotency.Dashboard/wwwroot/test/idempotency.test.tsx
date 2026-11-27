@@ -271,6 +271,49 @@ describe('idempotency', () => {
     expect(within(await result()).getByRole('heading', { name: 'In flight' })).toBeTruthy()
   })
 
+  it('returns focus to the result after Look up again', async () => {
+    const actor = user()
+    open({ lookups: [found(records.inFlight), found(records.completed)] })
+
+    await lookUp(actor)
+    await actor.click(within(await result()).getByRole('button', { name: 'Look up again' }))
+
+    await within(await result()).findByRole('heading', { name: 'Completed' })
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Lookup result' }))
+  })
+
+  it('returns focus to the result after Retry', async () => {
+    const actor = user()
+    open({
+      lookups: [
+        new DashboardApiError(503, 'The idempotency store is unavailable. Try again.'),
+        found(records.completed),
+      ],
+    })
+
+    await lookUp(actor)
+    await actor.click(within(await result()).getByRole('button', { name: 'Retry' }))
+
+    await within(await result()).findByRole('heading', { name: 'Completed' })
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Lookup result' }))
+  })
+
+  it('sends no second lookup while Look up again is pending, then shows its answer', async () => {
+    const actor = user()
+    const slow = held()
+    const { requests } = open({ lookups: [found(records.inFlight), slow.answer, found(records.completed)] })
+
+    await lookUp(actor)
+    await actor.click(within(await result()).getByRole('button', { name: 'Look up again' }))
+    await actor.click(screen.getByRole('button', { name: 'Look up' }))
+    expect(lookups(requests)).toHaveLength(2)
+
+    await act(async () => slow.release(found(records.stalled)))
+
+    expect(await within(await result()).findByRole('heading', { name: 'Stalled' })).toBeTruthy()
+    expect(lookups(requests)).toHaveLength(2)
+  })
+
   it('shows no figure the server does not serve, before or after a lookup', async () => {
     const actor = user()
     open({ lookups: [found(records.completed)] })

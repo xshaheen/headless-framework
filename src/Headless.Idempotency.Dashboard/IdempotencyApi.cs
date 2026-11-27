@@ -95,10 +95,11 @@ internal sealed class IdempotencyApi(IIdempotencyInspector inspector, ICurrentTe
         {
             throw;
         }
-        catch (ArgumentException exception)
+        catch (ArgumentException exception) when (exception.ParamName is "key" or "tenantId")
         {
-            // The validator applies the store's rules first, so this is a rule it does not know yet. The store's own
-            // message can quote the input, so the answer uses the module's.
+            // The validator applies the store's rules first, so this is a rule it does not know yet. Only the two
+            // input names map to 400: any other argument failure is the store's own fault and answers 503 below. The
+            // store's own message can quote the input, so the answer uses the module's.
             var field = string.Equals(exception.ParamName, "tenantId", StringComparison.Ordinal) ? "tenantId" : "key";
 
             return DashboardValidation.Problem(

@@ -19,31 +19,55 @@ public sealed class IdempotencySetupTests : TestBase
 
     [Theory]
     [MemberData(nameof(Overloads))]
-    public async Task should_serve_the_store_under_the_module_id_from_every_registration_overload(string overload)
+    public async Task should_serve_the_module_under_its_id_and_view_policy_from_every_registration_overload(
+        string overload
+    )
     {
-        // given
+        // given: every overload narrows the module to the Operators policy, which a shell viewer does not pass
         Action<HeadlessDashboardSetupBuilder> addModule = overload switch
         {
             "none" => static dashboard => dashboard.AddIdempotency(),
-            "action" => static dashboard => dashboard.AddIdempotency(options => options.OperatePolicy = "Operators"),
+            "action" => static dashboard => dashboard.AddIdempotency(options => options.ViewPolicy = "Operators"),
             "action-with-provider" => static dashboard =>
-                dashboard.AddIdempotency((options, _) => options.OperatePolicy = "Operators"),
+                dashboard.AddIdempotency((options, _) => options.ViewPolicy = "Operators"),
             _ => static dashboard =>
                 dashboard.AddIdempotency(
                     new ConfigurationBuilder()
-                        .AddInMemoryCollection(new Dictionary<string, string?> { ["OperatePolicy"] = "Operators" })
+                        .AddInMemoryCollection(new Dictionary<string, string?> { ["ViewPolicy"] = "Operators" })
                         .Build()
                 ),
         };
         await using var app = await IdempotencyHost.StartAsync(_time, AbortToken, addModule: addModule);
         using var client = IdempotencyHost.Client(app);
-        var cookie = await IdempotencyHost.SignInAsync(client, "viewer", AbortToken);
+        var viewer = await IdempotencyHost.SignInAsync(client, "viewer", AbortToken);
+        var operatorCookie = await IdempotencyHost.SignInAsync(client, "ops", AbortToken);
 
         // when
-        using var response = await IdempotencyHost.GetAsync(client, IdempotencyHost.Api + "/store", cookie, AbortToken);
+        using var viewerStore = await IdempotencyHost.GetAsync(
+            client,
+            IdempotencyHost.Api + "/store",
+            viewer,
+            AbortToken
+        );
+        using var viewerLookup = await IdempotencyHost.PostAsync(
+            client,
+            IdempotencyHost.Api + "/lookup",
+            new { key = "order-4711-charge" },
+            viewer,
+            AbortToken
+        );
+        using var operatorStore = await IdempotencyHost.GetAsync(
+            client,
+            IdempotencyHost.Api + "/store",
+            operatorCookie,
+            AbortToken
+        );
 
-        // then
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // then: the parameterless overload keeps the shell's policy, so its viewer passes
+        var viewerExpected = overload == "none" ? HttpStatusCode.OK : HttpStatusCode.Forbidden;
+        viewerStore.StatusCode.Should().Be(viewerExpected);
+        viewerLookup.StatusCode.Should().Be(viewerExpected);
+        operatorStore.StatusCode.Should().Be(HttpStatusCode.OK);
         var module = app.Services.GetRequiredService<IdempotencyModule>();
         module.Id.Should().Be("idempotency");
         module.DisplayName.Should().Be("Idempotency");
