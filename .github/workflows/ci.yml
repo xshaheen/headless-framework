@@ -242,6 +242,8 @@ jobs:
             target: dashboard-rate-limiting-test
           - name: Cluster
             target: dashboard-cluster-test
+          - name: Dev inbox
+            target: dashboard-dev-inbox-test
             lockfile: package-lock.json
     steps:
       - name: "Check out repository"

@@ -403,6 +403,8 @@ An invalid value fails the start with `OptionsValidationException`.
 
 ### Read the captured messages
 
+To read them in the dashboard, add the Dev inbox module: see [Dev inbox module](dashboards/dev-inbox-module.md).
+
 Resolve `ISmsCaptureStore` from the container. It is registered only when a `UseDevelopment` sender is, so `GetService<ISmsCaptureStore>()` returning `null` means no development sender is in use.
 
 ```csharp
