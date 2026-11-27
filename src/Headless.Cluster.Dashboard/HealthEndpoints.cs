@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Checks;
 using Headless.Dashboard;
 using Headless.Hosting;
@@ -47,11 +46,7 @@ internal sealed class HealthEndpoints(ClusterServices services)
         }
 
         var snapshot = _services.Monitor!.GetSnapshot();
-        var latest = snapshot
-            .Checks.Select(static check =>
-                (check.Descriptor, Latest: check.Results.Count > 0 ? check.Results[^1] : null)
-            )
-            .ToList();
+        var latest = snapshot.Checks.Select(static check => (check.Descriptor, Latest: Latest(check))).ToList();
         var probed = latest.Where(static check => check.Latest is not null).ToList();
         var liveness = latest.Where(static check => check.Descriptor.IsLiveness).ToList();
         // MaxBy throws on an empty sequence of tuples, so an unprobed host takes the default, whose result is null.
@@ -138,6 +133,10 @@ internal sealed class HealthEndpoints(ClusterServices services)
             string.Equals(check.Descriptor.Name, name, StringComparison.OrdinalIgnoreCase)
         );
 
+    /// <summary>The most recent recorded result of <paramref name="check"/>, or <see langword="null"/> before its first probe.</summary>
+    internal static HealthCheckProbeResult? Latest(HealthCheckHistory check) =>
+        check.Results.Count > 0 ? check.Results[^1] : null;
+
     /// <summary>
     /// The filter a <c>status</c> query names: a health status, or <see cref="NotProbed"/> for a check with no result
     /// yet, which is no health status. <paramref name="valid"/> is <see langword="false"/> for any other value.
@@ -153,16 +152,12 @@ internal sealed class HealthEndpoints(ClusterServices services)
 
         if (string.Equals(value, NotProbed, StringComparison.OrdinalIgnoreCase))
         {
-            return static check => check.Results.Count == 0;
+            return static check => Latest(check) is null;
         }
 
-        if (
-            Enum.TryParse<HealthStatus>(value, ignoreCase: true, out var status)
-            && Enum.IsDefined(status)
-            && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-        )
+        if (ClusterEndpoints.TryParseName<HealthStatus>(value, out var status))
         {
-            return check => check.Results.Count > 0 && check.Results[^1].Status == status;
+            return check => Latest(check)?.Status == status;
         }
 
         valid = false;

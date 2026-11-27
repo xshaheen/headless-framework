@@ -201,7 +201,7 @@ internal sealed record ClusterCheckView(
             history.Descriptor.FailureStatus,
             history.Descriptor.Timeout is { } timeout ? (long)timeout.TotalMilliseconds : null,
             history.Descriptor.IsLiveness,
-            history.Results.Count > 0 ? ClusterProbeResultView.From(history.Results[^1]) : null
+            HealthEndpoints.Latest(history) is { } latest ? ClusterProbeResultView.From(latest) : null
         );
 }
 

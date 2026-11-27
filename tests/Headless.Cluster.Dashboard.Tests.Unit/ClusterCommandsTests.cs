@@ -252,22 +252,34 @@ public sealed class ClusterCommandsTests : TestBase
         var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);
 
         // when
-        using var response = await ClusterDashboardHost.GetAsync(
+        using var allowedCheck = await ClusterDashboardHost.GetAsync(
             client,
             _Commands + "/allowed?kind=check&id=sandbox-dependency",
             cookie,
             AbortToken
         );
+        using var allowedHost = await ClusterDashboardHost.GetAsync(
+            client,
+            _Commands + "/allowed?kind=health&id=host",
+            cookie,
+            AbortToken
+        );
 
         // then
-        var command = (await ClusterDashboardHost.ReadAsync(response, AbortToken))
-            .GetProperty("objects")[0]
-            .GetProperty("commands")
-            .EnumerateArray()
-            .Single(static command =>
-                string.Equals(command.GetProperty("id").GetString(), "cluster.probe", StringComparison.Ordinal)
-            );
-        command.GetProperty("allowed").GetBoolean().Should().BeTrue();
+        foreach (
+            var (response, commandId) in new[] { (allowedCheck, "cluster.probe"), (allowedHost, "cluster.probe-all") }
+        )
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(AbortToken));
+            var command = (await ClusterDashboardHost.ReadAsync(response, AbortToken))
+                .GetProperty("objects")[0]
+                .GetProperty("commands")
+                .EnumerateArray()
+                .Single(command =>
+                    string.Equals(command.GetProperty("id").GetString(), commandId, StringComparison.Ordinal)
+                );
+            command.GetProperty("allowed").GetBoolean().Should().BeTrue();
+        }
     }
 
     private Task<WebApplication> _StartAsync(Microsoft.Extensions.Time.Testing.FakeTimeProvider? time = null) =>

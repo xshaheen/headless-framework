@@ -63,7 +63,7 @@ internal sealed class ClusterEndpoints(ClusterServices services)
 
         if (!string.IsNullOrEmpty(state))
         {
-            if (!_TryParseState(state, out var parsed))
+            if (!TryParseName<NodeLivenessState>(state, out var parsed))
             {
                 return DashboardValidation.Problem(
                     "state",
@@ -215,9 +215,11 @@ internal sealed class ClusterEndpoints(ClusterServices services)
         return agreement;
     }
 
-    private static bool _TryParseState(string value, out NodeLivenessState state) =>
-        Enum.TryParse(value, ignoreCase: true, out state)
-        && Enum.IsDefined(state)
+    /// <summary>Parses a declared member name of <typeparamref name="TEnum"/>, ignoring case and refusing numbers.</summary>
+    internal static bool TryParseName<TEnum>(string value, out TEnum result)
+        where TEnum : struct, Enum =>
+        Enum.TryParse(value, ignoreCase: true, out result)
+        && Enum.IsDefined(result)
         && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
 
     private static ProblemHttpResult _NotRegistered() =>

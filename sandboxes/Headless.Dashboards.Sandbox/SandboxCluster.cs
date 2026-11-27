@@ -114,9 +114,6 @@ public static class SandboxCluster
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The host is stopping, which ends the peers' beats.
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 }

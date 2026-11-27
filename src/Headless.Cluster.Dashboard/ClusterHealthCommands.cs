@@ -158,7 +158,10 @@ internal sealed class ClusterHealthCommands(
 
         foreach (var name in names)
         {
-            if (HealthEndpoints.FindCheck(snapshot, name) is not { Results.Count: > 0 } check)
+            if (
+                HealthEndpoints.FindCheck(snapshot, name) is not { } check
+                || HealthEndpoints.Latest(check) is not { } latest
+            )
             {
                 continue;
             }
@@ -167,7 +170,7 @@ internal sealed class ClusterHealthCommands(
                 new DashboardChange
                 {
                     Target = ClusterObjects.Ref(_moduleId, ClusterObjects.CheckKind, check.Descriptor.Name),
-                    Version = ClusterObjects.Version(check.Results[^1].CompletedAt),
+                    Version = ClusterObjects.Version(latest.CompletedAt),
                     AffectsAttention = true,
                 }
             );

@@ -71,11 +71,11 @@ internal sealed class ClusterSources(string moduleId, ClusterServices services)
             counts[ChecksCount] = new DashboardCount { Count = checks.Count };
             counts[nameof(HealthStatus.Degraded)] = new DashboardCount
             {
-                Count = checks.Count(static check => _Latest(check)?.Status == HealthStatus.Degraded),
+                Count = checks.Count(static check => HealthEndpoints.Latest(check)?.Status == HealthStatus.Degraded),
             };
             counts[nameof(HealthStatus.Unhealthy)] = new DashboardCount
             {
-                Count = checks.Count(static check => _Latest(check)?.Status == HealthStatus.Unhealthy),
+                Count = checks.Count(static check => HealthEndpoints.Latest(check)?.Status == HealthStatus.Unhealthy),
             };
         }
 
@@ -159,7 +159,7 @@ internal sealed class ClusterSources(string moduleId, ClusterServices services)
                 {
                     Target = ClusterObjects.Ref(_moduleId, ClusterObjects.CheckKind, check.Descriptor.Name),
                     Title = check.Descriptor.Name,
-                    Status = _Latest(check)?.Status.ToString(),
+                    Status = HealthEndpoints.Latest(check)?.Status.ToString(),
                 }
             );
         }
@@ -171,7 +171,7 @@ internal sealed class ClusterSources(string moduleId, ClusterServices services)
     {
         foreach (var check in snapshot.Checks)
         {
-            if (_Latest(check) is not { Status: HealthStatus.Degraded or HealthStatus.Unhealthy } latest)
+            if (HealthEndpoints.Latest(check) is not { Status: HealthStatus.Degraded or HealthStatus.Unhealthy } latest)
             {
                 continue;
             }
@@ -237,9 +237,6 @@ internal sealed class ClusterSources(string moduleId, ClusterServices services)
 
         return start;
     }
-
-    private static HealthCheckProbeResult? _Latest(HealthCheckHistory check) =>
-        check.Results.Count > 0 ? check.Results[^1] : null;
 
     private static DashboardCount _CountState(IReadOnlyList<NodeLivenessSnapshot> snapshot, NodeLivenessState state) =>
         new() { Count = snapshot.Count(node => node.State == state) };
