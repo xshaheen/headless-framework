@@ -413,7 +413,11 @@ public sealed class IdempotencyLookupTests : TestBase
         inspector
             .InspectAsync(default!, AbortToken)
             .ReturnsForAnyArgs<ValueTask<IdempotencyRecordSnapshot?>>(_ =>
-                throw new ArgumentException("The stored hash has the wrong length.", "hash")
+                throw new ArgumentException("The stored hash has the wrong length.",
+#pragma warning disable MA0015 // False positive: the test fakes a provider failure on an argument the provider owns, not one of this lambda's.
+                    "hash"
+#pragma warning restore MA0015
+                )
             );
         await using var app = await IdempotencyHost.StartAsync(
             _time,

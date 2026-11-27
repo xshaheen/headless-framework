@@ -64,7 +64,9 @@ public sealed class IdempotencySetupTests : TestBase
         );
 
         // then: the parameterless overload keeps the shell's policy, so its viewer passes
-        var viewerExpected = overload == "none" ? HttpStatusCode.OK : HttpStatusCode.Forbidden;
+        var viewerExpected = string.Equals(overload, "none", StringComparison.Ordinal)
+            ? HttpStatusCode.OK
+            : HttpStatusCode.Forbidden;
         viewerStore.StatusCode.Should().Be(viewerExpected);
         viewerLookup.StatusCode.Should().Be(viewerExpected);
         operatorStore.StatusCode.Should().Be(HttpStatusCode.OK);
