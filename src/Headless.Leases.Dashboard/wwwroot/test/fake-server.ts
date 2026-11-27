@@ -34,7 +34,7 @@ export function lock(overrides: Partial<HeldLock> & Pick<HeldLock, 'resource'>):
 }
 
 export function summary(overrides: Partial<LeasesSummary> = {}): LeasesSummary {
-  return { fencing: { kinds: 3 }, locks: { registered: true }, ...overrides }
+  return { fencing: { registered: true }, locks: { registered: true }, ...overrides }
 }
 
 /** Counts as the server derives them from `items`, unless the test gives its own. */

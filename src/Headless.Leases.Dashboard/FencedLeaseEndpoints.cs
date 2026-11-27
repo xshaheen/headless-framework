@@ -21,7 +21,6 @@ internal sealed class FencedLeaseEndpoints(LeasesServices services, LeaseKindsCa
         "Fencing is not registered on this host. Call services.AddHeadlessFencing(...) with a provider to show fenced "
         + "leases.";
 
-    /// <summary>The rows one list page returns.</summary>
     internal const int PageSize = 50;
 
     private readonly LeasesServices _services = Argument.IsNotNull(services);
@@ -32,23 +31,17 @@ internal sealed class FencedLeaseEndpoints(LeasesServices services, LeaseKindsCa
     {
         var routes = endpoints.Routes;
 
-        routes.MapGet("/summary", _SummaryAsync);
+        routes.MapGet("/summary", _Summary);
         routes.MapGet("/fenced", _ListAsync);
         routes.MapGet("/fenced/counts", _CountsAsync);
         routes.MapGet("/fenced/kinds", _KindsAsync);
         routes.MapGet("/fenced/lease", _GetAsync);
     }
 
-    private async Task<JsonHttpResult<LeasesSummaryView>> _SummaryAsync(CancellationToken cancellationToken)
+    // No store read: a fencing outage must not take down the summary the healthy lock view also needs.
+    private JsonHttpResult<LeasesSummaryView> _Summary()
     {
-        LeasesFencingView? fencing = null;
-
-        if (_services.HasFencing)
-        {
-            var inUse = await _kinds.GetAsync(_services.Inspector, cancellationToken).ConfigureAwait(false);
-            fencing = new LeasesFencingView(inUse.Count);
-        }
-
+        var fencing = _services.HasFencing ? new LeasesFencingView(Registered: true) : null;
         var locks = _services.HasLocks ? new LeasesLocksView(Registered: true) : null;
 
         return TypedResults.Json(
@@ -322,12 +315,11 @@ internal sealed class FencedLeaseEndpoints(LeasesServices services, LeaseKindsCa
     {
         state = FencedLeaseStateFilter.All;
 
-        // A declared name only, ignoring case: a number would pass Enum.TryParse for any value in range.
+        // A declared name only, ignoring case: Enum.TryParse also accepts numbers and comma-joined names.
         return string.IsNullOrEmpty(value)
             || (
-                Enum.TryParse(value, ignoreCase: true, out state)
-                && Enum.IsDefined(state)
-                && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+                Enum.GetNames<FencedLeaseStateFilter>().Contains(value, StringComparer.OrdinalIgnoreCase)
+                && Enum.TryParse(value, ignoreCase: true, out state)
             );
     }
 

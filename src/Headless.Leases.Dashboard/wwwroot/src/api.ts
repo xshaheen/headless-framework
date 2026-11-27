@@ -18,7 +18,7 @@ export const fencedTopic = 'leases.fenced-lease'
 export const locksTopic = 'leases.lock'
 
 export interface LeasesSummary {
-  fencing: { kinds: number } | null
+  fencing: { registered: boolean } | null
   locks: { registered: boolean } | null
 }
 
@@ -144,7 +144,7 @@ export function readSummary(value: unknown): LeasesSummary {
   const locks = item.locks == null ? null : record(item.locks, 'locks summary')
 
   return {
-    fencing: fencing && { kinds: number(fencing.kinds, 'kind count') },
+    fencing: fencing && { registered: flag(fencing.registered, 'fencing registration') },
     locks: locks && { registered: flag(locks.registered, 'lock registration') },
   }
 }

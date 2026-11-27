@@ -25,7 +25,6 @@ internal sealed class LockEndpoints(LeasesServices services, TimeProvider timePr
         "No distributed lock provider is registered on this host. Call services.AddHeadlessDistributedLocks(...) "
         + "with a provider to show held locks.";
 
-    /// <summary>The rows one list page returns.</summary>
     internal const int PageSize = 100;
 
     private readonly LeasesServices _services = Argument.IsNotNull(services);

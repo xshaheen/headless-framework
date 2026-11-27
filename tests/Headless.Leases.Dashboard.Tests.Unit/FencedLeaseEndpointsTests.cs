@@ -274,6 +274,50 @@ public sealed class FencedLeaseEndpointsTests : TestBase
         counts.GetProperty("total").GetProperty("capped").GetBoolean().Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("Live,Expired")]
+    [InlineData("1")]
+    public async Task should_refuse_a_state_that_is_not_one_declared_name(string state)
+    {
+        // given
+        await using var app = await LeasesDashboardHost.StartAsync(AbortToken, _time, fencing: true);
+
+        // when
+        using var bad = await LeasesDashboardHost.SendAsync(app, _Fenced + "?state=" + state, AbortToken);
+
+        // then
+        bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await LeasesDashboardHost.ReadAsync(bad, AbortToken))
+            .GetProperty("errors")
+            .TryGetProperty("state", out _)
+            .Should()
+            .BeTrue();
+    }
+
+    [Fact]
+    public async Task should_answer_the_summary_without_reading_the_fencing_store()
+    {
+        // given a fencing store that is down, beside a healthy lock provider
+        var inspector = Substitute.For<IFencedLeaseInspector>();
+        inspector
+            .ListKindsAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<IReadOnlyList<string>>(new InvalidOperationException("store down")));
+        await using var app = await LeasesDashboardHost.StartAsync(
+            AbortToken,
+            _time,
+            locks: true,
+            before: services => services.AddSingleton(inspector)
+        );
+
+        // when
+        var summary = await LeasesDashboardHost.GetJsonAsync(app, LeasesDashboardHost.Api + "/summary", AbortToken);
+
+        // then
+        summary.GetProperty("fencing").GetProperty("registered").GetBoolean().Should().BeTrue();
+        summary.GetProperty("locks").GetProperty("registered").GetBoolean().Should().BeTrue();
+        inspector.ReceivedCalls().Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_read_the_kinds_once_per_thirty_seconds_and_never_keep_a_failed_read()
     {

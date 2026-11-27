@@ -139,7 +139,7 @@ export default function FencedLeasesView() {
   return (
     <PageFrame
       frame={frame}
-      stats={<LeaseStats counts={counts.data} kinds={summary.data?.fencing?.kinds} />}
+      stats={<LeaseStats counts={counts.data} kinds={kinds.data?.length} params={params} />}
       header={
         <PageHeader
           title="Fenced leases"
@@ -147,7 +147,7 @@ export default function FencedLeasesView() {
           description="Read-only. Lease times come from the database clock, never this browser's."
           toolbar={
             <FilterToolbar
-              active={[filter.kind, filter.scope !== 'any' ? filter.scope : ''].filter(Boolean).length}
+              active={(filter.kind ? 1 : 0) + (filter.scope !== 'any' ? 1 : 0)}
               search={
                 <SearchField
                   key={`prefix-${prefix}`}
@@ -261,7 +261,7 @@ export default function FencedLeasesView() {
                   {
                     id: 'tenant',
                     header: 'tenant',
-                    cell: (row) => <CellText title={row.tenantId ?? 'Host'}>{tenantText(row)}</CellText>,
+                    cell: (row) => <CellText title={tenantText(row)}>{tenantText(row)}</CellText>,
                     priority: 2,
                     width: '1fr',
                   },
@@ -324,15 +324,30 @@ export default function FencedLeasesView() {
 }
 
 /** The served counts only: live, expired, and ended leases for the filter, and the kinds in use. */
-function LeaseStats({ counts, kinds }: { counts: FencedCounts | undefined; kinds: number | undefined }) {
+function LeaseStats({
+  counts,
+  kinds,
+  params,
+}: {
+  counts: FencedCounts | undefined
+  kinds: number | undefined
+  params: URLSearchParams
+}) {
   const format = useFormat()
   const value = (count: CappedCount | undefined) => (count ? format.count(count) : '–')
+  // Replace only the state, so a card keeps the kind, tenant, and prefix filters the counts were read with.
+  const stateLink = (state: StateFilter) => {
+    const next = new URLSearchParams(params)
+    next.set('state', state)
+
+    return `?${next.toString()}`
+  }
 
   return (
     <StatStrip label="Leases at a glance">
-      <StatCard label="Live" tone="ok" value={value(counts?.live)} to="?state=Live" />
-      <StatCard label="Expired" tone="fail" value={value(counts?.expired)} to="?state=Expired" />
-      <StatCard label="Ended" tone="off" value={value(counts?.ended)} to="?state=Ended" />
+      <StatCard label="Live" tone="ok" value={value(counts?.live)} to={stateLink('Live')} />
+      <StatCard label="Expired" tone="fail" value={value(counts?.expired)} to={stateLink('Expired')} />
+      <StatCard label="Ended" tone="off" value={value(counts?.ended)} to={stateLink('Ended')} />
       <StatCard label="Kinds" value={kinds === undefined ? '–' : format.number(kinds)} />
     </StatStrip>
   )

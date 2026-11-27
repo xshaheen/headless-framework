@@ -30,7 +30,7 @@ public sealed class LeasesRegistrationTests : TestBase
         services.HasFencing.Should().BeTrue();
         services.HasLocks.Should().BeFalse();
         summary.GetProperty("locks").ValueKind.Should().Be(JsonValueKind.Null);
-        summary.GetProperty("fencing").GetProperty("kinds").GetInt32().Should().Be(0);
+        summary.GetProperty("fencing").GetProperty("registered").GetBoolean().Should().BeTrue();
     }
 
     [Fact]

@@ -60,7 +60,7 @@ The module's routes live at `{base}/api/leases`, JSON with camelCase names and e
 
 | Route | Answer |
 | --- | --- |
-| `GET summary` | `{ fencing: { kinds }, locks: { registered: true } }`. `fencing` is `null` without Fencing, and `locks` is `null` without a real lock provider |
+| `GET summary` | `{ fencing: { registered: true }, locks: { registered: true } }`. `fencing` is `null` without Fencing, and `locks` is `null` without a real lock provider. It reads no store, so a fencing outage leaves the Distributed locks view working |
 | `GET fenced?state=&kind=&scope=&tenant=&prefix=&after=` | `{ items: [{ id, tenantId, kind, resource, generation, status, state, holder, takeoverCount, grantedAt, expiresAt, endedAt, progressContract, progressSizeBytes }], nextCursor, readAt }`, 50 per page, ordered by tenant (the host scope first), kind, and resource. `state` filters by `All`, `Live`, `Expired`, or `Ended`. `scope=host` reads the host scope and `tenant=<id>` one tenant; neither reads every tenant, and both answer `400`. `prefix` matches the resource literally and case-sensitively. Pass `nextCursor` as `after` for the next page; any other `after` answers `400`. Each item's `status` is the stored `LeaseFenceStatus` and `state` its group; neither comes from a clock. Without Fencing every `fenced` route answers `404` naming `AddHeadlessFencing` |
 | `GET fenced/counts?kind=&scope=&tenant=&prefix=` | `{ live, expired, ended, total }`, each `{ count, capped }` for the same filter. A count stops at 10,000 with `capped: true` |
 | `GET fenced/kinds` | `{ items }`: the kinds in use, ordinal. The answer is kept 30 seconds per process; a failed read is not kept |

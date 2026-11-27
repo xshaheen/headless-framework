@@ -31,11 +31,9 @@ internal sealed class LeasesServices
     /// <summary>Gets the distributed lock, or <see langword="null"/> when the host registers no real provider.</summary>
     public IDistributedLock? Lock { get; }
 
-    /// <summary>Gets whether the host serves the fenced-lease half.</summary>
     [MemberNotNullWhen(true, nameof(Inspector))]
     public bool HasFencing => Inspector is not null;
 
-    /// <summary>Gets whether the host serves the distributed-lock half.</summary>
     [MemberNotNullWhen(true, nameof(Lock))]
     public bool HasLocks => Lock is not null;
 

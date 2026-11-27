@@ -30,8 +30,8 @@ internal sealed record LeasesSummaryView(
 );
 
 /// <summary>The fenced-lease half of the summary.</summary>
-/// <param name="Kinds">How many lease kinds the store holds.</param>
-internal sealed record LeasesFencingView(int Kinds);
+/// <param name="Registered">Always <see langword="true"/>: without Fencing the summary carries no object.</param>
+internal sealed record LeasesFencingView(bool Registered);
 
 /// <summary>The distributed-lock half of the summary.</summary>
 /// <param name="Registered">Always <see langword="true"/>: without a lock provider the summary carries no object.</param>
@@ -74,11 +74,7 @@ internal sealed record FencedLeaseView(
             lease.Resource,
             lease.Generation,
             snapshot.Status,
-                // The store's status decides the group; no clock here may move a lease between groups.
-                snapshot.IsLive
-                    ? FencedLeaseState.Live
-                : snapshot.IsExpired ? FencedLeaseState.Expired
-                : FencedLeaseState.Ended,
+            _StateOf(snapshot),
             snapshot.Holder,
             snapshot.TakeoverCount,
             snapshot.GrantedAt,
@@ -87,6 +83,17 @@ internal sealed record FencedLeaseView(
             snapshot.ProgressContract,
             snapshot.ProgressSizeBytes
         );
+    }
+
+    // The store's status decides the group; no clock here may move a lease between groups.
+    private static FencedLeaseState _StateOf(LeaseSnapshot snapshot)
+    {
+        if (snapshot.IsLive)
+        {
+            return FencedLeaseState.Live;
+        }
+
+        return snapshot.IsExpired ? FencedLeaseState.Expired : FencedLeaseState.Ended;
     }
 }
 
