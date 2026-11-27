@@ -127,13 +127,11 @@ internal sealed class RateLimitingCommands(
 
         var id = request.Ids[0];
 
-        if (_Check(request, id) is { } refusal)
+        if (_Check(request, id, out var purpose, out var subject) is { } refusal)
         {
             return _Refuse(id, refusal);
         }
 
-        var (purpose, _) = _Parse(id)!.Value;
-        var subject = request.Arguments[SubjectArgument].GetString()!;
         var resolution = RateLimitingQuotas.Resolve(
             _limiterOptions,
             purpose,
@@ -164,22 +162,28 @@ internal sealed class RateLimitingCommands(
             : _Row(id, DashboardRowOutcome.Skipped, NoAttemptsReason);
     }
 
-    private string? _Check(DashboardCommandRequest request, string id)
+    private string? _Check(DashboardCommandRequest request, string id, out string purpose, out string subject)
     {
-        if (_Parse(id) is not var (purpose, fingerprint))
+        purpose = subject = string.Empty;
+
+        if (_Parse(id) is not var (parsedPurpose, fingerprint))
         {
             return "The target must be {purpose}:{fingerprint}.";
         }
+
+        purpose = parsedPurpose;
 
         // The shell's schema check accepts an empty string for a required text argument.
         if (
             !request.Arguments.TryGetValue(SubjectArgument, out var value)
             || value.ValueKind != JsonValueKind.String
-            || value.GetString() is not { Length: > 0 } subject
+            || value.GetString() is not { Length: > 0 } argument
         )
         {
             return "Reset needs the subject the target's fingerprint was computed from.";
         }
+
+        subject = argument;
 
         // The shell writes the reason to the operator log as it is, so a reason that repeats the subject would put it
         // there.

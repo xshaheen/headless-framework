@@ -11,6 +11,8 @@ public static class SandboxRateLimits
 {
     public const string SignIn = "sign-in.password";
 
+    private const int _PartlyAttempts = 2;
+
     // A fixed key is safe only because the sandbox binds to loopback and holds no real subject; an app keeps its key
     // secret, since it is what makes a fingerprint unguessable.
     public static readonly string SubjectKey = Convert.ToBase64String("headless-sandbox-subject-key-32b!"u8.ToArray());
@@ -46,7 +48,7 @@ public static class SandboxRateLimits
             await limiter.AcquireAsync(SignIn, lockedOut, quota, cancellationToken).ConfigureAwait(false);
         }
 
-        for (var i = 0; i < 2; i++)
+        for (var i = 0; i < _PartlyAttempts; i++)
         {
             await limiter.AcquireAsync(SignIn, partly, quota, cancellationToken).ConfigureAwait(false);
         }
@@ -59,7 +61,7 @@ public static class SandboxRateLimits
             $"{lockedOut} {SignIn} locked out until {lockedWindow.WindowEndsAt:O}",
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{partly} {SignIn} 2 of {quota.Limit} until {partlyWindow.WindowEndsAt:O}"
+                $"{partly} {SignIn} {_PartlyAttempts} of {quota.Limit} until {partlyWindow.WindowEndsAt:O}"
             ),
         ];
     }

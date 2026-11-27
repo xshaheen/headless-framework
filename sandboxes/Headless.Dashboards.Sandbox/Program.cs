@@ -57,7 +57,6 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // The Messaging module reads the stores AddHeadlessMessaging configures below, and inherits the host policies
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
-    // The Rate limits module reads the attempt limiter AddAttemptLimiter configures below.
     dashboard.AddRateLimiting();
 });
 

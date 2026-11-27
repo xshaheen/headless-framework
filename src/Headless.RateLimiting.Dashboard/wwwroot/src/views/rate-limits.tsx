@@ -38,6 +38,7 @@ import {
   resetArguments,
   resetCommandId,
   subjectId,
+  toWholeNumber,
   toWindowSeconds,
   windowUnits,
   type Catalogue,
@@ -58,6 +59,9 @@ type Lookup =
   | { state: 'pending'; call: LookupCall }
   | { state: 'found'; call: LookupCall; view: LookupView; readAt: number }
   | { state: 'failed'; call: LookupCall; message: string }
+
+const lockedOut = { label: 'Locked out', tone: 'fail' } as const
+const withinLimit = { label: 'Within limit', tone: 'ok' } as const
 
 const storeLabels = { named: 'Named cache', remote: 'Remote cache', default: 'Default cache' } as const
 
@@ -130,7 +134,7 @@ export default function RateLimitsView() {
     try {
       const view = await lookUp(api, call)
       setLookup({ state: 'found', call, view, readAt: Date.now() })
-      announce(`${view.isLockedOut ? 'Locked out' : 'Within limit'}: ${view.count} of ${view.limit} attempts used.`)
+      announce(`${(view.isLockedOut ? lockedOut : withinLimit).label}: ${view.count} of ${view.limit} attempts used.`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The lookup failed. Try again.'
       setLookup({ state: 'failed', call, message })
@@ -151,10 +155,10 @@ export default function RateLimitsView() {
       return
     }
 
-    const limit = Number(custom.limit)
+    const limit = toWholeNumber(custom.limit)
     const windowSeconds = toWindowSeconds(custom.window, custom.unit)
 
-    if (!custom.name.trim() || !Number.isInteger(limit) || limit < 1 || windowSeconds === undefined) {
+    if (!custom.name.trim() || limit === undefined || windowSeconds === undefined) {
       setFormError('A custom purpose needs its name, a limit of at least 1, and a whole window.')
       return
     }
@@ -413,22 +417,20 @@ function LookupResult({
     case 'found': {
       const { view } = lookup
       const resetRefusal = !canOperate ? 'Needs operate permission' : view.count === 0 ? noAttempts : undefined
+      const status = view.isLockedOut ? lockedOut : withinLimit
 
       return (
         <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
           <Text tone="title" as="h3">
-            {view.isLockedOut ? 'Locked out' : 'Within limit'}
+            {status.label}
           </Text>
-          <StatusMark
-            tone={view.isLockedOut ? 'fail' : 'ok'}
-            label={view.isLockedOut ? 'Locked out' : 'Within limit'}
-          />
+          <StatusMark tone={status.tone} label={status.label} />
           <Meter
             label="Attempts in this window"
             value={Math.min(view.count, view.limit)}
             max={view.limit}
             valueLabel={`${view.count} of ${view.limit} used, ${view.remaining} remaining; refused attempts count too`}
-            tone={view.isLockedOut ? 'fail' : 'ok'}
+            tone={status.tone}
           />
           <FieldGrid columns={3} label="Window">
             <GridField label="Purpose">

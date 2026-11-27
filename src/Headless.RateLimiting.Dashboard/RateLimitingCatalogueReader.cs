@@ -28,7 +28,7 @@ internal static class RateLimitingCatalogueReader
                     (long)pair.Value.Window.TotalSeconds
                 )),
         ];
-        var shortest = purposes.OrderBy(static purpose => purpose.WindowSeconds).FirstOrDefault();
+        var shortest = purposes.MinBy(static purpose => purpose.WindowSeconds);
 
         // Only the built-in limiter's store selection is known: the cache CacheName names, else the remote tier when
         // one is registered, else the default cache. A custom limiter keeps its counters wherever it chooses.

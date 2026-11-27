@@ -1,16 +1,12 @@
 import type { DashboardApi } from '@headless/dashboard-sdk/data'
 
-/** One declared purpose and its quota, as the catalogue serves it. */
-export interface PurposeView {
+export interface PurposeView extends Quota {
   name: string
-  limit: number
-  windowSeconds: number
 }
 
 export const counterStores = ['named', 'remote', 'default'] as const
 export type CounterStore = (typeof counterStores)[number]
 
-/** The declared purposes, the one with the shortest window, and where the built-in limiter keeps its counters. */
 export interface Catalogue {
   purposes: PurposeView[]
   shortest?: PurposeView
@@ -52,14 +48,18 @@ export type WindowUnit = (typeof windowUnits)[number]
 
 const unitSeconds: Record<WindowUnit, number> = { seconds: 1, minutes: 60, hours: 3600 }
 
-/** A window typed as a number and a unit, in seconds; `undefined` when it is not a whole number of at least 1. */
-export function toWindowSeconds(value: string, unit: WindowUnit): number | undefined {
+export function toWholeNumber(value: string): number | undefined {
   const number = Number(value)
 
-  return Number.isInteger(number) && number >= 1 ? number * unitSeconds[unit] : undefined
+  return Number.isInteger(number) && number >= 1 ? number : undefined
 }
 
-/** A window in the largest unit that divides it: `15 min`, `1 h`, `90 s`. */
+export function toWindowSeconds(value: string, unit: WindowUnit): number | undefined {
+  const number = toWholeNumber(value)
+
+  return number === undefined ? undefined : number * unitSeconds[unit]
+}
+
 export function formatWindow(seconds: number): string {
   if (seconds % 3600 === 0) {
     return `${seconds / 3600} h`
@@ -68,7 +68,6 @@ export function formatWindow(seconds: number): string {
   return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`
 }
 
-/** A countdown in minutes and seconds: `9 m 29 s`. */
 export function formatCountdown(seconds: number): string {
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
@@ -155,7 +154,6 @@ export function subjectId(view: LookupView): string {
   return `${view.purpose}:${view.fingerprint}`
 }
 
-/** The reset's arguments: the subject, and the quota only for an undeclared purpose. */
 export function resetArguments(call: LookupCall): Record<string, string | number> {
   return call.quota
     ? { subject: call.subject, limit: call.quota.limit, windowSeconds: call.quota.windowSeconds }
