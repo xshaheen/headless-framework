@@ -228,7 +228,7 @@ public sealed class ClearOperationTests : TestBase
     [InlineData("""{"query":"code"}""")]
     [InlineData("""{"search":"a","search":"b"}""")]
     [InlineData("""{"search":5}""")]
-    [InlineData("""[]""")]
+    [InlineData("[]")]
     public async Task should_refuse_a_filter_that_is_not_a_single_search_and_delete_nothing(string json)
     {
         // given
