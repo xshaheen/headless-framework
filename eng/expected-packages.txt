@@ -123,6 +123,7 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.Leases.Dashboard
 Headless.Logging
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore

@@ -7,7 +7,7 @@ packages:
 
 > Part of [Dashboards](../dashboards.md). The .NET contract of a dashboard module: `IDashboardModule`, its capability interfaces, the live stream, peer calls, and operator commands and Operations.
 
-A module is one feature's data and UI under the shell. `Headless.Jobs.Dashboard`, `Headless.Messaging.Dashboard`, and `Headless.Cluster.Dashboard` ship the three built-in modules. The front-end SDK a module's UI is built with (`@headless/dashboard-sdk` and `@headless/dashboard-vite`) is not published to npm in this release. A module without a readable embedded `manifest.json`, which that SDK's build writes, fails the host's start. Read this page to understand what the built-in modules do, or to implement the server side of a module.
+A module is one feature's data and UI under the shell. `Headless.Jobs.Dashboard`, `Headless.Messaging.Dashboard`, `Headless.RateLimiting.Dashboard`, `Headless.Cluster.Dashboard`, and `Headless.Leases.Dashboard` ship the built-in modules. The front-end SDK a module's UI is built with (`@headless/dashboard-sdk` and `@headless/dashboard-vite`) is not published to npm in this release. A module without a readable embedded `manifest.json`, which that SDK's build writes, fails the host's start. Read this page to understand what the built-in modules do, or to implement the server side of a module.
 
 ## Implement `IDashboardModule`
 

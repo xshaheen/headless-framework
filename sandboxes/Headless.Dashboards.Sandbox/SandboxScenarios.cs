@@ -104,6 +104,10 @@ public static class SandboxScenarios
             "Three peer nodes in the membership store (STORE=postgres only): orders-api-1 keeps beating, orders-worker-1 beats once then turns Suspected and Dead, and orders-worker-2 never beats and leaves once pruned; orders-worker-1 carries app.version 4.2.0 against 4.2.1.",
         ["dev-inbox"] = SandboxDevInbox.Descriptions["dev-inbox"],
         ["dev-inbox-send"] = SandboxDevInbox.Descriptions["dev-inbox-send"],
+        ["leases"] =
+            "Fenced leases in every state across the host scope and the tenants acme and globex, in the kinds ledger-export, invoice-batch, and search-reindex: live (two with progress), two expired, settled, released, revoked, one taken over after expiry, and one abandoned by a sweep.",
+        ["locks"] =
+            "Four held distributed locks: three with a two-minute TTL that the sandbox renews while it runs, and one with no expiry.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -203,6 +207,8 @@ public static class SandboxScenarios
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),
             "cluster-peers" => await SandboxCluster.AddPeersAsync(provider, cancellationToken),
             "dev-inbox" or "dev-inbox-send" => await SandboxDevInbox.RunAsync(name, provider, cancellationToken),
+            "leases" => await SandboxLeases.SeedLeasesAsync(provider, cancellationToken),
+            "locks" => await SandboxLeases.HoldLocksAsync(provider, cancellationToken),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."

@@ -1,6 +1,6 @@
 ---
 domain: Fencing
-packages: Fencing.Abstractions, Fencing, Fencing.Sql, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite, Fencing.EntityFramework
+packages: Fencing.Abstractions, Fencing, Fencing.Sql, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite, Fencing.EntityFramework, Leases.Dashboard
 ---
 
 # Fencing
@@ -663,3 +663,48 @@ No service registration: the package adds model-builder, `DbContext`, and `IQuer
 - **Transitions.** Pass `context.Database.GetDbConnection()` and `context.Database.CurrentTransaction?.GetDbTransaction()`. With a transaction the call enlists and the context's commit or rollback decides both; with none it runs in its own transaction, so open the connection first (`OpenConnectionAsync`) when you want it to stay open across calls.
 - **Candidate queries.** `WhereLeaseLive` keeps rows that are `Active` and expire after the database clock; `WhereLeaseGrantable` keeps every other row (idle, ended, or expired). The clock is the one `UseFencingDatabaseClock(dialect)` maps (`clock_timestamp()`, `SYSUTCDATETIME()`, or SQLite's `'now'` in the dialect's text format); without it the query fails to translate, and outside a query the clock throws `InvalidOperationException`. A candidate can be granted or expire between the read and the transition, so use these to select work and the transition's answer to decide it.
 - **Not provided.** A fenced `ExecuteUpdate`: a write fenced by the generation is `FencedRows.WriteAsync` or the `FencedRowWrite` of a settlement. `IFencedLeaseInspector` does not read leases kept on your own rows; query your entity with `WhereLeaseLive` or `WhereLeaseGrantable` instead.
+
+---
+
+## Headless.Leases.Dashboard
+
+### API and behavior
+
+- The dashboard's Leases module: every fenced lease with its stored status, holder, generation, takeovers, database-clock times, and progress size and contract, and the distributed locks the registered provider lists as held.
+- It reads `IFencedLeaseInspector` and the unkeyed `IDistributedLock`. It stores nothing and writes to neither.
+- The routes and views are in the [Leases module](dashboards/leases-module.md) topic.
+
+### Install
+
+```bash
+dotnet add package Headless.Leases.Dashboard
+```
+
+### Setup and use
+
+Add the module inside `AddHeadlessDashboard`. Register Fencing with a provider for the Fenced leases view, and a lock provider for the Distributed locks view; either half alone works, in any order.
+
+```csharp
+using Headless.Fencing;
+using Headless.Leases;
+
+builder.Services.AddHeadlessFencing(fencing => fencing.UsePostgreSql(connectionString));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithHostAuthentication().AddLeases());
+```
+
+**Verify:** `{base}/leases` lists your leases; a host with neither Fencing nor a lock provider fails to start naming `AddHeadlessFencing`.
+
+### Configuration
+
+| `LeasesDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | The host policies for reading the module. It has no operate-only action. |
+
+### Runtime behavior
+
+- Read-only. No view releases, revokes, or purges a lease or unlocks a lock: a release cannot stop what the holder is already doing outside the store. Purge ended leases from code with `IFencedLeases.PurgeAsync`.
+- Every lease time and state comes from the database clock through the inspector; the browser never derives a state.
+- Counts stop at 10,000 and read `10000+`, as `CountAsync` caps them.
+- The kinds filter is kept 30 seconds per process, because `ListKindsAsync` scans the whole lease table.
+- A `NullDistributedLock` counts as no lock provider. Redis lists every holder; PostgreSQL, SQL Server, and in-memory providers list only this host's handles, and the Distributed locks view says so.
+
