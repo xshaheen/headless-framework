@@ -11,7 +11,7 @@ packages: Dashboard
 
 `Headless.Dashboard` has two parts:
 
-- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`), and `Headless.Messaging.Dashboard` adds the Messaging module (`AddMessaging()`).
+- **The shell.** `services.AddHeadlessDashboard(...)` registers it and `app.MapHeadlessDashboard()` mounts it, by default at `/headless`. It serves every registered module under that base path with one sign-in, one session cookie, one live stream, and one command pipeline. It stores nothing: each module reads its own store. The package ships no module of its own. `Headless.Jobs.Dashboard` adds the Jobs module (`AddJobs()`), `Headless.Messaging.Dashboard` adds the Messaging module (`AddMessaging()`), and `Headless.Cluster.Dashboard` adds the Cluster module (`AddCluster()`).
 - **Authentication for a dashboard a host writes.** The per-dashboard primitives the shell is built on, `AddDashboardAuthentication(name, ...)` and its endpoint conventions, protect a dashboard the host serves outside the shell.
 
 Read [jobs.md](jobs.md) for Headless Jobs and [messaging.md](messaging.md) for Headless Messaging.
@@ -49,6 +49,7 @@ There is no custom-validator mode. To sign operators in with your own credential
 | You add the Jobs module, call its API, or migrate from `MapHeadlessJobsDashboard` | [Jobs module](dashboards/jobs-module.md) |
 | You add the Messaging module, call its API, forward between nodes, run a dashboard-only host, or migrate from `MapHeadlessMessagingDashboard` | [Messaging module](dashboards/messaging-module.md) |
 | You add the Rate limits module, look up a subject's attempts, or reset a lockout from the dashboard | [Rate limits module](dashboards/rate-limiting-module.md) |
+| You add the Cluster module to show Coordination membership and the host's health checks, or call its API | [Cluster module](dashboards/cluster-module.md) |
 | You implement a module's server side, read the live stream protocol, write an operator-log sink, or need command and Operation rules | [Modules](dashboards/modules.md) |
 | You protect a dashboard the host serves itself, outside the shell, with `AddDashboardAuthentication` | [Dashboards a host writes](dashboards/host-written.md) |
 

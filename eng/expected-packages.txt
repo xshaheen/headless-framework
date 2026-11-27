@@ -38,6 +38,7 @@ Headless.Captcha.Abstractions
 Headless.Captcha.ReCaptcha
 Headless.Captcha.Turnstile
 Headless.Checks
+Headless.Cluster.Dashboard
 Headless.Context
 Headless.Context.Abstractions
 Headless.Coordination

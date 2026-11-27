@@ -1,6 +1,6 @@
 ---
 domain: Coordination
-packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
+packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite, Cluster.Dashboard
 ---
 
 # Coordination
@@ -587,3 +587,48 @@ Set the schema with `setup.ConfigureStorage(storage => storage.Schema = "…")` 
 ### Runtime behavior
 
 `resources provision` creates the tables, and a host start only verifies them.
+
+---
+
+## Headless.Cluster.Dashboard
+
+### API and behavior
+
+- The dashboard's Cluster module: the incarnations of the liveness snapshot with their state, role, last heartbeat, and metadata agreement, this node's membership event log, and the serving host's health checks with their last 30 results.
+- It reads `INodeMembership`, `IMembershipEventLog`, `CoordinationClusterSummary`, `NodeMetadataAgreement`, and `IHealthCheckMonitor`. It stores nothing.
+- The routes, commands, and views are in the [Cluster module](dashboards/cluster-module.md) topic.
+
+### Install
+
+```bash
+dotnet add package Headless.Cluster.Dashboard
+```
+
+### Setup and use
+
+Add the module inside `AddHeadlessDashboard`. Register Coordination with a provider for the Cluster view, and the host's health checks before `AddCluster()` for the Health view; either half alone works.
+
+```csharp
+using Headless.Cluster;
+
+builder.Services.AddHeadlessCoordination(coordination => coordination.UsePostgreSql(connectionString));
+builder.Services.AddHealthChecks();
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithHostAuthentication().AddCluster());
+```
+
+**Verify:** `{base}/cluster` lists this node; a host with neither Coordination nor health checks fails to start naming `AddHeadlessCoordination`.
+
+### Configuration
+
+| `ClusterDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | The host policies for reading the module and for its probe commands. |
+| `ChangePageSize` | 200 | The most node changes one live read returns, 1 to 1000. |
+
+### Runtime behavior
+
+- Coordination counts as registered when `CoordinationClusterSummary` resolves, so Messaging's default do-nothing membership does not turn the Cluster view on.
+- No check runs in the background. Checks run only when an operator presses Probe now or Probe all, and the Health view reads `Not probed yet` before the first probe.
+- The Health view shows the replica that served the request. Serve the dashboard from one replica, or with sticky sessions.
+- The event log is this node's local view, stamped with its clock; it restarts with the process.
+- Live node changes reach every node: each compares the store's snapshot with the cursor, which means the same thing on every node. A heartbeat alone is not a change.

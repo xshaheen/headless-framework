@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-221 packages &bull; One setup grammar &bull; Swap any provider in one line
+222 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,13 +44,13 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across seven transports.
 
-**You install three packages, not 221.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 222.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
 **The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
-**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` adds the Jobs module to it, for inspecting runs, failures grouped by cause, and cron schedules, and `Headless.Messaging.Dashboard` adds the Messaging module, for messages of every outbox, failures grouped by cause, and nodes found through Kubernetes or Consul.
+**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` adds the Jobs module to it, for inspecting runs, failures grouped by cause, and cron schedules, and `Headless.Messaging.Dashboard` adds the Messaging module, for messages of every outbox, failures grouped by cause, and nodes found through Kubernetes or Consul. `Headless.Cluster.Dashboard` adds the Cluster module, for node liveness, metadata that differs across nodes, and the host's health checks with probes on demand.
 
 **AI coding agents get first-class docs.** [`docs/llms/`](docs/llms/) is a per-domain documentation set written for agents to fetch on demand. See [using Headless with AI agents](#using-headless-with-ai-agents).
 
@@ -255,7 +255,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 221 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 222 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -588,6 +588,7 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
 | [Headless.Coordination.Sqlite](src/Headless.Coordination.Sqlite/README.md) | SQLite membership for processes on one host |
+| [Headless.Cluster.Dashboard](src/Headless.Cluster.Dashboard/README.md) | Cluster module of the Headless dashboard: node liveness, metadata agreement, and health checks |
 
 ### Sequences
 

@@ -240,6 +240,8 @@ jobs:
             lockfile: package-lock.json
           - name: Rate limits
             target: dashboard-rate-limiting-test
+          - name: Cluster
+            target: dashboard-cluster-test
             lockfile: package-lock.json
     steps:
       - name: "Check out repository"

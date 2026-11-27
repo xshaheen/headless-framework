@@ -24,7 +24,7 @@ case "${GITHUB_EVENT_NAME:-}" in
           # Their C# examples compile in a unit test project, so an edit to them must build and test.
           docs/llms/messaging.md | docs/llms/jobs.md | docs/llms/dashboards.md | docs/llms/messaging/* | docs/llms/jobs/* | docs/llms/dashboards/*) dotnet=true ;;
           docs/* | .github/ISSUE_TEMPLATE/* | .github/*.md) ;;
-          src/Headless.Dashboard/wwwroot/* | src/Headless.Jobs.Dashboard/* | src/Headless.Messaging.Dashboard/* | src/Headless.RateLimiting.Dashboard/*)
+          src/Headless.Dashboard/wwwroot/* | src/Headless.Jobs.Dashboard/* | src/Headless.Messaging.Dashboard/* | src/Headless.RateLimiting.Dashboard/* | src/Headless.Cluster.Dashboard/*)
             dotnet=true
             dashboards=true
             ;;

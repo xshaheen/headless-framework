@@ -5,7 +5,7 @@ wiring favors reaching every state quickly over showing production setup. For co
 
 ## Dashboard sandbox
 
-`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs, Messaging, and Rate limits modules, on loopback. The project CLI owns it:
+`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs, Messaging, Rate limits, and Cluster modules, on loopback. The project CLI owns it:
 
 ```sh
 make up                                   # build and start; STORE=postgres adds sandboxes/compose.yaml
@@ -21,7 +21,7 @@ and `down` take the same override.
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Headless, with the Jobs, Messaging, and Rate limits modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`, Rate limits at `/headless/rate-limiting`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
+| Headless, with the Jobs, Messaging, Rate limits, and Cluster modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`, Rate limits at `/headless/rate-limiting`, Cluster at `/headless/cluster`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
 
 Every module sits behind the same sign-in, so inbox and scheduled operations record the signed-in operator's name.
 `GET /sandbox/usable` answers once the Messaging store does, with its published and received counts.
@@ -76,6 +76,10 @@ short cadences (progress writes every 500 ms, a 30 s lease, a 5 s fallback poll)
 | `message-rate-limited` | Six Queue-lane messages for `sandbox.carrier-quotes`, which handles one every 30 s | Received rows that wait for a rate-limit permit and drain one every 30 s. Run it with `message-retrying`: the shipments' retries still run when they are due |
 | `message-publish-failed` | One message published with a delivery deadline that has already passed when it is sent | A published row that failed for good, with Re-send and Delete |
 | `attempts` | Two new `sign-in.password` subjects: one locked out at 5 of 5, one at 2 of 5; the call returns each subject and its window end | Look up a locked-out subject on Rate limits, and Reset its window |
+| `health-healthy`, `health-degraded`, `health-unhealthy` | The `sandbox-dependency` health check reports that status from its next probe on | The Cluster module's Health view: Probe now and Probe all, Needs you health-check items, and the Degraded and Unhealthy counts |
+| `cluster-peers` | Three peer incarnations in the membership store (`STORE=postgres` only; the memory store answers `409`): `orders-api-1` keeps beating, `orders-worker-1` beats once more and then stops, and `orders-worker-2` never beats again; `orders-worker-1` carries `app.version` `4.2.0` against `4.2.1` | The Cluster view with Alive, Suspected, and Dead nodes, the metadata disagreement, and a node that leaves the snapshot once the store prunes it |
+
+The Cluster module shows the Health view on every store: the host registers the `sandbox-dependency` check before the dashboard, so `AddCluster()` registers the health check monitor, and the Jobs and Messaging checks appear beside it. Checks run only when an operator probes them. The Cluster view needs Coordination, which only `STORE=postgres` registers, in the cluster `orders` with role `api` and `app.version` `4.2.1`; on the memory store it explains that Coordination is not registered. The `cluster-peers` peers own no work, so their eventual dead and left events reach the Jobs and Messaging dead-owner recovery harmlessly. Their beats stop with the host.
 
 The host also defines `sandbox.nightly-report` in code with a daily cron schedule, so the Cron jobs view always lists
 a cron job defined in code, whose schedule stays read-only.
