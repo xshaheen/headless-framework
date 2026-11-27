@@ -53,6 +53,7 @@ There is no custom-validator mode. To sign operators in with your own credential
 | You add the Cluster module to show Coordination membership and the host's health checks, or call its API | [Cluster module](dashboards/cluster-module.md) |
 | You add the Dev inbox module to read the emails, SMS, and push notifications a Development host captured | [Dev inbox module](dashboards/dev-inbox-module.md) |
 | You add the Leases module to show fenced leases and held distributed locks, or call its API | [Leases module](dashboards/leases-module.md) |
+| You add the Sequences module to show stored sequence counters to operators, or call its read-only API | [Sequences module](dashboards/sequences-module.md) |
 | You implement a module's server side, read the live stream protocol, write an operator-log sink, or need command and Operation rules | [Modules](dashboards/modules.md) |
 | You protect a dashboard the host serves itself, outside the shell, with `AddDashboardAuthentication` | [Dashboards a host writes](dashboards/host-written.md) |
 

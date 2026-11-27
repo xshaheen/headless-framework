@@ -55,6 +55,8 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Headless.RateLimiting.Dashboard\Headless.RateLimiting.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sequences.Dashboard\Headless.Sequences.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
   </ItemGroup>
   <ItemGroup Label="Generators the examples rely on, run in-process by the test">

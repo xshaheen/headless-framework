@@ -598,6 +598,7 @@ Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fas
 |---------|-------------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences.Dashboard](src/Headless.Sequences.Dashboard/README.md) | Sequences module of the Headless dashboard: a read-only view of every stored counter and its partitions |
 | [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Shared relational counter store for SQL sequences providers |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |

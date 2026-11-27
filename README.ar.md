@@ -637,6 +637,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 |---------|-------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator` و`SequenceRange` والـ accessor `unit.Sequences` |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
+| [Headless.Sequences.Dashboard](src/Headless.Sequences.Dashboard/README.md) | الـ Sequences module في الـ dashboard: تشوف كل الـ counters المتخزنة والـ partitions بتاعتها من غير ما تاخد رقم |
 | [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Counter store relational مشترك لـ providers الـ SQL |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
