@@ -1,9 +1,12 @@
 import {
   DetailPanel,
+  FieldGrid,
+  GridField,
   KeyValueTable,
   Mono,
   PayloadView,
   StatusMark,
+  Tag,
   Text,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
@@ -11,7 +14,7 @@ import { useFormat } from '@headless/dashboard-sdk/locale'
 import { SandboxedHtmlFrame } from '@headless/dashboard-sdk/preview'
 import { DataTable } from '@headless/dashboard-sdk/table'
 import { addressLabel, senderLabel, type EmailDetail, type EmailRow } from '../inbox.ts'
-import { captureStatus, ChannelView, DeleteAction, DownloadLink, withFailure } from '../parts.tsx'
+import { captureStatus, captureTabs, ChannelView, DeleteAction, DownloadLink } from '../parts.tsx'
 
 export default function EmailsView() {
   const format = useFormat()
@@ -22,7 +25,6 @@ export default function EmailsView() {
       title="Emails"
       description="The emails the app tried to send, newest first."
       columns={[
-        { id: 'subject', header: 'Subject', cell: (row) => row.subject, isRowHeader: true, width: '3fr' },
         {
           id: 'to',
           header: 'To',
@@ -35,15 +37,27 @@ export default function EmailsView() {
           kind: 'id',
           width: '2fr',
         },
-        { id: 'sender', header: 'Sender', cell: (row) => senderLabel(row.senderName), priority: 2, width: '1fr' },
         {
-          id: 'attachments',
-          header: 'Attachments',
-          cell: (row) => (row.attachmentCount > 0 ? format.number(row.attachmentCount) : undefined),
-          kind: 'number',
-          priority: 2,
-          width: 110,
+          id: 'subject',
+          header: 'Subject',
+          // The boards mark an email with attachments on its subject rather than in a column of its own.
+          cell: (row) => (
+            <>
+              {row.subject}
+              {row.attachmentCount > 0 ? (
+                <>
+                  {' '}
+                  <Tag>
+                    {row.attachmentCount === 1 ? '1 attachment' : `${format.number(row.attachmentCount)} attachments`}
+                  </Tag>
+                </>
+              ) : null}
+            </>
+          ),
+          isRowHeader: true,
+          width: '3fr',
         },
+        { id: 'sender', header: 'Sender', cell: (row) => senderLabel(row.senderName), priority: 2, width: '1fr' },
         {
           id: 'status',
           header: 'Status',
@@ -80,18 +94,20 @@ function EmailPanel({ email }: { email: EmailDetail }) {
         </>
       }
       defaultTab={email.hasHtml ? 'html' : email.textBody ? 'text' : 'headers'}
-      tabs={withFailure(
+      tabs={captureTabs(
         [
           {
             id: 'html',
             label: 'HTML',
             // Mounted only once the email answered with an HTML body: the frame cannot tell a failed load.
             content: email.hasHtml ? <SandboxedHtmlFrame path={`${path}/html`} title={email.subject} /> : null,
+            facts: <EmailFacts email={email} />,
           },
           {
             id: 'text',
             label: 'Text',
             content: email.textBody ? <PayloadView content={email.textBody} contentType="text/plain" /> : null,
+            facts: <EmailFacts email={email} />,
           },
           { id: 'headers', label: 'Headers', content: <EmailHeaders email={email} /> },
           { id: 'attachments', label: 'Attachments', content: <EmailAttachments email={email} path={path} /> },
@@ -99,6 +115,39 @@ function EmailPanel({ email }: { email: EmailDetail }) {
         email.failureError,
       )}
     />
+  )
+}
+
+/** Who sent the email to whom, beside its body, as the board's facts column reads them. */
+function EmailFacts({ email }: { email: EmailDetail }) {
+  return (
+    <FieldGrid label="Message" columns={2}>
+      <GridField label="From" span={2}>
+        <Mono>{addressLabel(email.from)}</Mono>
+      </GridField>
+      <GridField label="To" span={2}>
+        <Mono>{email.to.map(addressLabel).join(', ')}</Mono>
+      </GridField>
+      {email.cc.length > 0 ? (
+        <GridField label="Cc" span={2}>
+          <Mono>{email.cc.map(addressLabel).join(', ')}</Mono>
+        </GridField>
+      ) : null}
+      {email.bcc.length > 0 ? (
+        <GridField label="Bcc" span={2}>
+          <Mono>{email.bcc.map(addressLabel).join(', ')}</Mono>
+        </GridField>
+      ) : null}
+      <GridField label="Sender">{senderLabel(email.senderName)}</GridField>
+      <GridField label="Captured">
+        <Timestamp value={email.capturedAt} />
+      </GridField>
+      {email.traceId ? (
+        <GridField label="Trace id" span={2}>
+          <Mono>{email.traceId}</Mono>
+        </GridField>
+      ) : null}
+    </FieldGrid>
   )
 }
 

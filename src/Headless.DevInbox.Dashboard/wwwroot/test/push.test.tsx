@@ -24,6 +24,23 @@ describe('push view', () => {
     expect(screen.queryByRole('columnheader', { name: 'Provider' })).toBeNull()
   })
 
+  it('marks an oversized push in the list', async () => {
+    open({ push: [push({ exceedsPayloadLimit: true })] }, { path: 'push' })
+
+    expect(within(await screen.findByRole('row', { name: /device-token-1/ })).getByText('Over limit')).toBeTruthy()
+  })
+
+  it('shows the data payload on the Overview beside the facts, with no tab of its own', async () => {
+    const normal = push()
+    open({ push: [normal] }, { path: `push?open=${normal.id}` })
+
+    await screen.findByText('120 bytes')
+    expect(screen.getByRole('heading', { name: 'Data' })).toBeTruthy()
+    expect(screen.getByText(/"orderId"/)).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Data' })).toBeNull()
+    expect(within(screen.getByRole('region', { name: 'Sent as' })).getByText('Device token')).toBeTruthy()
+  })
+
   it('warns about an oversized push and its size', async () => {
     const large = push({ payloadSizeBytes: 5_120, exceedsPayloadLimit: true })
     open({ push: [large] }, { path: `push?open=${large.id}` })

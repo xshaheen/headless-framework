@@ -40,9 +40,13 @@ import {
   type ChannelKind,
 } from './inbox.ts'
 
+/**
+ * The boards draw this as a strip under the top bar, which only the shell can place, so it opens the view instead; the
+ * `warn` tone keeps the boards' warning tint.
+ */
 export function DevelopmentBanner() {
   return (
-    <Banner tone="info">Development only. These messages were captured instead of sent; nothing was delivered.</Banner>
+    <Banner tone="warn">Development only. These messages were captured instead of sent; nothing was delivered.</Banner>
   )
 }
 
@@ -50,21 +54,35 @@ export function FailureNotice({ error }: { error?: string | null }) {
   return error ? <Banner tone="error">{`The send failed: ${error}`}</Banner> : null
 }
 
-/** Puts a failed send's error at the top of every tab the panel shows, so it reads first whichever tab is open. */
-export function withFailure(tabs: readonly DetailTab[], error?: string | null): DetailTab[] {
-  return tabs.map((tab) =>
-    tab.content === null || !error
-      ? tab
-      : {
-          ...tab,
-          content: (
-            <>
-              <FailureNotice error={error} />
-              {tab.content}
-            </>
-          ),
-        },
-  )
+/** One tab of a capture's panel: its main content and, beside it, the facts column. */
+export interface CaptureTab {
+  id: string
+  label: string
+  /** The tab's main column; `null` leaves the tab out. */
+  content: ReactNode
+  /** The facts beside the main column; without them the main column spans the panel. */
+  facts?: ReactNode
+}
+
+/**
+ * The panel body lays each top-level child out as a column, so each tab gets exactly its main column and its facts
+ * column, and a failed send's error opens the main column of every tab, so it reads first whichever tab is open.
+ */
+export function captureTabs(tabs: readonly CaptureTab[], error?: string | null): DetailTab[] {
+  return tabs.map(({ id, label, content, facts }) => ({
+    id,
+    label,
+    content:
+      content === null ? null : (
+        <>
+          <div>
+            <FailureNotice error={error} />
+            {content}
+          </div>
+          {facts ? <div>{facts}</div> : null}
+        </>
+      ),
+  }))
 }
 
 export function captureStatus(row: Pick<CaptureRow, 'failed'>) {

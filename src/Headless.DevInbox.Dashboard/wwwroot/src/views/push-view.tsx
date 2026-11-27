@@ -11,7 +11,7 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { senderLabel, type PushDetail, type PushRow } from '../inbox.ts'
-import { captureStatus, ChannelView, DeleteAction, withFailure } from '../parts.tsx'
+import { captureStatus, captureTabs, ChannelView, DeleteAction } from '../parts.tsx'
 
 export default function PushView() {
   const format = useFormat()
@@ -57,7 +57,7 @@ export default function PushView() {
             row.failed ? (
               <StatusMark tone="fail" label="Failed" />
             ) : row.exceedsPayloadLimit ? (
-              <StatusMark tone="sched" label="Over limit" />
+              <StatusMark tone="proc" label="Over limit" />
             ) : undefined,
           kind: 'status',
           width: 110,
@@ -87,11 +87,12 @@ function PushPanel({ push }: { push: PushDetail }) {
       id={push.id}
       status={captureStatus(push)}
       actions={<DeleteAction kind="push" id={push.id} name={`The push “${name}”`} />}
-      tabs={withFailure(
+      tabs={captureTabs(
         [
           {
             id: 'overview',
             label: 'Overview',
+            // The board's first column is what a device would show and the data it carries; the facts sit beside it.
             content: (
               <>
                 {push.exceedsPayloadLimit ? (
@@ -99,25 +100,42 @@ function PushPanel({ push }: { push: PushDetail }) {
                     {`Over the ${format.number(push.maxPayloadBytes)}-byte limit. Firebase Cloud Messaging and APNs would likely reject this push.`}
                   </Banner>
                 ) : null}
-                {push.isDataOnly ? <Text tone="hint">Data-only push: wakes the app and shows nothing.</Text> : null}
-                <FieldGrid label="Notification">
-                  {push.title ? (
-                    <GridField label="Title" span={2}>
-                      {push.title}
-                    </GridField>
-                  ) : null}
-                  {push.body ? (
-                    <GridField label="Body" span={2}>
-                      {push.body}
-                    </GridField>
-                  ) : null}
+                {push.isDataOnly ? (
+                  <Text tone="hint">Data-only push: wakes the app and shows nothing.</Text>
+                ) : (
+                  <FieldGrid label="Notification" columns={2}>
+                    {push.title ? (
+                      <GridField label="Title" span={2}>
+                        {push.title}
+                      </GridField>
+                    ) : null}
+                    {push.body ? (
+                      <GridField label="Body" span={2}>
+                        {push.body}
+                      </GridField>
+                    ) : null}
+                  </FieldGrid>
+                )}
+                {data ? (
+                  <>
+                    <Text tone="label" as="h3">
+                      Data
+                    </Text>
+                    <PayloadView content={data} contentType="application/json" />
+                  </>
+                ) : null}
+              </>
+            ),
+            facts: (
+              <>
+                <FieldGrid label="Sent as" columns={2}>
+                  <GridField label={push.targets.length === 1 ? 'Device token' : 'Device tokens'} span={2}>
+                    <Mono>{push.targets.join(', ')}</Mono>
+                  </GridField>
                   <GridField label="Payload size">{`${format.number(push.payloadSizeBytes)} bytes`}</GridField>
                   <GridField label="Sender">{senderLabel(push.senderName)}</GridField>
                   <GridField label="Captured" span={2}>
                     <Timestamp value={push.capturedAt} />
-                  </GridField>
-                  <GridField label={push.targets.length === 1 ? 'Device token' : 'Device tokens'} span={2}>
-                    <Mono>{push.targets.join(', ')}</Mono>
                   </GridField>
                   {push.traceId ? (
                     <GridField label="Trace id" span={2}>
@@ -128,11 +146,6 @@ function PushPanel({ push }: { push: PushDetail }) {
                 <DeliveryOptions push={push} />
               </>
             ),
-          },
-          {
-            id: 'data',
-            label: 'Data',
-            content: data ? <PayloadView content={data} contentType="application/json" /> : null,
           },
         ],
         push.failureError,

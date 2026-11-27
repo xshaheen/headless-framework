@@ -14,7 +14,7 @@ afterEach(async () => {
 })
 
 describe('emails view', () => {
-  it('lists emails with subject, recipient, sender, and the attachment count of the one that has one', async () => {
+  it('lists emails with recipient, subject, sender, and marks the one with an attachment on its subject', async () => {
     open(
       {
         emails: [
@@ -34,8 +34,40 @@ describe('emails view', () => {
     const invoice = await screen.findByRole('row', { name: /Your invoice/ })
     expect(within(invoice).getByText('ada@example.com')).toBeTruthy()
     expect(within(invoice).getByText('billing')).toBeTruthy()
-    expect(within(invoice).getByText('1')).toBeTruthy()
-    expect(screen.getByText(/Development only/)).toBeTruthy()
+    expect(within(invoice).getByText('1 attachment')).toBeTruthy()
+    expect(within(screen.getByRole('row', { name: /Welcome aboard/ })).queryByText(/attachment/)).toBeNull()
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'To',
+      'Subject',
+      'Sender',
+      'Status',
+      'Captured',
+    ])
+  })
+
+  it('opens with the Development-only notice in the warning tone', async () => {
+    open({ emails: [email()] }, { path: 'emails' })
+
+    const notice = (await screen.findByText(/Development only/)).closest('[data-tone]')
+    expect(notice?.getAttribute('data-tone')).toBe('warn')
+  })
+
+  it('marks a failed email in the list', async () => {
+    open({ emails: [email({ subject: 'Broken', failed: true }), email({ subject: 'Fine' })] }, { path: 'emails' })
+
+    expect(within(await screen.findByRole('row', { name: /Broken/ })).getByText('Failed')).toBeTruthy()
+    expect(within(screen.getByRole('row', { name: /Fine/ })).queryByText('Failed')).toBeNull()
+  })
+
+  it('shows who sent the email to whom beside its HTML preview', async () => {
+    const message = email({ subject: 'Styled', hasHtml: true })
+    open({ emails: [message] }, { path: `emails?open=${message.id}` })
+
+    await screen.findByTitle('Styled')
+    const facts = screen.getByRole('region', { name: 'Message' })
+    expect(within(facts).getByText('From')).toBeTruthy()
+    expect(within(facts).getByText('To')).toBeTruthy()
+    expect(within(facts).getByText('Sender')).toBeTruthy()
   })
 
   it('sends the search to the emails list and shows the matching rows', async () => {

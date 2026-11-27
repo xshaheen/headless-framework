@@ -10,7 +10,7 @@ import {
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
 import { encodingName, lengthLabel, partsLabel, senderLabel, type SmsDetail, type SmsRow } from '../inbox.ts'
-import { captureStatus, ChannelView, DeleteAction, withFailure } from '../parts.tsx'
+import { captureStatus, captureTabs, ChannelView, DeleteAction } from '../parts.tsx'
 
 export default function SmsView() {
   const format = useFormat()
@@ -73,14 +73,14 @@ function SmsPanel({ sms }: { sms: SmsDetail }) {
       id={sms.id}
       status={captureStatus(sms)}
       actions={<DeleteAction kind="sms" id={sms.id} name={`The SMS to ${sms.recipients[0] ?? 'its recipient'}`} />}
-      tabs={withFailure(
+      tabs={captureTabs(
         [
           {
             id: 'message',
             label: 'Message',
-            content: (
+            content: <PayloadView content={sms.text} contentType="text/plain" />,
+            facts: (
               <>
-                <PayloadView content={sms.text} contentType="text/plain" />
                 <FieldGrid label="How a carrier sends it" columns={3}>
                   <GridField label="Encoding">{encodingName(sms.segmentation.encoding)}</GridField>
                   <GridField label="Length">{lengthLabel(sms.segmentation)}</GridField>
