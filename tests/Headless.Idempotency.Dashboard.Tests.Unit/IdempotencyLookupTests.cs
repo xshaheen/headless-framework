@@ -305,6 +305,49 @@ public sealed class IdempotencyLookupTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_report_a_store_failure_when_the_caller_cancels_the_lookup()
+    {
+        // given: an inspector that waits until the request is aborted, then throws as a store call would
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inspector = Substitute.For<IIdempotencyInspector>();
+        inspector
+            .InspectAsync(default!, AbortToken)
+            .ReturnsForAnyArgs(call => _WaitForAbortAsync(entered, call.Arg<CancellationToken>()));
+        using var logs = new RecordingLoggerProvider();
+        await using var app = await IdempotencyHost.StartAsync(
+            _time,
+            AbortToken,
+            configure: services => services.AddSingleton(inspector),
+            logs: logs
+        );
+        using var client = IdempotencyHost.Client(app);
+        var cookie = await IdempotencyHost.SignInAsync(client, "viewer", AbortToken);
+        using var abort = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+#pragma warning disable CA2025 // False positive: the task is awaited below, before client and abort are disposed; it stays pending so the test can abort it.
+        var lookup = IdempotencyHost.PostAsync(client, _Lookup, new { key = _Key }, cookie, abort.Token);
+#pragma warning restore CA2025
+
+        // when
+        await entered.Task.WaitAsync(AbortToken);
+        await abort.CancelAsync();
+        Exception? thrown = null;
+
+        try
+        {
+            using var response = await lookup;
+        }
+        catch (OperationCanceledException exception)
+        {
+            thrown = exception;
+        }
+
+        // then
+        thrown.Should().NotBeNull();
+        logs.Entries.Should()
+            .NotContain(static entry => entry.Message.Contains("failed in the store", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task should_answer_400_naming_the_field_when_the_store_refuses_an_argument()
     {
         // given
@@ -416,6 +459,18 @@ public sealed class IdempotencyLookupTests : TestBase
 
         // then
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+    }
+
+    private static async ValueTask<IdempotencyRecordSnapshot?> _WaitForAbortAsync(
+        TaskCompletionSource entered,
+        CancellationToken cancellationToken
+    )
+    {
+        entered.SetResult();
+        // Completes only when the request is aborted, as a store call blocked on I/O would.
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+
+        return null;
     }
 
     private static async Task<(HttpStatusCode Status, string Text, JsonElement Body)> _LookUpAsync(
