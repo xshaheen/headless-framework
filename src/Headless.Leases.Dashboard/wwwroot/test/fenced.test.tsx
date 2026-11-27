@@ -82,7 +82,7 @@ describe('fenced leases', () => {
 
   it('keeps the kind, tenant, and prefix filters when a state card is followed', async () => {
     const actor = user()
-    const view = open(fake, { path: '?kind=ledger-export&prefix=export%2F' })
+    const view = open(fake, { path: '?kind=ledger-export&tenant=acme&prefix=export%2F' })
 
     await screen.findByRole('grid', { name: 'Fenced leases' })
     await actor.click(screen.getByRole('link', { name: /Expired/ }))
@@ -92,6 +92,7 @@ describe('fenced leases', () => {
           (request) =>
             request.query?.state === 'Expired' &&
             request.query.kind === 'ledger-export' &&
+            request.query.tenant === 'acme' &&
             request.query.prefix === 'export/',
         ),
       ).toBe(true),
