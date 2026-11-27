@@ -52,7 +52,7 @@ Declare every flow the app limits in `AttemptLimiterOptions.Purposes`. The scree
 | `GET {base}/api/rate-limiting/catalogue` | view | `{ purposes: [{ name, limit, windowSeconds }], shortest, counterStore, cacheName }`, purposes sorted by name. `counterStore` is `named` (with `cacheName`), `remote`, or `default`, the cache the built-in limiter counts in; it is absent under a custom limiter. |
 | `POST {base}/api/rate-limiting/lookup` | view | One subject's current window: `{ purpose, fingerprint, count, limit, remaining, isLockedOut, windowStartsAt, windowEndsAt, closesInSeconds, quota, declared }`. |
 
-The lookup body is `{ purpose, subject, quota? }` with `quota = { limit, windowSeconds }`. It is a POST so the subject never reaches a URL or a request log; send `X-Requested-With` as for every dashboard POST.
+The lookup body is `{ purpose, subject, quota? }` with `quota = { limit, windowSeconds }`. It is a POST so the subject never reaches a URL or a standard access log; send `X-Requested-With` as for every dashboard POST. Do not enable HTTP request-body logging on `{base}/api/rate-limiting/lookup` or `{base}/api/rate-limiting/commands/*` (or redact `subject` in any body-logging middleware or reverse proxy), because both endpoints carry the raw subject in the JSON request body.
 
 - A lookup spends no attempt and creates no counter. A subject with no attempts reads `count: 0`.
 - `count` includes refused attempts and can exceed `limit`. `closesInSeconds` is read at lookup time and is at least 1.

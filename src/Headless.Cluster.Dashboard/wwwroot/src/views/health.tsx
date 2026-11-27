@@ -350,7 +350,7 @@ function CheckPanel({ name, onProbed }: { name: string; onProbed: (rows: RowResu
   if (gone) {
     return (
       <DetailPanel label={`Check ${name}`} name={name}>
-        <Banner tone="warn">This host no longer registers a check with this name.</Banner>
+        <EmptyState role="alert" title="This host no longer registers a check with this name." />
       </DetailPanel>
     )
   }

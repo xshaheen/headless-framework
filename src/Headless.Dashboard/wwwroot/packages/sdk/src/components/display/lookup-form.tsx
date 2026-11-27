@@ -57,7 +57,7 @@ export function LookupForm({
   }
 
   return (
-    <section className={cardSurface} aria-label={title}>
+    <section className={`hd-lookup ${cardSurface}`} aria-label={title}>
       <header className={headingRow}>
         <h2 className={cardHeading}>
           {Icon ? <Icon /> : null}
@@ -66,7 +66,12 @@ export function LookupForm({
       </header>
       <div className="flex flex-col gap-2.5 p-3.5">
         {description != null ? <p className="hd-hint">{description}</p> : null}
-        <form role="search" aria-label={title} className="flex flex-wrap items-end gap-2.5" onSubmit={submit}>
+        <form
+          role="search"
+          aria-label={title}
+          className="flex flex-wrap items-end gap-2.5 [&>.hd-field-full]:min-w-[min(100%,16rem)] [&>.hd-field-full]:flex-1"
+          onSubmit={submit}
+        >
           {children}
           <Button type="submit" variant="primary" isPending={isPending}>
             {submitLabel}
@@ -74,7 +79,7 @@ export function LookupForm({
         </form>
         {hint != null ? <p className="hd-hint">{hint}</p> : null}
       </div>
-      {result != null ? <div className="border-t border-border p-3.5">{result}</div> : null}
+      {result != null ? <div className="flex flex-col gap-3 border-t border-border p-3.5">{result}</div> : null}
     </section>
   )
 }

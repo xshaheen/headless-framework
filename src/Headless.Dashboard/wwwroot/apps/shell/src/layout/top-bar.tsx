@@ -252,24 +252,28 @@ export function TopBar({ product, goTo, attention, onMany, menu }: TopBarProps) 
         headless
       </span>
       <ProductTabs current={product} attention={sections} />
-      <span className="flex-1" />
+      <span className="min-w-0 flex-1 shrink!" />
       <GoTo input={goTo} onMany={onMany} />
       <Button
         ref={attention.trigger}
         variant="ghost"
-        className={`border-border font-normal hd-tone-${role}`}
+        className={`border-border font-normal hd-tone-${role}${phone ? (total.value === 0 ? ' hd-icon' : ' gap-1.5 px-2') : ''}`}
         aria-expanded={attention.isOpen}
         onPress={attention.toggle}
       >
         <span className="hd-mark" aria-hidden="true" />
-        {/* On a phone the word folds away and the count stays, so the product tabs keep room to read; the name is
-            still read out. */}
-        <span>
-          <span className={phone ? 'sr-only' : undefined}>Attention</span>
-          {/* The space keeps the button's name `Attention 23`; with the word folded away it leads the line and
-              collapses, so the count sits flush beside the dot. */}
-          {total.value > 0 ? <> {format.count(total)}</> : null}
-        </span>
+        {/* On a phone the word folds away and the count stays, so the product tabs keep room to read; with zero items
+            the pill becomes a centered square icon button rather than leaving an empty gap beside the dot. */}
+        {phone && total.value === 0 ? (
+          <span className="sr-only">Attention</span>
+        ) : (
+          <span>
+            <span className={phone ? 'sr-only' : undefined}>Attention</span>
+            {/* The space keeps the button's name `Attention 23`; with the word folded away it leads the line and
+                collapses, so the count sits flush beside the dot. */}
+            {total.value > 0 ? <> {format.count(total)}</> : null}
+          </span>
+        )}
       </Button>
       <AttentionPopover
         sections={items.data}

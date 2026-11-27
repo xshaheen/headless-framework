@@ -155,7 +155,7 @@ internal sealed class HealthEndpoints(ClusterServices services)
             return static check => Latest(check) is null;
         }
 
-        if (ClusterEndpoints.TryParseName<HealthStatus>(value, out var status))
+        if (DashboardValidation.TryParseEnumName<HealthStatus>(value, out var status))
         {
             return check => Latest(check)?.Status == status;
         }

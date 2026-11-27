@@ -6,7 +6,6 @@ using Headless.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Cluster;
@@ -27,9 +26,9 @@ public static class SetupClusterDashboard
         /// ran. A host with neither fails to start with a message naming both calls.
         /// </para>
         /// <para>
-        /// When health checks are already registered at this call, it also registers the health check monitor
-        /// (<c>AddHeadlessHealthCheckMonitor()</c>), which the Health view and the probe commands read. A host that
-        /// registers its health checks after this call registers the monitor itself.
+        /// When health checks are registered anywhere in the host (before or after this call), it also resolves the
+        /// health check monitor (<c>IHealthCheckMonitor</c>), which the Health view and the probe commands read. Call
+        /// <c>AddHeadlessHealthCheckMonitor(aliveTag)</c> explicitly when a custom liveness tag is needed.
         /// </para>
         /// </remarks>
         /// <returns>The same builder for chaining.</returns>
@@ -89,12 +88,9 @@ public static class SetupClusterDashboard
     {
         var services = dashboard.Services;
 
-        // A health-only host then works with this one call. The check reads the collection as it stands, so health
-        // checks registered later need the monitor registered by the host, which the Health view says in place.
-        if (services.Any(static descriptor => descriptor.ServiceType == typeof(HealthCheckService)))
-        {
-            services.AddHeadlessHealthCheckMonitor();
-        }
+        // Resolve the health check monitor whenever HealthCheckService is registered in the built container,
+        // regardless of whether AddHealthChecks() runs before or after AddCluster().
+        services.TryAddHeadlessHealthCheckMonitorIfRegistered();
 
         services.AddStartupValidator<ClusterDashboardStartupValidator>();
         services.TryAddSingleton(TimeProvider.System);

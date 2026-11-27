@@ -82,4 +82,25 @@ describe('LookupForm', () => {
     expect(region.textContent).toBe("Check a keyReads the key's current claim.KeyCheckKeys are case-sensitive.Claimed by node-a")
     expect(await axeViolations(container)).toEqual([])
   })
+
+  it('keeps a visually hidden field description as aria-describedby for assistive technology', () => {
+    render(
+      <LookupForm title="Check a key" onSubmit={() => undefined}>
+        <TextInputField
+          label="Tenant"
+          description="Leave blank for the host scope."
+          descriptionHidden
+          value=""
+          onChange={() => undefined}
+        />
+      </LookupForm>,
+    )
+
+    const input = screen.getByRole('textbox', { name: 'Tenant' })
+    const describedBy = input.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    const description = document.getElementById(describedBy!)
+    expect(description?.textContent).toBe('Leave blank for the host scope.')
+    expect(description?.className).toContain('sr-only')
+  })
 })

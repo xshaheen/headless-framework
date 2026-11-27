@@ -85,6 +85,7 @@ export function pausable(stream: DashboardStream): PausableStream {
     },
 
     getPending: () => (queue ? pending : null),
+    isPaused: () => queue !== null,
 
     onPauseChange(listener) {
       listeners.add(listener)

@@ -245,6 +245,9 @@ const minList = 160
 
 export interface PageFrameProps {
   frame: PageFrameState
+  /** A view switch shared across sibling views (such as Fenced leases / Distributed locks), pinned above `stats` so
+   * switching views never shifts it vertically. */
+  switcher?: ReactNode
   /** The stat strip, when the view has one. */
   stats?: ReactNode
   /** The page header: title, count, filters, selection cluster, primary action. */
@@ -263,7 +266,7 @@ export interface PageFrameProps {
  * jumps to its limits on Home and End, and resets on double-click; the height is remembered per view. At 1280 px and
  * wider the panel can move to the side; below 768 px it opens full screen.
  */
-export function PageFrame({ frame, stats, header, children, panel, form }: PageFrameProps) {
+export function PageFrame({ frame, switcher, stats, header, children, panel, form }: PageFrameProps) {
   // Below 1280 px: 1 (docked below only), below 768 px: 2 (modal), else 0.
   const phone = useBelow(below.phone)
   const wide = useBelow(below.wide)
@@ -362,6 +365,11 @@ export function PageFrame({ frame, stats, header, children, panel, form }: PageF
           the shell's and the layout's hooks. */}
       <div className="hd-frame group/frame flex h-full min-h-0 min-w-0 flex-col data-side:flex-row" data-side={(open && beside) || undefined}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {switcher ? (
+            <div className="flex flex-none flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2">
+              {switcher}
+            </div>
+          ) : null}
           {stats}
           {header}
           <div

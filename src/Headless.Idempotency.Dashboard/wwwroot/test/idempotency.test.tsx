@@ -91,15 +91,21 @@ describe('idempotency', () => {
     expect(within(region).queryByText('Generation')).toBeNull()
   })
 
-  // The search row aligns its fields to the bottom, so a field with its own helper line sits higher than the rest:
-  // the form-level hint carries the guidance instead, as the board draws it.
-  it('keeps helper text off the search fields so the row lines up', async () => {
+  // The search row aligns its fields to the bottom, so Tenant's helper description is visually hidden (`sr-only`)
+  // while remaining wired via `aria-describedby` for assistive technology.
+  it('wires a visually hidden description on Tenant while keeping visible helper text off the search row', async () => {
     open()
 
     const form = await screen.findByRole('search', { name: 'Look up a key' })
-    for (const field of within(form).getAllByRole('textbox')) {
-      expect(field.getAttribute('aria-describedby')).toBeNull()
-    }
+    const tenantField = within(form).getByRole('textbox', { name: /^Tenant/ })
+    const describedBy = tenantField.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    const description = document.getElementById(describedBy!)
+    expect(description?.textContent).toBe('Leave blank for the host scope (no tenant).')
+    expect(description?.className).toContain('sr-only')
+
+    const keyField = within(form).getByRole('textbox', { name: /^Idempotency key/ })
+    expect(keyField.getAttribute('aria-describedby')).toBeNull()
   })
 
   it('names the tenant it searched when a tenant lookup finds nothing', async () => {
@@ -239,6 +245,8 @@ describe('idempotency', () => {
     const region = await result()
     expect(within(region).getByText('key must not start or end with white space.')).toBeTruthy()
     expect(region.textContent).not.toContain(key)
+    expect(within(region).getByRole('alert').textContent).toBe('key must not start or end with white space.')
+    expect(screen.queryAllByRole('status').some((status) => status.textContent?.includes('white space'))).toBe(false)
   })
 
   it('asks for a key before it sends a lookup', async () => {

@@ -82,7 +82,7 @@ Routes sit under `{base}/api/dev-inbox`, behind the module's view policy. Every 
 | `GET emails/{id}/eml` | The whole message as `message/rfc822`, as an attachment named `<id>.eml` |
 | `GET emails/{id}/attachments/{index}` | The attachment at that position, or `404` when its content was omitted or the index is out of range |
 
-- A channel whose store is absent answers `404` with a problem whose `code` is `channel_unconfigured`.
+- A channel whose store is absent answers `404` with a problem whose `code` is `dev_inbox:channel_unconfigured`.
 - A list row carries no body, HTML, payload, or attachment bytes. The detail lists each attachment's `index`, `fileName`, `contentType`, `sizeBytes`, and `isOmitted`.
 - An SMS detail's `segmentation` gives `encoding` (`gsm7` or `ucs2`), `length` in that encoding's units, and `parts`. GSM-7 counts septets, and an extension character such as `€` takes two. UCS-2 counts UTF-16 code units. The view labels them `septets` and `UTF-16 code units`, never characters.
 - A push detail gives `payloadSizeBytes`, `exceedsPayloadLimit` (over 4,096 bytes, which Firebase Cloud Messaging and APNs would likely reject), and only the delivery options the app set.

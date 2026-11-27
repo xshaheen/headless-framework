@@ -84,4 +84,15 @@ describe('renderModule', () => {
 
     expect((await screen.findByRole('alert')).textContent).toBe('No API handler for GET diag/runs.')
   })
+
+  it('tracks pause state on the fake stream', () => {
+    const view = renderModule(diagnostics, { path: 'runs', api: () => runs })
+    expect(view.stream.isPaused?.()).toBe(false)
+
+    view.stream.setPaused(true)
+    expect(view.stream.isPaused?.()).toBe(true)
+
+    view.stream.setPaused(false)
+    expect(view.stream.isPaused?.()).toBe(false)
+  })
 })

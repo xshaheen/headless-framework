@@ -167,7 +167,7 @@ public sealed class ListEndpointTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var problem = await DevInboxTestHost.ReadAsync(response, AbortToken);
-        problem.GetProperty("code").GetString().Should().Be("channel_unconfigured");
+        problem.GetProperty("code").GetString().Should().Be("dev_inbox:channel_unconfigured");
         problem.GetProperty("detail").GetString().Should().Contain("UseDevelopment()").And.Contain("AddHeadlessSms");
     }
 

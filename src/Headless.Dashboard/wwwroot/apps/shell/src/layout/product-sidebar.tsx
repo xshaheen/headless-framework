@@ -76,16 +76,39 @@ function mostSpecificEntry<T extends { to: string }>(entries: readonly T[], sear
   return best
 }
 
-/** A product's sidebar entries, each with the path it links to. */
+/** A product's sidebar entries, with same-label sections merged in registration order. */
 function productSections(product: BootstrapProduct) {
-  return product.sections.map((section) => ({
-    ...section,
-    entries: section.entries.map((entry) => ({
+  const merged: {
+    key: string
+    label?: string | null
+    entries: (BootstrapSidebarEntry & { module: string; to: string })[]
+  }[] = []
+  const byLabel = new Map<string, (typeof merged)[number]>()
+
+  for (const [index, section] of product.sections.entries()) {
+    const entries = section.entries.map((entry) => ({
       ...entry,
       module: section.module,
       to: modulePath(section.module, entry.route),
-    })),
-  }))
+    }))
+
+    if (section.label) {
+      const existing = byLabel.get(section.label)
+
+      if (existing) {
+        existing.entries.push(...entries)
+        continue
+      }
+
+      const group = { key: `label:${section.label}`, label: section.label, entries }
+      byLabel.set(section.label, group)
+      merged.push(group)
+    } else {
+      merged.push({ key: `${section.module}:${index}`, label: section.label, entries })
+    }
+  }
+
+  return merged
 }
 
 /** The sidebar entry the location is on, such as `Runs` on a run's own page; the shell titles the page with it. */
@@ -122,8 +145,8 @@ export function ProductSidebar({ product, onNavigate }: { product: BootstrapProd
       className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto border-e bg-deep px-2 py-2.5 line-icons max-md:border-e-0"
       aria-label={product.label}
     >
-      {sections.map((section, index) => (
-        <div key={`${section.module}:${index}`} className="flex flex-col gap-0.5">
+      {sections.map((section) => (
+        <div key={section.key} className="flex flex-col gap-0.5">
           {section.label ? <h2 className="px-2.5 pt-4 pb-1.5 type-label text-faint">{section.label}</h2> : null}
           {section.entries.map((entry) => {
             const count = entry.countKey ? counts.data?.counts[entry.countKey] : undefined

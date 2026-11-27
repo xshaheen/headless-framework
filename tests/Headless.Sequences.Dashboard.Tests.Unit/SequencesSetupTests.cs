@@ -22,13 +22,19 @@ public sealed class SequencesSetupTests : TestBase
         Action<HeadlessDashboardSetupBuilder> addModule = overload switch
         {
             "none" => static dashboard => dashboard.AddSequences(),
-            "action" => static dashboard => dashboard.AddSequences(options => options.ViewPolicy = "Viewers"),
+            "action" => static dashboard =>
+                dashboard.AddSequences(options => options.ViewPolicy = SequencesHost.OperatorsPolicy),
             "action-with-provider" => static dashboard =>
-                dashboard.AddSequences((options, _) => options.ViewPolicy = "Viewers"),
+                dashboard.AddSequences((options, _) => options.ViewPolicy = SequencesHost.OperatorsPolicy),
             _ => static dashboard =>
                 dashboard.AddSequences(
                     new ConfigurationBuilder()
-                        .AddInMemoryCollection(new Dictionary<string, string?> { ["ViewPolicy"] = "Viewers" })
+                        .AddInMemoryCollection(
+                            new Dictionary<string, string?>(StringComparer.Ordinal)
+                            {
+                                ["ViewPolicy"] = SequencesHost.OperatorsPolicy,
+                            }
+                        )
                         .Build()
                 ),
         };
@@ -40,8 +46,26 @@ public sealed class SequencesSetupTests : TestBase
         var module = host.App.Services.GetRequiredService<SequencesModule>();
         module.Id.Should().Be("sequences");
         module.DisplayName.Should().Be("Sequences");
-        var (status, _) = await host.GetAsync("/summary", AbortToken);
-        status.Should().Be(HttpStatusCode.OK);
+
+        var (viewerStatus, _) = await host.GetAsync("/summary", AbortToken);
+
+        if (string.Equals(overload, "none", StringComparison.Ordinal))
+        {
+            viewerStatus.Should().Be(HttpStatusCode.OK);
+        }
+        else
+        {
+            viewerStatus.Should().Be(HttpStatusCode.Forbidden);
+
+            var opsCookie = await host.SignInAsync("ops", AbortToken);
+            using var opsResponse = await host.SendAsync(
+                HttpMethod.Get,
+                SequencesHost.Api + "/summary",
+                opsCookie,
+                AbortToken
+            );
+            opsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
     }
 
     [Fact]

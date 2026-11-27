@@ -1,7 +1,17 @@
 import { useDashboard, useModule, type DashboardStateRole } from '@headless/dashboard-sdk'
 import { createCommandsApi, type CommandDefinition } from '@headless/dashboard-sdk/commands'
-import type { DashboardApi } from '@headless/dashboard-sdk/data'
+import {
+  readBoolean as flag,
+  readList as list,
+  readNumber as count,
+  readOneOf as oneOf,
+  readOptionalString as optionalText,
+  readRecord as record,
+  readString as text,
+  type DashboardApi,
+} from '@headless/dashboard-sdk/data'
 import { useQuery } from '@headless/dashboard-sdk/query'
+import { useStreamPaused } from '@headless/dashboard-sdk/stream'
 
 export const nodeStates = ['Alive', 'Suspected', 'Dead'] as const
 export type NodeState = (typeof nodeStates)[number]
@@ -113,70 +123,6 @@ export interface HostHealth {
   totals: { healthy: number; degraded: number; unhealthy: number; notProbed: number }
   liveness: { healthy: number; total: number } | null
   slowest: { name: string; durationMilliseconds: number } | null
-}
-
-/** The server answered a shape this module does not read, so the view shows the read as failed. */
-function shapeError(what: string) {
-  return new Error(`The server answered an unexpected ${what}.`)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function record(value: unknown, what: string): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function text(value: unknown, what: string): string {
-  if (typeof value !== 'string') {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-/** A field the server writes as `null` when it has none; a missing field reads the same. */
-function optionalText(value: unknown, what: string): string | null {
-  return value == null ? null : text(value, what)
-}
-
-function count(value: unknown, what: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function flag(value: unknown, what: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function list<T>(value: unknown, what: string, read: (item: unknown) => T): T[] {
-  if (!Array.isArray(value)) {
-    throw shapeError(what)
-  }
-
-  return value.map(read)
-}
-
-function oneOf<const T extends readonly string[]>(values: T, value: unknown, what: string): T[number] {
-  const found = values.find((candidate) => candidate === value)
-
-  if (found === undefined) {
-    throw shapeError(what)
-  }
-
-  return found
 }
 
 function readCoordination(value: unknown): CoordinationSummary {
@@ -404,9 +350,10 @@ export function useSummary() {
   return useQuery({ queryKey: queryKeys.summary, queryFn: () => read(api, 'cluster/summary', readSummary) })
 }
 
-/** The incarnations in the given state, or all; refetched every heartbeat while the view is open (`interval`). */
+/** The incarnations in the given state, or all; refetched every heartbeat while the view is open and unpaused. */
 export function useNodes(state: NodeState | undefined, enabled: boolean, interval: number | false) {
   const { api } = useDashboard()
+  const isPaused = useStreamPaused()
 
   return useQuery({
     queryKey: [...queryKeys.nodes, state ?? 'all'],
@@ -418,7 +365,7 @@ export function useNodes(state: NodeState | undefined, enabled: boolean, interva
         state ? { state } : undefined,
       ),
     enabled,
-    refetchInterval: interval,
+    refetchInterval: isPaused ? false : interval,
   })
 }
 

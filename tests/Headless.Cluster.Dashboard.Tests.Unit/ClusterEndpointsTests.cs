@@ -76,6 +76,12 @@ public sealed class ClusterEndpointsTests : TestBase
         var suspected = await ClusterDashboardHost.GetJsonAsync(app, _Api + "/nodes?state=suspected", AbortToken);
         using var left = await ClusterDashboardHost.GetAsync(client, _Api + "/nodes?state=Left", cookie, AbortToken);
         using var number = await ClusterDashboardHost.GetAsync(client, _Api + "/nodes?state=1", cookie, AbortToken);
+        using var combined = await ClusterDashboardHost.GetAsync(
+            client,
+            _Api + "/nodes?state=Alive,Suspected",
+            cookie,
+            AbortToken
+        );
 
         // then
         suspected
@@ -92,6 +98,7 @@ public sealed class ClusterEndpointsTests : TestBase
             .Should()
             .Be("enum");
         number.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        combined.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -249,7 +256,7 @@ public sealed class ClusterEndpointsTests : TestBase
     }
 
     [Fact]
-    public async Task should_report_a_registered_health_half_without_a_monitor_when_checks_come_after_the_module()
+    public async Task should_report_a_registered_health_half_with_a_monitor_when_checks_come_after_the_module()
     {
         // given
         await using var app = await ClusterDashboardHost.StartAsync(
@@ -264,7 +271,7 @@ public sealed class ClusterEndpointsTests : TestBase
         // then
         summary.GetProperty("coordination").ValueKind.Should().Be(JsonValueKind.Null);
         summary.GetProperty("health").GetProperty("registered").GetBoolean().Should().BeTrue();
-        summary.GetProperty("health").GetProperty("monitor").GetBoolean().Should().BeFalse();
+        summary.GetProperty("health").GetProperty("monitor").GetBoolean().Should().BeTrue();
     }
 
     [Fact]

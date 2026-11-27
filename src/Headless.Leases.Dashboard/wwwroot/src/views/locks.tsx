@@ -34,7 +34,8 @@ import { CellText, isNotFound, LeaseTypeSwitch, ReadAt } from '../parts.tsx'
 /** No abstraction says where a provider looks, so the note names every provider's scope instead of guessing one. */
 const scopeNote =
   'Redis lists every holder across the cluster. PostgreSQL, SQL Server, and in-memory providers list only the locks ' +
-  "this host's handles hold, so behind a load balancer this list is the answering replica's."
+  "this host's handles hold, so behind a load balancer this list is the answering replica's. Fencing tokens are " +
+  "reported only on the holder's own handle, so none shows here."
 
 export default function DistributedLocksView() {
   const { api } = useDashboard()
@@ -75,6 +76,11 @@ export default function DistributedLocksView() {
   return (
     <PageFrame
       frame={frame}
+      switcher={
+        summary.data?.fencing && summary.data?.locks ? (
+          <LeaseTypeSwitch current="locks" summary={summary.data} />
+        ) : undefined
+      }
       stats={
         <StatStrip label="Locks at a glance">
           <StatCard label="Held locks" value={total === undefined ? '–' : format.number(total)} />
@@ -84,14 +90,8 @@ export default function DistributedLocksView() {
         <PageHeader
           title="Distributed locks"
           count={total === undefined ? undefined : `${format.number(total)} held`}
-          // As short as Fenced leases' subtitle, so the Lease type switch keeps the title row on both views.
           description="Read-only. Time to live is as the provider read it; it does not count down."
-          actions={
-            <>
-              <LeaseTypeSwitch current="locks" summary={summary.data} />
-              <ReadAt at={pageReadAt(firstPage)} isRefreshing={locks.query.isFetching} onRefresh={refresh} />
-            </>
-          }
+          actions={<ReadAt at={pageReadAt(firstPage)} isRefreshing={locks.query.isFetching} onRefresh={refresh} />}
         />
       }
       panel={openId ? <LockPanel resource={openId} /> : undefined}

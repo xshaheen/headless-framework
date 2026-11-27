@@ -13,7 +13,7 @@ namespace Headless.DevInbox.Dashboard;
 /// </summary>
 /// <remarks>
 /// Its object kinds are <c>email</c>, <c>sms</c>, and <c>push</c>. A channel whose store the host did not register
-/// serves no count, resolves nothing, and answers its routes with <c>404</c> <c>channel_unconfigured</c>.
+/// serves no count, resolves nothing, and answers its routes with <c>404</c> <c>dev_inbox:channel_unconfigured</c>.
 /// </remarks>
 internal sealed class DevInboxModule
     : IDashboardModule,

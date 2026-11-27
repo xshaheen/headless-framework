@@ -130,25 +130,36 @@ internal sealed class ClusterSources(string moduleId, ClusterServices services)
 
             if (exact || _IsNodeId(query))
             {
-                var snapshot = await _services
-                    .Membership.GetLivenessSnapshotAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    var snapshot = await _services
+                        .Membership.GetLivenessSnapshotAsync(cancellationToken)
+                        .ConfigureAwait(false);
 
-                objects.AddRange(
-                    ClusterEndpoints
-                        .Order(snapshot)
-                        .Where(node =>
-                            exact
-                                ? node.Identity == identity
-                                : string.Equals(node.Identity.NodeId.Value, query, StringComparison.Ordinal)
-                        )
-                        .Select(node => new DashboardObject
-                        {
-                            Target = ClusterObjects.Ref(_moduleId, ClusterObjects.NodeKind, node.Identity.ToString()),
-                            Title = node.Identity.ToString(),
-                            Status = node.State.ToString(),
-                        })
-                );
+                    objects.AddRange(
+                        ClusterEndpoints
+                            .Order(snapshot)
+                            .Where(node =>
+                                exact
+                                    ? node.Identity == identity
+                                    : string.Equals(node.Identity.NodeId.Value, query, StringComparison.Ordinal)
+                            )
+                            .Select(node => new DashboardObject
+                            {
+                                Target = ClusterObjects.Ref(
+                                    _moduleId,
+                                    ClusterObjects.NodeKind,
+                                    node.Identity.ToString()
+                                ),
+                                Title = node.Identity.ToString(),
+                                Status = node.State.ToString(),
+                            })
+                    );
+                }
+                catch (Exception exception) when (!_IsCancellation(exception, cancellationToken))
+                {
+                    // Health checks still resolve from memory while the membership store is unreachable.
+                }
             }
         }
 

@@ -1,5 +1,6 @@
 import {
   DetailPanel,
+  EmptyState,
   FieldGrid,
   GridField,
   KeyValueTable,
@@ -7,7 +8,6 @@ import {
   PayloadView,
   StatusMark,
   Tag,
-  Text,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
 import { useFormat } from '@headless/dashboard-sdk/locale'
@@ -171,7 +171,7 @@ function EmailAttachments({ email, path }: { email: EmailDetail; path: string })
   const format = useFormat()
 
   if (email.attachments.length === 0) {
-    return <Text tone="hint">This email has no attachments.</Text>
+    return <EmptyState title="This email has no attachments." />
   }
 
   return (

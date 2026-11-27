@@ -106,13 +106,16 @@ function Page({ filter, counters }: { filter: CounterFilter; counters: CounterLi
   const scopeChoice: ScopeChoice = isChoosingTenant ? 'tenant' : (filter.scope ?? 'all')
   const active = [filter.mode, filter.scope, filter.current, filter.q].filter(Boolean).length
 
-  function update(change: (next: URLSearchParams) => void) {
-    setParams((current) => {
-      const next = new URLSearchParams(current)
-      change(next)
+  function update(change: (next: URLSearchParams) => void, replace = false) {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        change(next)
 
-      return next
-    })
+        return next
+      },
+      { replace },
+    )
   }
 
   function chooseScope(choice: ScopeChoice) {
@@ -203,21 +206,18 @@ function Page({ filter, counters }: { filter: CounterFilter; counters: CounterLi
               active={active}
               chips={<ModeChips summary={summary.data} mode={filter.mode} onPick={setMode} />}
               search={
-                // Restarted with the URL's text when Clear filters or Back changes it.
                 <SearchField
-                  key={`search-${filter.q ?? ''}`}
                   label="Search counters"
                   placeholder="Name or tenant id"
                   compact
                   defaultValue={filter.q}
-                  onSearch={(text) => update((next) => (text ? next.set('q', text) : next.delete('q')))}
+                  onSearch={(text) => update((next) => (text ? next.set('q', text) : next.delete('q')), true)}
                 />
               }
             >
               <SegmentedControl label="Scope" options={scopeOptions} value={scopeChoice} onChange={chooseScope} />
               {scopeChoice === 'tenant' ? (
                 <SearchField
-                  key={`tenant-${filter.tenant ?? ''}`}
                   label="Tenant id"
                   placeholder="Exact tenant id"
                   mode="submit"

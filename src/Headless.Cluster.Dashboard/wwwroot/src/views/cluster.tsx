@@ -200,6 +200,7 @@ export default function ClusterView() {
         <Section label="Metadata agreement" description="Values that differ across the alive and suspected nodes.">
           <KeyValueTable
             label="Metadata that differs"
+            placement="page"
             rows={agreement.data
               .filter((key) => !key.isUnanimous)
               .map((key) => ({ name: key.key, value: groupsText(key.groups) }))}
@@ -295,7 +296,7 @@ function NodePanel({ id, listed }: { id: string; listed: ClusterNode | undefined
   if (gone) {
     return (
       <DetailPanel label={`Node ${id}`} name={id}>
-        <Banner tone="warn">This node is no longer in the membership store.</Banner>
+        <EmptyState role="alert" title="This node is no longer in the membership store." />
       </DetailPanel>
     )
   }

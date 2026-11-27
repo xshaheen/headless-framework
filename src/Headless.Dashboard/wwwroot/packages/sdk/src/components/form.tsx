@@ -28,12 +28,15 @@ export type FieldWidth = 'short' | 'medium' | 'full'
 const widthClasses: Readonly<Record<FieldWidth, string>> = {
   short: 'hd-field max-w-[12ch]',
   medium: 'hd-field max-w-[32ch]',
-  full: 'hd-field',
+  full: 'hd-field hd-field-full',
 }
 
 interface FieldBase {
   label: string
   description?: string
+  /** Keeps `description` as the field's accessible description (`aria-describedby`) while hiding it visually, so a
+   * single-row form keeps its inputs bottom-aligned. */
+  descriptionHidden?: boolean
   error?: string
   isRequired?: boolean
   /** How wide the field is, by what it holds; see `FieldWidth`. */
@@ -53,7 +56,7 @@ export interface TextInputFieldProps extends FieldBase {
 }
 
 /** A labelled text field with its hint and inline error. */
-export function TextInputField({ label, description, error, isRequired, width = 'full', value, onChange, inputMode, maxLength, multiline, code, name }: TextInputFieldProps) {
+export function TextInputField({ label, description, descriptionHidden, error, isRequired, width = 'full', value, onChange, inputMode, maxLength, multiline, code, name }: TextInputFieldProps) {
   return (
     <TextField
       className={widthClasses[width]}
@@ -75,7 +78,7 @@ export function TextInputField({ label, description, error, isRequired, width = 
         <Input className={inputClass} inputMode={inputMode} maxLength={maxLength} />
       )}
       {description ? (
-        <Text slot="description" className="hd-hint">
+        <Text slot="description" className={descriptionHidden ? 'sr-only' : 'hd-hint'}>
           {description}
         </Text>
       ) : null}
@@ -96,7 +99,7 @@ export interface SelectFieldProps extends FieldBase {
  * A labelled choice from a short list in a form, as the platform's own select, which every device handles well. A
  * list's filter is a `FilterSelect`, a chip in the page header's toolbar.
  */
-export function SelectField({ label, description, error, isRequired, width = 'full', value, onChange, options, emptyLabel = 'None' }: SelectFieldProps) {
+export function SelectField({ label, description, descriptionHidden, error, isRequired, width = 'full', value, onChange, options, emptyLabel = 'None' }: SelectFieldProps) {
   const id = useId()
 
   return (
@@ -122,7 +125,7 @@ export function SelectField({ label, description, error, isRequired, width = 'fu
         ))}
       </select>
       {description ? (
-        <span id={`${id}-hint`} className="hd-hint">
+        <span id={`${id}-hint`} className={descriptionHidden ? 'sr-only' : 'hd-hint'}>
           {description}
         </span>
       ) : null}

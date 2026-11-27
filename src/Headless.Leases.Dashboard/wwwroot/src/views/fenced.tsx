@@ -140,6 +140,11 @@ export default function FencedLeasesView() {
   return (
     <PageFrame
       frame={frame}
+      switcher={
+        summary.data?.fencing && summary.data?.locks ? (
+          <LeaseTypeSwitch current="fenced" summary={summary.data} />
+        ) : undefined
+      }
       stats={<LeaseStats counts={counts.data} kinds={kinds.data?.length} params={params} />}
       header={
         <PageHeader
@@ -151,7 +156,6 @@ export default function FencedLeasesView() {
               active={(filter.kind ? 1 : 0) + (filter.scope !== 'any' ? 1 : 0)}
               search={
                 <SearchField
-                  key={`prefix-${prefix}`}
                   label="Resource prefix"
                   placeholder="Resource starts with (literal, case-sensitive)"
                   compact
@@ -185,7 +189,6 @@ export default function FencedLeasesView() {
               />
               {filter.scope === 'tenant' ? (
                 <SearchField
-                  key={`tenant-${filter.tenant}`}
                   label="Tenant id"
                   placeholder="Tenant id, then Enter"
                   mode="submit"
@@ -196,12 +199,7 @@ export default function FencedLeasesView() {
               ) : null}
             </FilterToolbar>
           }
-          actions={
-            <>
-              <LeaseTypeSwitch current="fenced" summary={summary.data} />
-              <ReadAt at={pageReadAt(firstPage)} isRefreshing={leases.query.isFetching} onRefresh={refresh} />
-            </>
-          }
+          actions={<ReadAt at={pageReadAt(firstPage)} isRefreshing={leases.query.isFetching} onRefresh={refresh} />}
         />
       }
       panel={openId ? <LeasePanel id={openId} /> : undefined}
@@ -236,8 +234,8 @@ export default function FencedLeasesView() {
                     ),
                     isRowHeader: true,
                     kind: 'id',
-                    // Fixed, because a share falls to the 192 px floor below 1440 px, which cuts a 24-character name.
-                    width: 240,
+                    // Growing share so long resource names expand at 1440/1920 px while staying >= 240 px at 1024 px.
+                    width: '2.5fr',
                   },
                   {
                     id: 'state',
@@ -258,14 +256,14 @@ export default function FencedLeasesView() {
                         <Mono>{row.kind}</Mono>
                       </CellText>
                     ),
-                    width: '1fr',
+                    width: 150,
                   },
                   {
                     id: 'tenant',
                     header: 'tenant',
                     cell: (row) => <CellText title={tenantText(row)}>{tenantText(row)}</CellText>,
                     priority: 2,
-                    width: '1fr',
+                    width: 120,
                   },
                   {
                     id: 'generation',
@@ -313,7 +311,7 @@ export default function FencedLeasesView() {
                     header: 'progress',
                     cell: (row) => <CellText>{progressText(row, format.size)}</CellText>,
                     priority: 2,
-                    width: '1fr',
+                    width: '1.5fr',
                   },
                 ]}
               />

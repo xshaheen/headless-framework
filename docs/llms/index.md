@@ -43,7 +43,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
 | Define and evaluate runtime permissions; integrate with ASP.NET Core authorization | [Permissions](permissions.md) |
-| Serve the operations dashboard shell, write a dashboard module, or add the Jobs or Messaging module, or protect a dashboard a host writes | [Dashboards](dashboards.md) |
+| Serve the operations dashboard shell, write a dashboard module, add built-in modules (Jobs, Messaging, Cluster, Leases, Rate limits, Idempotency, Sequences, Dev inbox), or protect a dashboard a host writes | [Dashboards](dashboards.md) |
 | Verify reCAPTCHA or Turnstile tokens | [CAPTCHA](captcha.md) |
 
 ### Data, state, and transactions

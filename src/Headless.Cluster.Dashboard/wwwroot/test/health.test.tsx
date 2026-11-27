@@ -257,4 +257,27 @@ describe('cluster health', () => {
     expect(await screen.findByText(/Stale/)).toBeTruthy()
     expect(screen.getByRole('row', { name: /jobs/ })).toBeTruthy()
   })
+
+  it('announces a gone check as an alert empty state', async () => {
+    open(
+      {
+        ...unprobed,
+        extra: (request) => {
+          if (request.path === 'cluster/health/checks/removed-check') {
+            throw new DashboardApiError(404, 'Not found')
+          }
+
+          return undefined
+        },
+      },
+      { path: 'health?open=removed-check' },
+    )
+
+    const panel = await screen.findByRole('region', { name: 'Check removed-check' })
+    await waitFor(() =>
+      expect(within(panel).getByRole('alert').textContent).toContain(
+        'This host no longer registers a check with this name.',
+      ),
+    )
+  })
 })
