@@ -113,6 +113,7 @@ export function DeleteAction({ kind, id, name }: { kind: ChannelKind; id: string
       noun={channelNouns[kind].one}
       variant="danger"
       icon={DeleteIcon}
+      appearance="icon"
       commands={commands.all}
       reach={`${name} is removed from the inbox for good.`}
       onDone={() => void refetchTopics(client, [topicOf(kind)])}

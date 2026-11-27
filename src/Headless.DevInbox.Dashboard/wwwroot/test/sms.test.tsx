@@ -87,4 +87,15 @@ describe('sms view', () => {
     const confirm = view.requests.find((request) => request.path.endsWith('/confirm'))!
     expect((confirm.body as { filter: { search: string | null } }).filter.search).toBe('code')
   })
+  it('shows the message as wrapping prose in its own direction, one paragraph per line', async () => {
+    const arabic = sms({ text: 'رمز التحقق الخاص بك\nلا تشاركه مع أحد' })
+    open({ sms: [arabic] }, { path: `sms?open=${arabic.id}` })
+
+    const first = await screen.findByText('رمز التحقق الخاص بك')
+
+    expect(first.tagName).toBe('P')
+    expect(first.getAttribute('dir')).toBe('auto')
+    expect(first.closest('pre, code')).toBeNull()
+    expect(screen.getByText('لا تشاركه مع أحد').tagName).toBe('P')
+  })
 })

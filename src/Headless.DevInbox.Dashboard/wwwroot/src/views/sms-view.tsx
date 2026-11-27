@@ -4,7 +4,6 @@ import {
   GridField,
   KeyValueTable,
   Mono,
-  PayloadView,
   StatusMark,
   Timestamp,
 } from '@headless/dashboard-sdk/components'
@@ -78,7 +77,7 @@ function SmsPanel({ sms }: { sms: SmsDetail }) {
           {
             id: 'message',
             label: 'Message',
-            content: <PayloadView content={sms.text} contentType="text/plain" />,
+            content: <SmsText text={sms.text} />,
             facts: (
               <>
                 <FieldGrid label="How a carrier sends it" columns={3}>
@@ -121,5 +120,21 @@ function SmsPanel({ sms }: { sms: SmsDetail }) {
         sms.failureError,
       )}
     />
+  )
+}
+
+/**
+ * An SMS is prose a person reads, so it wraps like text and takes its direction from its own letters; a mono
+ * payload block scrolls a long or right-to-left message out of view.
+ */
+function SmsText({ text }: { text: string }) {
+  return (
+    <div>
+      {text.split('\n').map((line, index) => (
+        <p key={index} dir="auto">
+          {line}
+        </p>
+      ))}
+    </div>
   )
 }
