@@ -291,6 +291,7 @@
     <Folder Name="/Idempotency/">
         <Project Path="src\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
         <Project Path="src\Headless.Idempotency.Caching\Headless.Idempotency.Caching.csproj" />
+        <Project Path="src\Headless.Idempotency.Dashboard\Headless.Idempotency.Dashboard.csproj" />
         <Project Path="src\Headless.Idempotency\Headless.Idempotency.csproj" />
         <Project Path="src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
         <Project Path="src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
@@ -300,6 +301,7 @@
     <Folder Name="/Idempotency/Tests/">
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Integration\Headless.Idempotency.Caching.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Unit\Headless.Idempotency.Caching.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Idempotency.Dashboard.Tests.Unit\Headless.Idempotency.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.Tests.Unit\Headless.Idempotency.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.InMemory.Tests.Unit\Headless.Idempotency.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.PostgreSql.Tests.Integration\Headless.Idempotency.PostgreSql.Tests.Integration.csproj" />

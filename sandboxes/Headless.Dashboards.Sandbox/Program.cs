@@ -6,6 +6,7 @@ using Headless.Coordination;
 using Headless.Dashboard;
 using Headless.Dashboards.Sandbox;
 using Headless.Hosting;
+using Headless.Idempotency;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -75,6 +76,7 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
     dashboard.AddRateLimiting();
+    dashboard.AddIdempotency();
     // The Cluster module shows Coordination membership (STORE=postgres only) and this host's health checks.
     dashboard.AddCluster();
     // The Dev inbox module and the senders it reads, registered only in Development, which `make up` sets.
@@ -91,6 +93,20 @@ builder.Services.AddAttemptLimiter(options =>
     foreach (var (purpose, quota) in SandboxRateLimits.Purposes)
     {
         options.Purposes[purpose] = quota;
+    }
+});
+
+// Idempotency records follow the sandbox store, as the Messaging storage does, so with STORE=postgres the Idempotency
+// module's stat strip names a real table; the deploy steps below create it.
+builder.Services.AddHeadlessIdempotency(setup =>
+{
+    if (postgres is not null)
+    {
+        setup.UsePostgreSql(postgres);
+    }
+    else
+    {
+        setup.UseInMemory();
     }
 });
 

@@ -245,6 +245,9 @@ jobs:
           - name: Dev inbox
             target: dashboard-dev-inbox-test
             lockfile: package-lock.json
+          - name: Idempotency
+            target: dashboard-idempotency-test
+            lockfile: package-lock.json
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

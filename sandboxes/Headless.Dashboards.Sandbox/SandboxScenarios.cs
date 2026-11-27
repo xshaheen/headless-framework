@@ -95,6 +95,8 @@ public static class SandboxScenarios
             "Time job that publishes a message to sandbox.invoices and sandbox.fulfilment, which schedules a follow-up job: one correlation id, the run's id, opens all of it on the trace page.",
         ["attempts"] =
             "Two new sign-in.password subjects: one locked out with 5 of 5 attempts, one with 2 of 5; returns each subject, its purpose, and its window end.",
+        ["idempotency"] =
+            "Four new idempotency keys: one completed under tenant acme, one in flight with a recovery point, one that stalls after its 1 s lease, and one in flight past its 1 s retention; returns each key, its tenant, its state, and when it reaches it.",
         ["health-healthy"] = "The sandbox-dependency health check reports Healthy from its next probe on.",
         ["health-degraded"] = "The sandbox-dependency health check reports Degraded from its next probe on.",
         ["health-unhealthy"] = "The sandbox-dependency health check reports Unhealthy from its next probe on.",
@@ -195,6 +197,7 @@ public static class SandboxScenarios
                 _Id(await jobs.EnqueueAsync(new TraceCheckoutArgs(OrderId: 9501), _NoRetries, cancellationToken)),
             ],
             "attempts" => await SandboxRateLimits.SeedAsync(services.Limiter, cancellationToken),
+            "idempotency" => await SandboxIdempotency.SeedAsync(provider, cancellationToken),
             "health-healthy" => _SetHealth(provider, HealthStatus.Healthy),
             "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),

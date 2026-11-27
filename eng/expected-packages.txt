@@ -103,6 +103,7 @@ Headless.Http.Resilience
 Headless.Idempotency
 Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
+Headless.Idempotency.Dashboard
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
 Headless.Idempotency.ResponseReplay
