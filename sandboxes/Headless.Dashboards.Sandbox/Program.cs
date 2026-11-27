@@ -76,7 +76,6 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
     dashboard.AddRateLimiting();
-    // The Idempotency module reads the store AddHeadlessIdempotency configures below.
     dashboard.AddIdempotency();
     // The Cluster module shows Coordination membership (STORE=postgres only) and this host's health checks.
     dashboard.AddCluster();

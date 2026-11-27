@@ -257,6 +257,10 @@ function providerName(provider: string): string {
   return provider.startsWith('Headless.Idempotency.') ? provider.slice('Headless.Idempotency.'.length) : provider
 }
 
+function joinParts(...parts: (string | undefined)[]): string {
+  return parts.filter((part) => part !== undefined).join(' · ')
+}
+
 interface LookupResultProps {
   lookup: Lookup
   resultRef: RefObject<HTMLElement | null>
@@ -351,23 +355,19 @@ function FoundRecord({ call, record, resultRef, onAgain }: FoundRecordProps) {
         </GridField>
         {record.resultContract !== undefined || record.resultSizeBytes !== undefined ? (
           <GridField label="Stored result" span={2}>
-            {[
+            {joinParts(
               record.resultContract,
               record.resultSizeBytes === undefined ? undefined : format.size(record.resultSizeBytes),
-            ]
-              .filter((part) => part !== undefined)
-              .join(' · ')}
+            )}
           </GridField>
         ) : null}
         {record.recoveryPoint !== undefined ? (
           <GridField label="Recovery point" span={2}>
-            {[
+            {joinParts(
               record.recoveryPoint,
               record.recoveryContract,
               record.recoveryStateSizeBytes === undefined ? undefined : format.size(record.recoveryStateSizeBytes),
-            ]
-              .filter((part) => part !== undefined)
-              .join(' · ')}
+            )}
           </GridField>
         ) : null}
       </FieldGrid>

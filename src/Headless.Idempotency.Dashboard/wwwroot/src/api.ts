@@ -120,7 +120,6 @@ function stateOf(record: RecordView): RecordState {
   return record.generation === undefined ? 'not-admitted' : 'released'
 }
 
-/** A duration in the largest whole unit: `24 h`, `2 min`, `90 s`. */
 export function formatDuration(seconds: number): string {
   if (seconds > 0 && seconds % 86400 === 0) {
     return `${seconds / 86400} d`
