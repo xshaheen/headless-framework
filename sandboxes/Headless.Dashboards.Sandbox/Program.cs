@@ -15,6 +15,8 @@ using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
 using Headless.RateLimiting;
+using Headless.Sequences;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
 // A local test host for the Headless dashboard, with its Jobs, Messaging, and (in Development) Dev inbox modules, started and stopped by the
@@ -86,6 +88,8 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     SandboxDevInbox.Add(builder, dashboard);
     // The Leases module shows the fenced leases and held locks registered below.
     dashboard.AddLeases();
+    // The Sequences module reads the counters AddHeadlessSequences stores below; it never takes a number.
+    dashboard.AddSequences();
 });
 
 // In memory in both store modes: the fencing store needs no provisioning, and the in-memory lock provider lists only
@@ -118,6 +122,17 @@ builder.Services.AddHeadlessIdempotency(setup =>
     {
         setup.UseInMemory();
     }
+});
+
+// Counters live in SQLite for every store, since no in-memory sequences provider exists. Gap-free and reported
+// numbers are taken inside a unit begun on a connection to the same file.
+var sequencesDatabase = new SandboxSequencesDatabase(sandbox.SequencesConnectionString());
+builder.Services.AddSingleton(sequencesDatabase);
+builder.Services.AddUnitOfWork();
+builder.Services.AddHeadlessSequences(setup =>
+{
+    setup.UseSqlite(sequencesDatabase.ConnectionString);
+    setup.ConfigureOptions(SandboxSequences.Configure);
 });
 
 builder.Services.AddHeadlessJobs(options =>
@@ -242,6 +257,7 @@ app.MapGet(
                 clusterModule = "/headless/cluster",
                 devInboxModule = builder.Environment.IsDevelopment() ? "/headless/dev-inbox" : null,
                 leasesModule = "/headless/leases",
+                sequencesModule = "/headless/sequences",
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }

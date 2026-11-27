@@ -1067,7 +1067,7 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	$(DOTNET) build "$(SANDBOX_PROJECT)" -c "$(CONFIGURATION)" -nologo -v:q -clp:ErrorsOnly -clp:NoSummary; \
 	git rev-parse HEAD > "$(SANDBOX_REV)"; \
 	set -a; . "$(SANDBOX_ENV)"; set +a; \
-	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)" Sandbox__Auth="$(AUTH)"; \
+	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)" Sandbox__Auth="$(AUTH)" Sandbox__SequencesDatabasePath="$(SANDBOX_DIR)/sequences.db"; \
 	if [ "$(STORE)" = postgres ]; then \
 	  export Sandbox__PostgresConnectionString="Host=127.0.0.1;Port=$(SANDBOX_PG_PORT);Username=postgres;Database=$(SANDBOX_PG_DATABASE)"; fi; \
 	nohup $(DOTNET) "$(SANDBOX_DLL)" > "$(SANDBOX_LOG)" 2>&1 & echo $$! > "$(SANDBOX_PID)"; \
@@ -1191,11 +1191,11 @@ logs: ## Print the last TAIL lines of the sandbox log (TAIL=200; LINES= also wor
 	@if [ "$(FOLLOW)" = 1 ]; then tail -n "$(TAIL)" -f "$(SANDBOX_LOG)"; else tail -n "$(TAIL)" "$(SANDBOX_LOG)"; fi
 
 .PHONY: sandbox-reset
-sandbox-reset: ## Stop the sandbox and delete its PostgreSQL volume and generated password; requires CONFIRM=1.
+sandbox-reset: ## Stop the sandbox and delete its PostgreSQL volume, sequences database, and generated password; requires CONFIRM=1.
 	@test "$(CONFIRM)" = 1 || { echo "sandbox-reset deletes the sandbox database volume and password. Re-run: make sandbox-reset CONFIRM=1"; exit 2; }
 	@if [ -f "$(SANDBOX_PID)" ]; then kill "$$(cat "$(SANDBOX_PID)")" 2>/dev/null || true; rm -f "$(SANDBOX_PID)"; fi
 	@if command -v docker >/dev/null 2>&1; then $(SANDBOX_COMPOSE_CMD) down -v; fi
-	@rm -f "$(SANDBOX_STATE)" "$(SANDBOX_ENV)" "$(SANDBOX_LOG)" "$(SANDBOX_REV)"; echo "Sandbox reset."
+	@rm -f "$(SANDBOX_STATE)" "$(SANDBOX_ENV)" "$(SANDBOX_LOG)" "$(SANDBOX_REV)" "$(SANDBOX_DIR)"/sequences.db*; echo "Sandbox reset."
 
 # Tool restore is not in the formatting path: `make bootstrap` restores the pinned tools once, and doctor reports a
 # missing one as gated on `make tools`. CI is the exception: its format job starts from a runner with no restored
