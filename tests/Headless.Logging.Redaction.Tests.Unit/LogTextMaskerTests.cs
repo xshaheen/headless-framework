@@ -58,6 +58,20 @@ public sealed class LogTextMaskerTests : TestBase
     }
 
     [Fact]
+    public void should_return_a_placeholder_for_a_value_whose_text_throws()
+    {
+        // given
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+
+        // when
+        var masked = masker.MaskValue(new UnprintableValue());
+
+        // then: the value is withheld rather than passed on unscanned
+        masked.Should().Be($"{typeof(UnprintableValue)} (redaction failed: InvalidOperationException)");
+    }
+
+    [Fact]
     public void should_mask_a_numeric_data_value_without_changing_the_original()
     {
         // given: an id held as a long, with messages that match nothing
@@ -193,6 +207,13 @@ public sealed class LogTextMaskerTests : TestBase
         services.AddHeadlessRedaction(setup);
 
         return services.BuildServiceProvider();
+    }
+
+    private sealed class UnprintableValue
+    {
+#pragma warning disable CA1065 // The fixture is a broken type on purpose: the test proves its throwing ToString is withheld.
+        public override string ToString() => throw new InvalidOperationException("The value cannot be printed.");
+#pragma warning restore CA1065
     }
 
     private sealed class UpperCaseRedactor : ILogTextRedactor

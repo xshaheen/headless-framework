@@ -18,13 +18,15 @@ internal sealed class SlidingRearmScriptDefinition : RedisScriptDefinition
     private SlidingRearmScriptDefinition()
         : base(
             // Re-arm only when the new TTL moves the live one out by more than the tolerance; a move within it (or
-            // a negative one from clock skew, so the script never shortens a TTL) is skipped. Both skip outcomes
-            // (within tolerance, and persistent/missing via ttl < 0) return the live PTTL verbatim, so every reply
-            // is the key's resulting TTL in ms and callers need no follow-up probe.
+            // a negative one from clock skew, so the script never shortens a TTL) is skipped. Guarded reads
+            // compare just the metadata prefix so a replacement cannot inherit the previous entry's deadline.
             """
             local ttl = redis.call('PTTL', @key)
             local newTtl = tonumber(@newTtlMs)
             if ttl < 0 or newTtl - ttl <= tonumber(@rearmToleranceMs) then return ttl end
+            local prefix = @expectedPrefix
+            -- pcall also treats a replacement of a different Redis type as a mismatch.
+            if #prefix > 0 and redis.pcall('GETRANGE', @key, 0, #prefix - 1) ~= prefix then return ttl end
             redis.call('PEXPIRE', @key, newTtl)
             return newTtl
             """

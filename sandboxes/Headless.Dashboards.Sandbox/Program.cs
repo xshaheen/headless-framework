@@ -1,16 +1,25 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
+using Headless.Cluster;
 using Headless.Coordination;
 using Headless.Dashboard;
 using Headless.Dashboards.Sandbox;
+using Headless.DistributedLocks;
+using Headless.Fencing;
 using Headless.Hosting;
+using Headless.Idempotency;
 using Headless.Jobs;
+using Headless.Leases;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
+using Headless.RateLimiting;
+using Headless.Sequences;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 
-// A local test host for the Headless dashboard, with its Jobs and Messaging modules, started and stopped by the
+// A local test host for the Headless dashboard, with its Jobs, Messaging, and (in Development) Dev inbox modules, started and stopped by the
 // project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
 // an agent can drive every dashboard state on demand; it is not a sample of production wiring. See sandboxes/README.md.
 var builder = WebApplication.CreateBuilder(args);
@@ -26,13 +35,29 @@ var postgres =
 if (postgres is not null)
 {
     // The durable Jobs store coordinates node membership, so a coordination provider must be registered first.
-    builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(postgres));
+    // The cluster scenarios' peers join this cluster, and the version key is what they disagree on.
+    builder.Services.AddHeadlessCoordination(setup =>
+        setup
+            .Configure(options =>
+            {
+                options.ClusterName = "orders";
+                options.Role = "api";
+                options.Metadata["app.version"] = "4.2.1";
+            })
+            .UsePostgreSql(postgres)
+    );
 }
 
 if (sandbox.Auth == SandboxAuth.Host)
 {
     SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
 }
+
+// Registered before the dashboard, so AddCluster() sees health checks and registers the monitor in the same call; the
+// Jobs and Messaging checks added after it still appear, because the monitor reads every registration when it starts.
+var healthToggle = new SandboxHealthToggle();
+builder.Services.AddSingleton(healthToggle);
+builder.Services.AddHealthChecks().AddCheck(SandboxHealthToggle.CheckName, healthToggle.Check, tags: ["ready"]);
 
 builder.Services.AddHeadlessDashboard(dashboard =>
 {
@@ -55,6 +80,59 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // The Messaging module reads the stores AddHeadlessMessaging configures below, and inherits the host policies
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
+    dashboard.AddRateLimiting();
+    dashboard.AddIdempotency();
+    // The Cluster module shows Coordination membership (STORE=postgres only) and this host's health checks.
+    dashboard.AddCluster();
+    // The Dev inbox module and the senders it reads, registered only in Development, which `make up` sets.
+    SandboxDevInbox.Add(builder, dashboard);
+    // The Leases module shows the fenced leases and held locks registered below.
+    dashboard.AddLeases();
+    // The Sequences module reads the counters AddHeadlessSequences stores below; it never takes a number.
+    dashboard.AddSequences();
+});
+
+// In memory in both store modes: the fencing store needs no provisioning, and the in-memory lock provider lists only
+// this host's handles, which is what the Leases module's scope note describes.
+builder.Services.AddHeadlessFencing(setup => setup.UseInMemory());
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+
+// One loopback process, so the in-memory cache counts every attempt the sandbox makes. An app with more than one
+// replica counts per process this way and must point the limiter at the remote cache.
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddAttemptLimiter(options =>
+{
+    options.SubjectKey = SandboxRateLimits.SubjectKey;
+
+    foreach (var (purpose, quota) in SandboxRateLimits.Purposes)
+    {
+        options.Purposes[purpose] = quota;
+    }
+});
+
+// Idempotency records follow the sandbox store, as the Messaging storage does, so with STORE=postgres the Idempotency
+// module's stat strip names a real table; the deploy steps below create it.
+builder.Services.AddHeadlessIdempotency(setup =>
+{
+    if (postgres is not null)
+    {
+        setup.UsePostgreSql(postgres);
+    }
+    else
+    {
+        setup.UseInMemory();
+    }
+});
+
+// Counters live in SQLite for every store, since no in-memory sequences provider exists. Gap-free and reported
+// numbers are taken inside a unit begun on a connection to the same file.
+var sequencesDatabase = new SandboxSequencesDatabase(sandbox.SequencesConnectionString());
+builder.Services.AddSingleton(sequencesDatabase);
+builder.Services.AddUnitOfWork();
+builder.Services.AddHeadlessSequences(setup =>
+{
+    setup.UseSqlite(sequencesDatabase.ConnectionString);
+    setup.ConfigureOptions(SandboxSequences.Configure);
 });
 
 builder.Services.AddHeadlessJobs(options =>
@@ -175,6 +253,11 @@ app.MapGet(
                 headlessDashboard = "/headless",
                 jobsModule = "/headless/jobs",
                 messagingModule = "/headless/messaging",
+                rateLimitingModule = "/headless/rate-limiting",
+                clusterModule = "/headless/cluster",
+                devInboxModule = builder.Environment.IsDevelopment() ? "/headless/dev-inbox" : null,
+                leasesModule = "/headless/leases",
+                sequencesModule = "/headless/sequences",
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }
@@ -194,8 +277,15 @@ app.MapPost(
             );
         }
 
-        var created = await SandboxScenarios.RunAsync(name, services, cancellationToken);
-        return Results.Json(new { scenario = name, created });
+        try
+        {
+            var created = await SandboxScenarios.RunAsync(name, services, cancellationToken);
+            return Results.Json(new { scenario = name, created });
+        }
+        catch (SandboxScenarioUnavailableException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     }
 );
 

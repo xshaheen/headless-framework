@@ -57,14 +57,14 @@ public static class SetupFeatures
             return services;
         }
 
-        /// <summary>Registers a custom <see cref="IFeatureValueReadProvider"/> into the provider chain (idempotent by provider type).</summary>
+        /// <summary>Registers a custom <see cref="IFeatureValueReadProvider"/> at the top of the provider chain, so it has the highest priority.</summary>
         /// <typeparam name="T">The provider type to register.</typeparam>
         /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
         /// <remarks>
-        /// Providers are consulted in reverse registration order (last-registered = highest priority).
-        /// The built-in chain is <c>DefaultValue</c> → <c>Edition</c> → <c>Tenant</c>, so
-        /// <c>Tenant</c> wins when multiple providers supply a value for the same feature.
-        /// Calling this method more than once for the same <typeparamref name="T"/> is a no-op.
+        /// The built-in chain is <c>DefaultValue</c> → <c>Edition</c> → <c>Tenant</c>, lowest priority first, and it is
+        /// always present, whether this runs before or after <c>AddHeadlessFeatures</c>. Calling this method more than
+        /// once for the same <typeparamref name="T"/> is a no-op. To place a provider lower in the chain, call
+        /// <see cref="AddFeatureValueProviderBelow{T, THigher}"/>.
         /// </remarks>
         public IServiceCollection AddFeatureValueProvider<T>()
             where T : class, IFeatureValueReadProvider
@@ -82,16 +82,66 @@ public static class SetupFeatures
             return services;
         }
 
-        private void _AddCoreValueProviders()
+        /// <summary>
+        /// Registers <typeparamref name="T"/> as a feature value provider directly below <typeparamref name="THigher"/>
+        /// in the provider chain: a read at <typeparamref name="THigher"/> falls back to <typeparamref name="T"/>, and a
+        /// read at <typeparamref name="T"/> falls back to the providers below it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The position is resolved after every <c>Configure</c> callback has run, so it does not depend on whether
+        /// this runs before or after <c>AddHeadlessFeatures</c> or the registration of <typeparamref name="THigher"/>.
+        /// A provider already in the chain moves to the new position.
+        /// </para>
+        /// <para>
+        /// For example, <c>AddFeatureValueProviderBelow&lt;PlanFeatureValueProvider, TenantFeatureValueProvider&gt;()</c>
+        /// gives the chain, highest priority first: Tenant, Plan, Edition, DefaultValue.
+        /// </para>
+        /// </remarks>
+        /// <typeparam name="T">The provider type to register.</typeparam>
+        /// <typeparam name="THigher">The provider directly above <typeparamref name="T"/>.</typeparam>
+        /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <typeparamref name="T"/> and <typeparamref name="THigher"/> are the same type; or, when the feature options
+        /// are first resolved, <typeparamref name="THigher"/> is not in the value provider chain.
+        /// </exception>
+        public IServiceCollection AddFeatureValueProviderBelow<T, THigher>()
+            where T : class, IFeatureValueReadProvider
+            where THigher : class, IFeatureValueReadProvider
         {
-            services.Configure<FeatureManagementProvidersOptions>(options =>
+            if (typeof(T) == typeof(THigher))
             {
-                // Last added provider has the highest priority
-                options.ValueProviders.Add<DefaultValueFeatureValueProvider>();
-                options.ValueProviders.Add<EditionFeatureValueProvider>();
-                options.ValueProviders.Add<TenantFeatureValueProvider>();
+                throw new InvalidOperationException(
+                    $"Cannot place feature value provider {typeof(T).FullName} below itself."
+                );
+            }
+
+            services.AddSingleton<T>();
+
+            services.PostConfigure<FeatureManagementProvidersOptions>(options =>
+            {
+                var providers = options.ValueProviders;
+
+                if (!providers.Contains<THigher>())
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot place feature value provider {typeof(T).FullName} below {typeof(THigher).FullName}, "
+                            + "which is not in the feature value provider chain."
+                    );
+                }
+
+                // The list runs lowest priority first, so the provider's slot is the anchor's current index.
+                providers.Remove<T>();
+                providers.Insert(providers.IndexOf(typeof(THigher)), typeof(T));
             });
 
+            return services;
+        }
+
+        private void _AddCoreValueProviders()
+        {
+            // The chain itself is the initial value of FeatureManagementProvidersOptions.ValueProviders, so a custom
+            // provider registered before AddHeadlessFeatures still lands relative to it.
             services.AddSingleton<DefaultValueFeatureValueProvider>();
             services.AddSingleton<EditionFeatureValueProvider>();
             services.AddSingleton<TenantFeatureValueProvider>();

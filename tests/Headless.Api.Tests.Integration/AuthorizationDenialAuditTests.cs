@@ -120,10 +120,33 @@ public sealed class AuthorizationDenialAuditTests : TestBase
         writer.Requests.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task should_audit_denial_when_custom_result_handler_is_registered_after_it()
+    {
+        // given: the application replaces the result handler after the audit registration, which used to drop the
+        // audit because the last IAuthorizationMiddlewareResultHandler registration wins.
+        var writer = new CapturingAuditLogWriter();
+        var inner = new CountingResultHandler();
+        await using var app = await _CreateAppAsync(
+            writer,
+            configureServicesAfter: services => services.AddSingleton<IAuthorizationMiddlewareResultHandler>(inner)
+        );
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        // when
+        using var response = await _SendAsync(client, HttpMethod.Delete, "/orders/42", user: "alice");
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        inner.Calls.Should().Be(1);
+        writer.Requests.Should().ContainSingle().Which.Action.Should().Be("authorization.forbidden");
+    }
+
     private static async Task<WebApplication> _CreateAppAsync(
         CapturingAuditLogWriter writer,
         CapturingLoggerProvider? logs = null,
-        Action<IServiceCollection>? configureServices = null
+        Action<IServiceCollection>? configureServices = null,
+        Action<IServiceCollection>? configureServicesAfter = null
     )
     {
         var builder = WebApplication.CreateBuilder();
@@ -141,6 +164,7 @@ public sealed class AuthorizationDenialAuditTests : TestBase
             .AddPolicy("Denied", policy => policy.RequireAuthenticatedUser().RequireClaim("never-issued"));
         configureServices?.Invoke(builder.Services);
         builder.Services.AddHeadlessAuthorizationDenialAudit<object>();
+        configureServicesAfter?.Invoke(builder.Services);
 
         var app = builder.Build();
         app.UseAuthentication();

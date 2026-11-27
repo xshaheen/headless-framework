@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Checks;
 
 namespace Headless.Caching;
@@ -36,9 +37,10 @@ public sealed partial class HybridCache
         if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+            var recovery = await _WriteLocalScalarAsync(key, value, localExpiration, cancellationToken)
+                .ConfigureAwait(false);
 
-            _RunDetached(() => _BackgroundScalarUpsertAsync(key, value, expiration), key);
+            _RunDetached(() => _BackgroundScalarUpsertAsync(key, value, expiration, recovery), key);
 
             _coordinator.EventsHub.OnSet(key);
 
@@ -84,13 +86,17 @@ public sealed partial class HybridCache
         if (updated)
         {
             var localExpiration = _GetLocalExpiration(expiration);
-            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
 
             if (queueScalarRecovery)
             {
-                // Capture the just-written L1 physical stamp so the replay guard can detect a newer local write.
-                var stamp = await _CaptureLocalStampsAsync<T>(key, cancellationToken).ConfigureAwait(false);
-                _QueueScalarUpsertRecovery(key, value, expiration, stamp);
+                var recovery = await _WriteLocalScalarAsync(key, value, localExpiration, cancellationToken)
+                    .ConfigureAwait(false);
+                await _QueueScalarUpsertRecoveryAsync(key, value, expiration, recovery, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
             }
         }
         else
@@ -120,17 +126,17 @@ public sealed partial class HybridCache
     /// cancelling a fire-and-forget L2 write would only abandon it. On L2 failure it routes to auto-recovery when
     /// enabled, otherwise logs and swallows (best-effort — the caller already succeeded against L1).
     /// </summary>
-    private async Task _BackgroundScalarUpsertAsync<T>(string key, T? value, TimeSpan? expiration)
+    private async Task _BackgroundScalarUpsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        ScalarUpsertSnapshot? recovery
+    )
     {
-        // L1 was already written synchronously before this detached tail ran, so its physical stamp is captured
-        // here (once) to gate any recovery replay against a newer local write — symmetric with the set-entry path.
         if (!_IsDistributedCacheCircuitClosed())
         {
-            if (RecoveryQueue is not null)
-            {
-                var stamp = await _CaptureLocalStampsAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
-                _QueueScalarUpsertRecovery(key, value, expiration, stamp);
-            }
+            await _QueueScalarUpsertRecoveryAsync(key, value, expiration, recovery, CancellationToken.None)
+                .ConfigureAwait(false);
         }
         else
         {
@@ -145,19 +151,20 @@ public sealed partial class HybridCache
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (RecoveryQueue is not null)
-                {
-                    // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
-                    var stamp = await _CaptureLocalStampsAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
-                    _QueueScalarUpsertRecovery(key, value, expiration, stamp);
-                }
+                await _QueueScalarUpsertRecoveryAsync(key, value, expiration, recovery, CancellationToken.None)
+                    .ConfigureAwait(false);
 
                 // Auto-recovery off: best-effort, swallow. The caller already returned success (fire-and-forget).
             }
         }
 
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                new CacheInvalidationMessage
+                {
+                    InstanceId = _instanceId,
+                    Key = key,
+                    Timestamp = recovery?.WrittenAt,
+                },
                 CancellationToken.None,
                 queueOnFailure: true
             )
@@ -485,18 +492,9 @@ public sealed partial class HybridCache
             )
             .ConfigureAwait(false);
 
-        if (replaced)
-        {
-            // Use UpsertAsync instead of TryReplaceIfEqualAsync for local cache because we know
-            // the distributed cache now has this exact value, and we need local cache to be in sync
-            var localExpiration = _GetLocalExpiration(expiration);
-            await _L1For(key).UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // Remove from local cache when replace fails
-            await _L1For(key).RemoveAsync(key, cancellationToken).ConfigureAwait(false);
-        }
+        // L2 can commit another write before this CAS returns. Drop the local value and advance its generation
+        // so an older in-flight read cannot refill it. The next read takes the current value and TTL from L2.
+        await _L1For(key).RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
 
         await _PublishInvalidationAsync(
                 new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
@@ -1149,6 +1147,10 @@ public sealed partial class HybridCache
     private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
     private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
 
+    // A new cache instance can reuse its configured backplane ID, so Redis needs a separate flush origin.
+    private readonly string _flushOrigin = Guid.NewGuid().ToString("N");
+    private long _flushSequence;
+
     private static string _TagMarkerRecoveryKey(string tag)
     {
         return $"\0hybrid-marker:tag:{tag}";
@@ -1282,6 +1284,8 @@ public sealed partial class HybridCache
         // FlushAsync is a logical remove marker (cluster-safe, no physical wipe); receivers physically wipe their
         // own L1 on the FlushAll broadcast and seed their L2 remove marker from the origin timestamp.
         var invalidatedAt = _timeProvider.GetUtcNow();
+        var sequencedFlush = l2Cache as ISequencedCacheFlush;
+        var sequence = sequencedFlush is null ? 0 : Interlocked.Increment(ref _flushSequence);
 
         await _L1ForAll().FlushAsync(cancellationToken).ConfigureAwait(false);
 
@@ -1299,10 +1303,18 @@ public sealed partial class HybridCache
         );
         _coordinator.EventsHub.OnInvalidation(CacheInvalidationKind.Flush, CacheInvalidationDirection.Publish);
 
+        // Timestamp-only recovery coalesces writes to the same marker. A sequenced flush keeps its own queue
+        // slot so an older live flush at that same timestamp cannot drop it before it reaches the remote tier.
+        var recoveryKey = sequencedFlush is null
+            ? _RemoveMarkerRecoveryKey
+            : string.Create(CultureInfo.InvariantCulture, $"{_RemoveMarkerRecoveryKey}:{sequence}");
         await _BumpL2MarkerBestEffortAsync(
-                (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),
+                (writer, ct) =>
+                    sequencedFlush is null
+                        ? writer.WriteRemoveMarkerAsync(invalidatedAt, ct)
+                        : sequencedFlush.WriteSequencedRemoveMarkerAsync(invalidatedAt, _flushOrigin, sequence, ct),
                 ct => l2Cache.FlushAsync(ct),
-                _RemoveMarkerRecoveryKey,
+                recoveryKey,
                 message,
                 "__remove",
                 cancellationToken

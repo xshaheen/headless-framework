@@ -1,0 +1,38 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>The Idempotency module of the Headless dashboard: the idempotency store's settings and a read-only lookup of one key's record metadata.</Description>
+    <PackageTags>headless;idempotency;dashboard;dotnet</PackageTags>
+    <RootNamespace>Headless.Idempotency</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Idempotency.Dashboard.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.Idempotency\Headless.Idempotency.csproj" />
+  </ItemGroup>
+  <!--
+    The front end is the Idempotency dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/idempotency, which embeds as Headless.Idempotency.wwwroot.dist.modules.idempotency.*
+    (IdempotencyAssets), then holds the module to its size budgets and writes .build-complete last, so a build whose
+    budget step failed is not up to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
+</Project>

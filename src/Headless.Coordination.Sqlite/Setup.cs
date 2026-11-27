@@ -100,6 +100,7 @@ public static class SetupCoordinationSqlite
     }
 
     private static readonly RelationalCoordinationProvider<SqliteCoordinationOptions> _Provider = new(
+        "Sqlite",
         SqliteDialect.Instance,
         static options => SqliteDialect.Instance.CreateConnection(options.ConnectionString),
         SqliteMembershipSchemaContribution.Create

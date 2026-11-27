@@ -1,12 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.Testing.Tests;
 using Headless.Tus;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Endpoint;
+using tusdotnet.FileLocks;
 using tusdotnet.Interfaces;
+using tusdotnet.Stores;
+using tusdotnet.Stores.FileIdProviders;
 
 namespace Tests;
 
@@ -253,5 +259,257 @@ public sealed class TusExpiredUploadsCleanupServiceTests : TestBase
 
         // then - the loop survived the failure
         calls.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task should_keep_a_disk_upload_completed_after_selection()
+    {
+        var fileIds = new AfterSelectionFileIdProvider();
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        await using var host = await _StartDiskHostAsync(clock, gate, fileIds: fileIds);
+        byte[] content = [1, 2, 3];
+        var location = await host.CreateUploadAsync(content.Length);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        await host.Store.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+        fileIds.AfterSelection = async id =>
+        {
+            await using var body = new MemoryStream(content);
+            await host.Store.AppendDataAsync(id, body, AbortToken);
+        };
+
+        gate.Resume();
+        await clock.TimerArmed.WaitAsync(AbortToken);
+
+        var upload = await host.Services.GetRequiredService<ITusUploads>().FindUncheckedAsync(fileId, AbortToken);
+        upload.Should().NotBeNull();
+        await using var stream = await upload!.OpenContentAsync(AbortToken);
+        await using var output = new MemoryStream();
+        await stream.CopyToAsync(output, AbortToken);
+        output.ToArray().Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task should_keep_a_disk_upload_refreshed_after_selection()
+    {
+        var fileIds = new AfterSelectionFileIdProvider();
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        await using var host = await _StartDiskHostAsync(clock, gate, fileIds: fileIds);
+        var location = await host.CreateUploadAsync(uploadLength: 3);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        await host.Store.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+        fileIds.AfterSelection = id => host.Store.SetExpirationAsync(id, DateTimeOffset.MaxValue, AbortToken);
+
+        gate.Resume();
+        await clock.TimerArmed.WaitAsync(AbortToken);
+
+        using var response = await host.HeadAsync(location);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Store.GetExpirationAsync(fileId, AbortToken)).Should().Be(DateTimeOffset.MaxValue);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(3L)]
+    public async Task should_remove_an_expired_incomplete_disk_upload(long? length)
+    {
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        await using var host = await _StartDiskHostAsync(clock, gate);
+        var location = await host.CreateUploadAsync(length);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        // The sweep timer's fake clock is in 2000. Disk expiration follows tusdotnet's system clock.
+        var expiredAt = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        await host.Store.SetExpirationAsync(fileId, expiredAt, AbortToken);
+
+        gate.Resume();
+        await clock.TimerArmed.WaitAsync(AbortToken);
+
+        (await host.Store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_share_the_endpoint_lock_and_retry_a_busy_disk_upload(bool registerLockProvider)
+    {
+        var provider = registerLockProvider ? new NamespacedLockProvider() : InMemoryFileLockProvider.Instance;
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        var log = new CleanupLog();
+        await using var host = await _StartDiskHostAsync(clock, gate, log, registerLockProvider ? provider : null);
+        var location = await host.CreateUploadAsync(uploadLength: 3);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        var fileLock = await provider.AquireLock(fileId);
+        (await fileLock.Lock()).Should().BeTrue();
+
+        try
+        {
+            using var response = await host.PatchAsync(location, [1, 2, 3], offset: 0);
+            response.StatusCode.Should().Be(HttpStatusCode.Locked);
+            await host.Store.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+
+            gate.Resume();
+            await clock.TimerArmed.WaitAsync(AbortToken);
+
+            (await host.Store.FileExistAsync(fileId, AbortToken)).Should().BeTrue();
+        }
+        finally
+        {
+            await fileLock.ReleaseIfHeld();
+        }
+
+        clock.Advance(_Interval);
+        await log.Removed.WaitAsync(AbortToken);
+        (await host.Store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_skip_a_disk_upload_removed_after_selection()
+    {
+        var fileIds = new AfterSelectionFileIdProvider();
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        var log = new CleanupLog();
+        await using var host = await _StartDiskHostAsync(clock, gate, log, fileIds: fileIds);
+        var location = await host.CreateUploadAsync(uploadLength: 3);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        await host.Store.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+        fileIds.AfterSelection = id => host.Store.DeleteFileAsync(id, AbortToken);
+
+        gate.Resume();
+        await clock.TimerArmed.WaitAsync(AbortToken);
+
+        (await host.Store.FileExistAsync(fileId, AbortToken)).Should().BeFalse();
+        log.Removed.IsCompleted.Should().BeFalse();
+        log.Failure.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_release_the_disk_upload_lock_when_the_store_fails()
+    {
+        var fileIds = new AfterSelectionFileIdProvider();
+        var clock = new TimerArmedTimeProvider();
+        var gate = new PausedCleanupGate();
+        var log = new CleanupLog();
+        await using var host = await _StartDiskHostAsync(clock, gate, log, fileIds: fileIds);
+        var location = await host.CreateUploadAsync(uploadLength: 3);
+        var fileId = TusEndpointTestHost.FileIdOf(location);
+        await host.Store.SetExpirationAsync(fileId, DateTimeOffset.UnixEpoch, AbortToken);
+        var failure = new IOException("Disk read failed");
+        fileIds.AfterSelection = _ => Task.FromException(failure);
+
+        gate.Resume();
+        await clock.TimerArmed.WaitAsync(AbortToken);
+
+        log.Failure.Should().BeSameAs(failure);
+        await host.Store.SetExpirationAsync(fileId, DateTimeOffset.MaxValue, AbortToken);
+        using var response = await host.PatchAsync(location, [1, 2, 3], offset: 0);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private static Task<TusEndpointTestHost> _StartDiskHostAsync(
+        TimerArmedTimeProvider clock,
+        PausedCleanupGate gate,
+        CleanupLog? log = null,
+        ITusFileLockProvider? lockProvider = null,
+        ITusFileIdProvider? fileIds = null
+    )
+    {
+        return TusEndpointTestHost.StartAsync(
+            new TusEndpointTestHostSetup
+            {
+                CreateStore = directory =>
+                    fileIds is null
+                        ? new TusDiskStore(directory)
+                        : new TusDiskStore(directory, false, TusDiskBufferSize.Default, fileIds),
+                ConfigureServices = services =>
+                {
+                    services.AddSingleton<TimeProvider>(clock);
+                    services.AddSingleton<ITusExpiredUploadsCleanupGate>(gate);
+
+                    if (log is not null)
+                    {
+                        services.AddSingleton<ILogger<TusExpiredUploadsCleanupService>>(log);
+                    }
+
+                    if (lockProvider is not null)
+                    {
+                        services.AddSingleton(lockProvider);
+                    }
+                },
+            },
+            AbortToken
+        );
+    }
+
+    private sealed class PausedCleanupGate : ITusExpiredUploadsCleanupGate
+    {
+        private readonly TaskCompletionSource<bool> _resume = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Resume() => _resume.SetResult(true);
+
+        public Task<bool> TryClaimPassAsync(TimeSpan holdFor, CancellationToken cancellationToken) =>
+            _resume.Task.WaitAsync(cancellationToken);
+    }
+
+    private sealed class AfterSelectionFileIdProvider : GuidFileIdProvider
+    {
+        private int _accesses;
+
+        public Func<string, Task>? AfterSelection { get; set; }
+
+        public override async Task<bool> ValidateId(string fileId)
+        {
+            // The scan validates the only candidate once. The next access is the legacy bulk deletion or
+            // the new recheck. Mutate the real store at that boundary without depending on thread timing.
+            if (AfterSelection is { } action && Interlocked.Increment(ref _accesses) == 2)
+            {
+                await action(fileId);
+            }
+
+            return await base.ValidateId(fileId);
+        }
+    }
+
+    private sealed class NamespacedLockProvider : ITusFileLockProvider
+    {
+        // A distinct key makes a mistaken fallback to the default provider observable.
+        public Task<ITusFileLock> AquireLock(string fileId) =>
+            InMemoryFileLockProvider.Instance.AquireLock($"test-{fileId}");
+    }
+
+    private sealed class CleanupLog : ILogger<TusExpiredUploadsCleanupService>
+    {
+        private readonly TaskCompletionSource _removed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Removed => _removed.Task;
+
+        public Exception? Failure { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (eventId.Id == 3260)
+            {
+                _removed.TrySetResult();
+            }
+
+            if (logLevel == LogLevel.Error)
+            {
+                Failure = exception;
+            }
+        }
     }
 }

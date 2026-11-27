@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Internal;
 using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,11 +23,11 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IServiceProvider 
 {
     /// <summary>
     /// Verifies that both <see cref="SettingValueRecord"/> and <see cref="SettingDefinitionRecord"/>
-    /// are registered in the EF model before the host starts accepting requests.
+    /// are registered in the EF model and that SQL Server compares provider keys with binary collation.
     /// </summary>
     /// <param name="cancellationToken">Token to observe for cancellation.</param>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <typeparamref name="TContext"/> does not contain the required settings entity type.
+    /// Thrown when <typeparamref name="TContext"/> lacks a required settings entity or its SQL Server collation.
     /// Ensure <c>modelBuilder.ConfigureHeadlessSettings(…)</c> is called in <c>OnModelCreating</c>.
     /// </exception>
     public async Task ValidateAsync(CancellationToken cancellationToken)
@@ -43,6 +44,12 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IServiceProvider 
 
         _EnsureEntity(context, typeof(SettingValueRecord), nameof(SettingValueRecord));
         _EnsureEntity(context, typeof(SettingDefinitionRecord), nameof(SettingDefinitionRecord));
+        SqlServerScopeCollation.EnsureConfigured(
+            context,
+            typeof(SettingValueRecord),
+            nameof(SettingValueRecord.ProviderKey),
+            nameof(HeadlessSettingsModelBuilderExtensions.ConfigureHeadlessSettings)
+        );
     }
 
     /// <summary>

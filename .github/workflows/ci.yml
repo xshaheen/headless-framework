@@ -238,6 +238,24 @@ jobs:
           - name: Messaging
             target: dashboard-messaging-test
             lockfile: package-lock.json
+          - name: Rate limits
+            target: dashboard-rate-limiting-test
+            lockfile: package-lock.json
+          - name: Cluster
+            target: dashboard-cluster-test
+            lockfile: package-lock.json
+          - name: Dev inbox
+            target: dashboard-dev-inbox-test
+            lockfile: package-lock.json
+          - name: Idempotency
+            target: dashboard-idempotency-test
+            lockfile: package-lock.json
+          - name: Leases
+            target: dashboard-leases-test
+            lockfile: package-lock.json
+          - name: Sequences
+            target: dashboard-sequences-test
+            lockfile: package-lock.json
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

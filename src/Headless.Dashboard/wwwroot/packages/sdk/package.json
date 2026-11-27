@@ -9,6 +9,7 @@
     "./table": "./src/components/table/index.ts",
     "./date-range": "./src/date-range/index.ts",
     "./combobox": "./src/combobox/index.ts",
+    "./preview": "./src/preview/index.ts",
     "./charts": "./src/charts/index.ts",
     "./icons": "./src/icons/index.ts",
     "./data": "./src/data/index.ts",

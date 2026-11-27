@@ -66,10 +66,13 @@ public static class SetupFileSystemBlob
     {
         _AddBlobsCoreShared(services);
 
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddSingleton(new BlobNamingNormalizerRegistration(normalizer));
+
         services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
             serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
             serviceProvider.GetRequiredService<IJsonSerializer>(),
-            new CrossOsNamingNormalizer(),
+            normalizer,
             serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
             serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
         ));
@@ -78,7 +81,7 @@ public static class SetupFileSystemBlob
         // its own per-store options + normalizer to mirror the storage's isolation.
         services.AddSingleton<IBlobContainerManager>(serviceProvider => new FileSystemBlobContainerManager(
             serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
-            new CrossOsNamingNormalizer()
+            normalizer
         ));
 
         return services;
@@ -88,6 +91,9 @@ public static class SetupFileSystemBlob
     {
         _AddBlobsCoreShared(services);
 
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddKeyedSingleton(name, new BlobNamingNormalizerRegistration(normalizer));
+
         services.AddKeyedSingleton<IBlobStorage>(
             name,
             (serviceProvider, _) =>
@@ -96,7 +102,7 @@ public static class SetupFileSystemBlob
                         serviceProvider.GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>().Get(name)
                     ),
                     serviceProvider.GetRequiredService<IJsonSerializer>(),
-                    new CrossOsNamingNormalizer(),
+                    normalizer,
                     serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                     serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
                 )
@@ -110,7 +116,7 @@ public static class SetupFileSystemBlob
                     Options.Create(
                         serviceProvider.GetRequiredService<IOptionsMonitor<FileSystemBlobStorageOptions>>().Get(name)
                     ),
-                    new CrossOsNamingNormalizer()
+                    normalizer
                 )
         );
 

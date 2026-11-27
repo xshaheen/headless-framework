@@ -134,6 +134,9 @@ internal sealed class IdempotencyRequestResolver(
         }
     }
 
+    /// <summary>Gets the options as they stand now, read on every access so a reload shows at once.</summary>
+    public IdempotentOperationsOptions CurrentOptions => options.CurrentValue;
+
     /// <summary>
     /// Returns an admission or renewal lease duration, the caller's or the configured default, checked against the
     /// configured bounds and truncated to whole microseconds, the finest resolution every provider stores, so a lease

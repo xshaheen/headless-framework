@@ -31,10 +31,12 @@ public static class SetupAuthorizationDenialAudit
         /// </para>
         /// <para>
         /// The entry commits before the challenge or forbid response is written and is not cancelled when the
-        /// client disconnects. A failed audit write is logged and the denial response proceeds unchanged. Call this
-        /// after registering the audit log storage with
-        /// <c>AddHeadlessAuditLog</c> and after any custom <see cref="IAuthorizationMiddlewareResultHandler"/>,
-        /// which it wraps; a handler registered later replaces it. Calling it more than once has no further effect.
+        /// client disconnects. A failed audit write is logged and the denial response proceeds unchanged. It decorates
+        /// the registered <see cref="IPolicyEvaluator"/>, so a custom <see cref="IAuthorizationMiddlewareResultHandler"/>
+        /// registered before or after it still sees every denial audited; an <see cref="IPolicyEvaluator"/> registered
+        /// after it replaces it. Code that evaluates a policy itself through <see cref="IPolicyEvaluator"/> is audited
+        /// too; evaluate through <see cref="IAuthorizationService"/> to check a policy without recording a denial.
+        /// Calling it more than once has no further effect.
         /// </para>
         /// </remarks>
         public IServiceCollection AddHeadlessAuthorizationDenialAudit<TContext>()
@@ -47,13 +49,10 @@ public static class SetupAuthorizationDenialAudit
             services.AddSingleton(new AuthorizationDenialAuditMarker());
             services.AddLogging();
 
-            // AddAuthorization registers the default handler with TryAdd, so registering it here first keeps one
+            // AddAuthorization registers the default evaluator with TryAdd, so registering it here first keeps one
             // registration whichever call runs first, and the decorator always has something to wrap.
-            services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
-            services.TryDecorateWith<
-                IAuthorizationMiddlewareResultHandler,
-                AuditingAuthorizationMiddlewareResultHandler<TContext>
-            >();
+            services.TryAddTransient<IPolicyEvaluator, PolicyEvaluator>();
+            services.TryDecorateWith<IPolicyEvaluator, AuditingPolicyEvaluator<TContext>>();
 
             return services;
         }

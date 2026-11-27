@@ -645,7 +645,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         interceptor.Enabled = true;
 
         var save = async () => await _SaveAsync(db, synchronous);
-        await save.Should().ThrowAsync<TransientMarkerException>();
+        var failure = await save.Should().ThrowAsync<UnitOfWorkInDoubtException>();
+        failure.Which.InnerException.Should().BeSameAs(interceptor.Failure);
         interceptor.CommitCalls.Should().Be(1);
         dispatcher.LocalEmitters.Should().HaveCount(2);
         (await db.Entities.CountAsync(AbortToken))
@@ -655,6 +656,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
     private sealed class UnknownCommitInterceptor : DbTransactionInterceptor
     {
+        public TransientMarkerException Failure { get; } = new();
         public bool Enabled { get; set; }
         public int CommitCalls { get; private set; }
 
@@ -663,7 +665,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
             if (Enabled)
             {
                 CommitCalls++;
-                throw new TransientMarkerException();
+                throw Failure;
             }
         }
 

@@ -48,6 +48,17 @@ builder
 - A host with no listeners at all forwards nothing. The framework never creates a root context where no parent exists.
 - Your OpenTelemetry setup must set `Propagators.DefaultTextMapPropagator`. The standard `AddOpenTelemetry().WithTracing()` does.
 
+### Log correlation
+
+Every log entry written inside the consume pipeline (consume middleware and the consumer) carries `CausationTraceId`: the trace id of the span that published the message, read from its stored `traceparent`. It is the same on the Bus and Queue lanes and on every transport. Query `TraceId = <request trace id> OR CausationTraceId = <request trace id>` to find the request's lines and its consumers' lines together. The consumer's own `TraceId` can differ from the publisher's: an in-process delivery runs under the consumer loop's activity, and a sampled-out consume has none.
+
+- `AddHeadlessLogging()` adds the field. A host that builds its own logging gets the value on `CausalScope.CausationTraceId` and can add it with its own `ILogEnricher`.
+- A message published while no messaging telemetry listens stores no `traceparent` (see [Trace propagation](#trace-propagation)), so its consumer's entries get no field. An unreadable `traceparent` adds no field either.
+- Entries the framework writes outside the pipeline, such as the retry and terminal-failure logs, do not carry it.
+- The consumer's entries also carry the envelope tenant as `TenantId` when tenant propagation is on, from the same profile's tenant enrichment, on every provider. See [multi-tenancy observability](../multi-tenancy/observability.md#observability).
+
+**Verify:** publish from inside a request, then find the consumer's entry by the request's trace id in `CausationTraceId`.
+
 ### Enrichers and tags
 
 - Register an `IActivityTagEnricher` with `setup.Instrumentation.AddEnricher(...)`. It runs synchronously at span start (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), so every tag it adds lands before the span can end. An enricher that throws is isolated from the others.

@@ -10,12 +10,18 @@
     "src/Headless.Dashboard/wwwroot/packages/sdk",
     "src/Headless.Dashboard/wwwroot/packages/vite",
     "src/Headless.Dashboard/wwwroot/apps/shell",
+    "src/Headless.DevInbox.Dashboard/wwwroot",
     "src/Headless.Jobs.Dashboard/wwwroot",
-    "src/Headless.Messaging.Dashboard/wwwroot"
+    "src/Headless.Cluster.Dashboard/wwwroot",
+    "src/Headless.Idempotency.Dashboard/wwwroot",
+    "src/Headless.Leases.Dashboard/wwwroot",
+    "src/Headless.Messaging.Dashboard/wwwroot",
+    "src/Headless.RateLimiting.Dashboard/wwwroot",
+    "src/Headless.Sequences.Dashboard/wwwroot"
   ],
   "scripts": {
-    "format": "prettier --write src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot",
-    "format:check": "prettier --check src/Headless.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot"
+    "format": "prettier --write src/Headless.Dashboard/wwwroot src/Headless.DevInbox.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot src/Headless.RateLimiting.Dashboard/wwwroot src/Headless.Cluster.Dashboard/wwwroot src/Headless.Idempotency.Dashboard/wwwroot src/Headless.Leases.Dashboard/wwwroot src/Headless.Sequences.Dashboard/wwwroot",
+    "format:check": "prettier --check src/Headless.Dashboard/wwwroot src/Headless.DevInbox.Dashboard/wwwroot src/Headless.Jobs.Dashboard/wwwroot src/Headless.Messaging.Dashboard/wwwroot src/Headless.RateLimiting.Dashboard/wwwroot src/Headless.Cluster.Dashboard/wwwroot src/Headless.Idempotency.Dashboard/wwwroot src/Headless.Leases.Dashboard/wwwroot src/Headless.Sequences.Dashboard/wwwroot"
   },
   "devDependencies": {
     "prettier": "3.10.1"

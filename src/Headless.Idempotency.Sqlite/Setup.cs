@@ -121,6 +121,7 @@ public static class SetupIdempotencySqlite
             factory.BeginAsync((SqliteConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
         SqliteIdempotencySchemaContribution.Create,
+        "length",
         EnlistedAdmissionRefusal
     );
 

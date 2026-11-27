@@ -20,7 +20,7 @@ internal sealed class DbConnectionUnitOfWorkResource(
     Func<DbTransaction, bool> isTransactionCompleted,
     bool owned,
     bool closeConnection = false
-) : IRelationalUnitOfWorkResource
+) : IRelationalUnitOfWorkResource, IUnitOfWorkCommitPreparation, IUnitOfWorkCommitCleanup
 {
     public bool IsOwned { get; } = owned;
 
@@ -30,22 +30,13 @@ internal sealed class DbConnectionUnitOfWorkResource(
 
     public bool IsTransactionCompleted => isTransactionCompleted(transaction);
 
-    public async ValueTask CommitAsync(CancellationToken cancellationToken)
-    {
-        if (!IsOwned)
-        {
-            return;
-        }
+    public ValueTask PrepareCommitAsync(CancellationToken cancellationToken) =>
+        PostgreSqlCommitHealthCheck.VerifyAsync(transaction, cancellationToken);
 
-        try
-        {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            await _FinishAsync().ConfigureAwait(false);
-        }
-    }
+    public ValueTask CommitAsync(CancellationToken cancellationToken) =>
+        IsOwned ? new ValueTask(transaction.CommitAsync(cancellationToken)) : ValueTask.CompletedTask;
+
+    public ValueTask ReleaseAfterCommitAsync() => _FinishAsync();
 
     public async ValueTask RollbackAsync(CancellationToken cancellationToken)
     {
@@ -69,11 +60,16 @@ internal sealed class DbConnectionUnitOfWorkResource(
 
     private async ValueTask _FinishAsync()
     {
-        await transaction.DisposeAsync().ConfigureAwait(false);
-
-        if (closeConnection)
+        try
         {
-            await connection.CloseAsync().ConfigureAwait(false);
+            await transaction.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            if (closeConnection)
+            {
+                await connection.CloseAsync().ConfigureAwait(false);
+            }
         }
     }
 }

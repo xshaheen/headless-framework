@@ -39,7 +39,10 @@ Neither tier is registered by default. No startup check covers them: a save thro
 - Chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off `AddHeadlessDbContextServices(...)`, which returns `IHeadlessDbContextBuilder`. `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and takes no parameters.
 - Keep domain-event handlers replay-safe and keep external effects out of them. After the first handler returns, a pipeline-owned save no longer retries. See [Retry and replay](#retry-and-replay).
 - Customize the save pipeline with `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`, and opt out of a built-in processor with `options.RemoveSaveEntryProcessor<TProcessor>()`. Replace `IHeadlessSaveChangesPipeline` only when you need full control of the save.
+- Insert a row that no signed-in user authored, such as a bulk import inside a request, with `db.Set<T>().Add(entity).SkipCreatedByIdStamp()` (namespace `Microsoft.EntityFrameworkCore.ChangeTracking`). The save keeps `CreatedById` as the entity holds it and still stamps `CreatedAt`. For a change no signed-in user made to an existing row, call `db.Entry(entity).SkipUpdatedByIdStamp()`, `SkipDeletedByIdStamp()`, or `SkipRestoredByIdStamp()` before the save. Do not null an actor ID back out in a second save, and do not change the current principal around the save: that also strips the actor from every other entity the save stamps.
+- Declare a member that only the save stamps (`CreatedAt`, `CreatedById`, `UpdatedAt`, `UpdatedById`, `DeletedAt`, `DeletedById`, `RestoredAt`, `RestoredById`, `ConcurrencyStamp`) as a get-only auto-property, `{ get; }`, or keep `{ get; private set; }` when your own code also assigns it. The `HeadlessDbContext` conventions map each of these members by name, so EF Core stores and loads a get-only one through its backing field, and the save writes the stamp through the change tracker. Accept Roslynator's RCS1170 fix on these members; do not suppress it with `#pragma warning disable RCS1170`. A get-only property that no convention or `entity.Property(...)` call maps is not a column, so map any other EF-written member explicitly or keep a setter on it.
 - Configure audit capture in the EF model with `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attribute. Unconfigured entities follow `AuditLogOptions.AuditByDefault`.
+- Page a list query with `ToIndexPageAsync(index, size, ct)` or `ToIndexPageAsync(request, ct)`, and give an optional query-string page a default before the call. There is no overload that takes a nullable index, size, or request. The overloads that take no page input read every row: `ToIndexPageAsync(ct)`, `ToIndexPageAsync(orderBy, ascending, ct)`, and `ToIndexPageAsync(orderBy, ascending, selector, ct)`. Call them only on a query you have already bounded. `IDataGridRequest.Page` is required for the same reason.
 - Load a soft-deleted row with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`. The soft-delete filter hides it otherwise.
 - Put `IDeleteAudit` on the root of an inheritance hierarchy. EF Core filters only hierarchy roots, so a derived-only `IDeleteAudit` type is never filtered and `IgnoreNotDeletedFilter()` changes nothing. Model building logs the `HeadlessDerivedDeleteAuditNotFiltered` warning naming the type and its root. If the root must stay hard-deleted, filter `IsDeleted` yourself in each query on the derived set.
 - Model suspension as your own domain state with your own filter. The framework has no suspension audit or filter.
@@ -48,11 +51,13 @@ Neither tier is registered by default. No startup check covers them: a save thro
 - Wrap a host or admin write in `ITenantWriteGuardBypass.BeginBypass()` when `GuardTenantWrites()` is on. `IgnoreMultiTenancyFilter()` lifts only the read filter, and the two bypasses are independent.
 - Create a fresh `DbContext` for each tenant scope. The tenant filter reads the current tenant on every query, but `FindAsync` can return an entity already tracked under another tenant.
 - Add explicit tenant predicates and authorization to raw SQL and stored procedures. They bypass the query filters and the write guard, and `BeginBypass()` has no effect on them. Bulk `ExecuteUpdate` and `ExecuteDelete` apply the query filters but skip the write guard.
+- Answer a lost uniqueness race with your own error through `db.SaveChangesOrConflictAsync(indexName, descriptor, ct)`, not a hand-written `catch (DbUpdateException)` that parses the provider exception, and not a pre-save existence check alone, which a concurrent writer can pass at the same time. See [Unique conflicts](#unique-conflicts).
 - Treat a zero-row update or delete as `DbUpdateConcurrencyException`, as EF Core reports it. Never translate it into a tenancy exception, and never assume that domain-event handlers did not run.
 - Write your own migrations for tenant columns, keys, and indexes. Headless supplies no backfill and no default tenant. See [Tenant schema rollout](#tenant-schema-rollout).
 - Leave `ConcurrencyStamp` on ASP.NET Identity entities to Identity. Do not add framework concurrency stamping to them.
 - Map concurrency versions natively: a `uint` property to `xmin` with `IsRowVersion()` on PostgreSQL, and a `byte[]` property to `rowversion` on SQL Server. Derive HTTP entity tags at the API boundary. Do not model a provider-neutral `byte[]` as a database-generated row version.
 - Map feature storage tables with the `ModelBuilder` extensions inside `OnModelCreating`: `ConfigureHeadlessAuditLog(...)`, `ConfigureHeadlessFeatures(...)`, `ConfigureHeadlessPermissions(...)`, and `ConfigureHeadlessSettings(...)`.
+- Clamp a page size that comes from a request before you page with it: `query.ToIndexPageAsync(index, Math.Clamp(size, 1, MaxPageSize), ct)`, not `query.ToIndexPageAsync(index, size, ct)` with the query-string value passed through. Nothing in the framework caps a page size, so `ToIndexPageAsync(0, int.MaxValue, ct)` reads every row. Clamp the `Size` of an `IIndexPageRequest` or a `DataGridRequest.Page` the same way before you pass it to `ToIndexPageAsync(request, ct)` or `ToDataGridAsync(request, ct)`. Choose the cap per endpoint.
 - Preserve each `EventContext<object>` in a custom `IHeadlessOutboxDispatcher`: keep its IDs and business context, including a null root cause or system tenant, across save and retry. Never recapture at dispatch.
 - For Couchbase, use `CouchbaseBucketContext` with `IBucketContextProvider` and name the cluster and bucket explicitly. `DocumentSetExtensions` accept only `IEntity` models.
 
@@ -110,11 +115,26 @@ The constants are EF Core named-filter names (for example, `"MultiTenantFilter"`
 `SaveChanges` and `SaveChangesAsync` run `IHeadlessSaveChangesPipeline`, which runs this chain of `IHeadlessSaveEntryProcessor` instances before the EF save:
 
 1. `HeadlessEntitySaveEntryProcessor`: stamps tenant IDs and concurrency stamps. Guid keys were already assigned when the entity was added.
-2. `HeadlessAuditSaveEntryProcessor`: stamps the create, update, and delete audit fields of `ICreateAudit`, `IUpdateAudit`, and `IDeleteAudit` entities. Every modified save restamps `UpdatedAt` and `UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor ID, not the previous actor; a same-save `Update(now, byId, by)` still wins.
+2. `HeadlessAuditSaveEntryProcessor`: stamps the create, update, and delete audit fields of `ICreateAudit`, `IUpdateAudit`, and `IDeleteAudit` entities. Every modified save restamps `UpdatedAt` and `UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor ID, not the previous actor; a same-save `Update(now, byId, by)` still wins. The [`Skip{Property}Stamp()` extensions](#skipping-an-actor-stamp) override it for one entity.
 3. `HeadlessLocalEventSaveEntryProcessor`: emits the `EntityCreated`, `EntityUpdated`, `EntityDeleted`, and `EntityChanged` lifecycle domain events on `IDomainEventEmitter` entities. With the built-in dispatcher, it emits a lifecycle event only when an `IDomainEventHandler<>` for that exact type is registered, closed or open generic. A custom `IDomainEventDispatcher` receives every lifecycle event.
 4. `HeadlessMessageCollectorSaveEntryProcessor`: collects pending domain and integration events.
 
-A processor you add with `AddSaveEntryProcessor<TProcessor>` runs before the last two, so lifecycle events and collected messages see its changes. Adding the same type again replaces the earlier entry.
+A processor you add with `AddSaveEntryProcessor<TProcessor>` runs before the last two, so lifecycle events and collected messages see its changes. It also costs every transactional save a second change-tracker scan before the final audit capture, because a custom processor may change entities without the change tracker seeing it. An audited save that opens its own transaction then captures its audit rows twice. The built-in chain skips both. Adding the same type again replaces the earlier entry.
+
+With the tenant write guard active, the pipeline reuses that scan to recheck tenant ownership before persisting transactional saves. A save outside an explicit transaction takes a fresh scan for the same check when the chain includes a custom processor.
+
+#### Skipping an actor stamp
+
+The `Skip{Property}Stamp()` extensions on `EntityEntry`, in `Microsoft.EntityFrameworkCore.ChangeTracking`, stop the processor from filling one actor ID from `ICurrentUser` for one entity. The matching timestamp is still stamped, and an explicitly set actor ID still wins.
+
+| Call | Effect | How long the mark lasts |
+| --- | --- | --- |
+| `SkipCreatedByIdStamp()` | `CreatedById` keeps the value the entity holds on insert. | Every insert of that instance, through failed saves and an explicit unit of work. |
+| `SkipUpdatedByIdStamp()` | The update records a null `UpdatedById`. | The next save that stamps `UpdatedAt`. |
+| `SkipDeletedByIdStamp()` | The soft delete records a null `DeletedById`. | The next save that stamps `DeletedAt`. |
+| `SkipRestoredByIdStamp()` | The restore records a null `RestoredById`. | The next save that stamps `RestoredAt`. |
+
+A save that reaches an update, delete, or restore stamp removes that mark, whether the save commits or throws. If a save fails and you call `SaveChanges` again, the retry stamps the current user unless you mark the entry again. Mark the entry inside a `RunAsync` block, so a replay by the execution strategy marks it again. A soft delete or restore is also an update, so mark `UpdatedById` too when the change should carry no actor at all. Each call throws `ArgumentException` when the entity does not implement the matching `ICreateAudit<TId>`, `IUpdateAudit<TId>`, or `IDeleteAudit<TId>` with `UserId` or `AccountId`.
 
 An audited save issues one database save when every audit row's entity ID is known at capture: inserts with client-assigned keys, updates, and deletes. Audit rows for inserts whose key the store generates (identity, sequence, database default) follow in a second save. `SaveChanges` returns the count of your rows only, never audit rows. This holds for the EF audit store; the raw ADO.NET audit stores write after the entity save succeeds.
 
@@ -216,7 +236,9 @@ Converters accept optional EF Core mapping hints. Query and model helpers need n
 
 - Provides converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives; money and phone model configuration; and pagination, ordering, data-grid, date aggregation, and lookup helpers.
 - `FirstByIdAsync(id, ct)` loads an `IEntity<TKey>` by key. `FirstOrNotFoundAsync(entity, key, ct)` returns the first element of any query, typically a projection, and requires a reference-type element. Both throw `EntityNotFoundException` (404 through the API exception handler) naming the entity type and key when nothing matches.
+- `ToIndexPageAsync(index, size)` and `ToIndexPageAsync(request)` run one `COUNT` and one `Skip`/`Take` query and return that page with `TotalItems`. A `null` request throws `ArgumentNullException`, and a size below 1 throws `ArgumentOutOfRangeException`. `ToDataGridAsync(request)` applies `request.Orders`, then pages by `request.Page`.
 - `ToIndexPageAsync(index: -1, size: N)` returns the final page, not the last `N` rows, and sets the returned `IndexPage.Index` to the real zero-based page index. EF queries use `Skip` and `Take`, so the provider translates the slice to SQL.
+- `ToDataGridAsync(request, ct)` takes an `IDataGridRequest`. Derive your request from `DataGridRequest` and bind it from a JSON body (`{"page":{"index":1,"size":5}}`) or, in MVC, from the query string (`?page.index=1&page.size=5`). `Page` is the concrete, sealed `IndexPageRequest`, so the binder creates it without a converter. `ToDataGridAsync` throws `ArgumentOutOfRangeException` when `Page.Size` is zero or less, which the API exception handler answers with a 500, whatever the binding path. Validate the page with `RuleFor(x => x.Page).IndexPage()` from `Headless.Api.FluentValidation`, so a bad size answers 422. A JSON body whose `page` omits `index` or `size` fails binding with a 400. MVC query-string binding skips `required`, so a missing `page.size` binds as `0` and only the validator rejects it.
 - The audit policy extensions `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`) only write model annotations; `Headless.EntityFramework` reads them at save. `model.GetAuditPolicies(options)` and `entityType.GetAuditPolicy(options)` (`HeadlessAuditModelPolicyExtensions`) return the resolved `AuditEntityPolicy` and `AuditPropertyPolicy` by the same rules capture uses.
 - `NormalizeDateTimeValueConverter` is the UTC-normalization converter. It treats `DateTimeKind.Unspecified` as an already-UTC value and does not shift it.
 - `ExtraProperties`, `File`, and `Image` columns compare by stored content. Two `ExtraProperties` bags are equal when they hold the same keys with values that serialize to the same JSON, whatever the key order or boxing. The snapshot deep-copies nested values, so an in-place edit of a nested value is saved and reassigning an equal value issues no `UPDATE`. `File` and `Image` compare every stored member: `Metadata` regardless of key order, and `UploadedAt` with its offset.
@@ -265,7 +287,7 @@ builder.Services.AddHeadlessDbContextServices()
     .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher from the bridge package
 ```
 
-To apply the context's EF Core migrations as a deploy step, add `services.AddDbContextMigrations<AppDbContext>()`. It registers a [resource provisioner](utilities.md#resource-provisioning) of kind `EntityFramework`, named after the context: `resources provision` (or `AddDeployStepsOnStartup` in development) applies the migrations, `resources verify` names each pending migration, and the host fails to start while one is pending. It runs after every `Schema` resource whatever the registration order, so a migration can reference a framework table or function. For a script-based deploy, apply the exported Headless schema script before the EF migration script or bundle. Purge and delete are unsupported. Registering it twice does nothing.
+To apply the context's EF Core migrations as a deploy step, add `services.AddDbContextMigrations<AppDbContext>()`. It registers a [resource provisioner](utilities.md#resource-provisioning) of kind `EntityFramework` (`HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind`), named after the context: `resources provision` (or `AddDeployStepsOnStartup` in development) applies the migrations, `resources verify` names each pending migration, and the host fails to start while one is pending. It runs after every `Schema` resource whatever the registration order, so a migration can reference a framework table or function. For a script-based deploy, apply the exported Headless schema script before the EF migration script or bundle. Purge and delete are unsupported. Registering it twice does nothing. A provisioner of your own that must run after the migrations, such as one that creates views over their tables, selects that constant in its `DependsOn` ([example](utilities.md#add-a-resource)).
 
 **Verify:** the readiness health check `dbcontext-{TDbContext full name}` (tags `ready`, `headless`, `database`) reports healthy; see [Health checks](utilities.md#health-checks). It runs `Database.CanConnectAsync` on a context from its own scope and reports fixed text instead of the driver message on failure. With `AddDbContextMigrations`, `resources verify` lists no pending migration. The event tiers have no startup signal: a save that emits an event for an unregistered tier throws `InvalidOperationException` naming the registration to add.
 
@@ -373,7 +395,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTena
 - With the guard on, a missing tenant is stamped from `ICurrentTenant.Id` when the entry becomes `Added`, including a detached-to-Added transition. A supplied tenant value is kept. Adding under tenant A and saving under tenant B fails instead of changing ownership.
 - A missing ambient tenant, or a missing required tenant on an `Added` entry, throws `MissingTenantContextException`. A cross-tenant write, or a mismatch between an existing row's original and current tenant, throws `CrossTenantWriteException`. This covers updates, physical deletes, soft deletes, and changes inside supported owned graphs. A required tenant key can fail during tracking, before `SaveChanges`.
 - Entities owned only through metadata (`IsTenantOwned()` with no `IMultiTenant`) are stamped only under the guard. Without it, assign the tenant property before tracking. Without the guard, save-time stamping covers only `IMultiTenant` entities.
-- Guard errors raise before domain-event handlers run. A SQL concurrency failure can raise after handlers ran, because the business save follows dispatch. A failed save prevents the outbox rows from persisting, but does not undo local or external handler effects.
+- The first guard check runs before domain-event handlers. When a handler or custom processor runs, the guard checks the resulting writes again before EF Core persists them. A final guard error or SQL concurrency failure can occur after handlers ran. A failed save prevents the outbox rows from persisting, but does not undo local or external handler effects.
 
 For an intentional host or admin write, use `ITenantWriteGuardBypass.BeginBypass()`:
 
@@ -501,6 +523,32 @@ modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyAmountVal
 // Or apply globally across all matching CLR types:
 configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueConverter>();
 ```
+
+#### Unique conflicts
+
+A handler that checks that no other row holds a value can still lose to a concurrent writer that takes the value before the save. The unique index decides the race. Without a mapping, the Headless API exception handler answers the violation with the generic 409 `g:unique_violation`. To return your own error, save through `SaveChangesOrConflictAsync` (namespace `Microsoft.EntityFrameworkCore`) and name the index:
+
+```csharp
+// The model names the index, so the database reports the same name.
+modelBuilder.Entity<Member>().HasIndex(x => x.Email).IsUnique().HasDatabaseName("IX_Members_Email");
+
+// In the handler: the existence check gives the common case a clean error, the save covers the race.
+if (await db.Members.AnyAsync(x => x.Email == command.Email, ct))
+{
+    throw new ConflictException(MemberErrors.EmailTaken());
+}
+
+db.Members.Add(member);
+await db.SaveChangesOrConflictAsync("IX_Members_Email", MemberErrors.EmailTaken(), ct);
+```
+
+- A violation of the named constraint or unique index throws `ConflictException` with your descriptor, and the provider failure as `InnerException`. The Headless API exception handler returns it as 409 with your `errors[].code`.
+- Pass an `IReadOnlyDictionary<string, ErrorDescriptor>` to map several names in one save. The dictionary's comparer matches the reported name; use `StringComparer.Ordinal`.
+- A violation of any other constraint, and every other failure, propagates unchanged, so the generic 409 still answers it.
+- Name the constraint as the database holds it: `HasDatabaseName(...)` for an index, `HasName(...)` for a key or alternate key. EF's default names (`IX_<Table>_<Column>`, `AK_...`, `PK_...`) work too, but a naming convention such as snake_case rewrites them.
+- The constraint name comes from `RelationalFaults.IsUniqueViolation(exception, out var constraintName)` in `Headless.Extensions`, which you can call from your own catch filter. PostgreSQL reports the name in its own field. SQL Server reports it only in the message text, so the name is read from the English message (errors `2627` and `2601`). Under a session or login language that localizes the message (`SET LANGUAGE`, or a non-English default language), no name is read: the mapping does not apply, and the violation propagates as the generic 409. SQLite reports no name, so the mapping never applies there.
+
+**Verify:** in an integration test against your engine, insert a row, add a second row with the same value, and assert that `SaveChangesOrConflictAsync` throws `ConflictException` whose `Errors[0].Code` is your code.
 
 ### Design and runtime behavior
 

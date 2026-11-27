@@ -117,6 +117,7 @@ public static class SetupFencingPostgreSql
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
-        PostgreSqlFencingSchemaContribution.Create
+        PostgreSqlFencingSchemaContribution.Create,
+        FencingReadDialect.PostgreSql
     );
 }

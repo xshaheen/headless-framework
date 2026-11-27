@@ -338,7 +338,6 @@ real-wait 1 tests/Headless.Sequences.SqlServer.Tests.Integration/SqlServerSequen
 real-wait 2 tests/Headless.Sequences.Tests.Harness/SequencesConformanceTests.cs
 wall-clock 1 tests/Headless.Settings.Storage.SqlServer.Tests.Integration/SqlServerSettingsStorageTests.cs
 wall-clock 1 tests/Headless.Settings.Tests.Unit/Values/SettingsSnapshotChangeConsumerTests.cs
-real-wait 1 tests/Headless.Sql.PostgreSql.Tests.Integration/UnitOfWork/PostgreSqlUnitOfWorkFixture.cs
 real-wait 1 tests/Headless.Sql.SqlServer.Tests.Integration/UnitOfWork/SqlServerUnitOfWorkFixture.cs
 real-wait 1 tests/Headless.Sql.Sqlite.Tests.Integration/SqliteDialectTests.cs
 wall-clock 2 tests/Headless.Sql.Sqlite.Tests.Integration/SqliteDialectTests.cs

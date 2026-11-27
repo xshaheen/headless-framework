@@ -4,6 +4,17 @@ namespace Headless.Caching;
 
 public sealed partial class HybridCache
 {
+    private TagPublicationScope _TrackTagPublication()
+    {
+        _tagHistory?.TrackPublication(starting: true);
+        return new TagPublicationScope(_tagHistory);
+    }
+
+    private readonly record struct TagPublicationScope(IHybridTagHistory? History) : IDisposable
+    {
+        public void Dispose() => History?.TrackPublication(starting: false);
+    }
+
     // A read that misses L1 fetches from L2 and then fills L1. A write or an invalidation that lands between the fetch
     // and the fill must win, or the fill puts the older L2 value back and this node serves it until the local entry
     // expires. Every L1 mutation therefore bumps a generation first, and a fill commits only while the generation it
@@ -31,6 +42,13 @@ public sealed partial class HybridCache
     {
         Interlocked.Increment(ref _l1KeyGenerations[_L1Stripe(key)]);
 
+        return LocalCache;
+    }
+
+    private IInMemoryCache _L1For(string key, out (long Global, long Key) generation)
+    {
+        var global = Volatile.Read(ref _l1GlobalGeneration);
+        generation = (global, Interlocked.Increment(ref _l1KeyGenerations[_L1Stripe(key)]));
         return LocalCache;
     }
 
@@ -65,10 +83,19 @@ public sealed partial class HybridCache
             return;
         }
 
-        await _SetLocalEntryAsync(l1Store, key, entry, expectedConcurrencyStamp: null, cancellationToken)
+        var (committed, _) = await _SetLocalEntryAsync(
+                l1Store,
+                key,
+                entry,
+                expectedConcurrencyStamp: null,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        await _DropFillIfMutatedAsync(key, captured).ConfigureAwait(false);
+        if (committed)
+        {
+            await _DropFillIfMutatedAsync(key, captured).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Removes a fill of <paramref name="key"/> that a concurrent mutation overtook.</summary>

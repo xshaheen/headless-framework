@@ -64,6 +64,26 @@ describe('bootstrap', () => {
     expect(() => readBootstrapState(document)).toThrow(/does not hold the dashboard's page state/)
   })
 
+  it('reads a development-only product as such, and any other value of the flag as an ordinary product', () => {
+    const base = shellState([moduleManifest('diag')])
+    const product = base.products[0]!
+    const state = {
+      ...base,
+      products: [
+        { ...product, id: 'dev-inbox', developmentOnly: true },
+        { ...product, id: 'jobs' },
+        { ...product, id: 'cluster', developmentOnly: 'yes' },
+      ],
+    }
+    document.body.innerHTML = `<script type="application/json" id="${stateElementId}">${JSON.stringify(state)}</script>`
+
+    expect(readBootstrapState(document).products.map((item) => item.developmentOnly)).toEqual([
+      true,
+      undefined,
+      undefined,
+    ])
+  })
+
   it('reloads once when the inlined state is signed out but the server reports a session, then renders', async () => {
     const state = shellState([], { session: { authenticated: false } })
     const storage = memoryStorage()

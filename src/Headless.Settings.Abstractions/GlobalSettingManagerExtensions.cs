@@ -97,7 +97,7 @@ public static class GlobalSettingManagerExtensions
         }
 
         /// <summary>Returns a named set of setting values from the <see cref="SettingValueProviderNames.Global"/> provider.</summary>
-        /// <param name="settingNames">The set of setting names to resolve.</param>
+        /// <param name="settingNames">The setting names to resolve. Duplicate names resolve once.</param>
         /// <param name="fallback">When <see langword="true"/>, falls back to subsequent providers for settings without a global value.</param>
         /// <param name="cancellationToken">The abort token.</param>
         /// <returns>A read-only list of <see cref="SettingValue"/> instances for the requested settings that resolved.</returns>
@@ -107,7 +107,7 @@ public static class GlobalSettingManagerExtensions
         /// user's own value shadows it on the read path.
         /// </remarks>
         public Task<IReadOnlyList<SettingValue>> GetAllGlobalAsync(
-            HashSet<string> settingNames,
+            IReadOnlyCollection<string> settingNames,
             bool fallback = true,
             CancellationToken cancellationToken = default
         )

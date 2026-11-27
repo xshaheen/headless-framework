@@ -1,6 +1,6 @@
 # Dashboard front end
 
-These rules cover every dashboard front end: the shell (`apps/shell`), the SDK (`packages/sdk`, `@headless/dashboard-sdk`), the Vite preset (`packages/vite`, `@headless/dashboard-vite`), and the modules in `src/Headless.Jobs.Dashboard/wwwroot` and `src/Headless.Messaging.Dashboard/wwwroot`. The repository-root `AGENTS.md` still applies. What a module may import, the SDK entries, list views, and the size budgets are in [MODULES.md](MODULES.md); read it before you add a view or an SDK component.
+These rules cover every dashboard front end: the shell (`apps/shell`), the SDK (`packages/sdk`, `@headless/dashboard-sdk`), the Vite preset (`packages/vite`, `@headless/dashboard-vite`), and the modules in `src/Headless.Jobs.Dashboard/wwwroot`, `src/Headless.Messaging.Dashboard/wwwroot`, `src/Headless.Cluster.Dashboard/wwwroot`, `src/Headless.DevInbox.Dashboard/wwwroot`, `src/Headless.Idempotency.Dashboard/wwwroot`, `src/Headless.Leases.Dashboard/wwwroot`, `src/Headless.RateLimiting.Dashboard/wwwroot`, and `src/Headless.Sequences.Dashboard/wwwroot`. The repository-root `AGENTS.md` still applies. What a module may import, the SDK entries, list views, and the size budgets are in [MODULES.md](MODULES.md); read it before you add a view or an SDK component.
 
 ## Stack
 
@@ -8,7 +8,7 @@ React 19 and TypeScript in strict mode (`tsconfig.base.json`: `noUncheckedIndexe
 
 ## Build and check
 
-- Run `make dashboard-shell-test`, `make dashboard-jobs-test`, or `make dashboard-messaging-test` for the code you changed, or `make dashboards-test` for all three. Each one checks formatting, lints, type-checks, runs Vitest, and builds against the size budgets in `packages/vite/budget.json`; CI's dashboard jobs run the same targets.
+- Run `make dashboard-shell-test`, `make dashboard-jobs-test`, `make dashboard-messaging-test`, `make dashboard-cluster-test`, `make dashboard-dev-inbox-test`, `make dashboard-idempotency-test`, `make dashboard-leases-test`, `make dashboard-rate-limiting-test`, or `make dashboard-sequences-test` for the code you changed, or `make dashboards-test` for all of them. Each one checks formatting, lints, type-checks, runs Vitest, and builds against the size budgets in `packages/vite/budget.json`; CI's dashboard jobs run the same targets.
 - Run scripts through `make` or `npm run`, never `npx`: a wrapper on `PATH` can print over the tool's output and hide a failure.
 - Node 22.18 or later. Add a package only at a version at least 7 days old, pin it exactly, and keep the lockfile change in the same commit.
 

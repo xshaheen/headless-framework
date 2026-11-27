@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Shared failure policy model for Headless Messaging and Jobs: immediate and delayed retries with capped exponential backoff, and fail rules that end a failure at once.</Description>
     <PackageTags>headless;reliability;failure-policy;retry;backoff;messaging;jobs;dotnet</PackageTags>
     <RootNamespace>Headless.Reliability</RootNamespace>

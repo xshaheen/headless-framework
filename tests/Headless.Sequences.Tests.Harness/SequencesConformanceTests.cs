@@ -3,6 +3,8 @@
 using Headless.Sequences;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -726,6 +728,399 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         await advanced.Should().ThrowAsync<InvalidOperationException>();
         unit.Unit.IsRetryPrevented.Should().BeFalse("a refused call runs no statement");
         await unit.RollbackAsync();
+    }
+
+    #endregion
+
+    #region Inspection
+
+    public virtual async Task should_leave_every_counter_unchanged_when_inspecting()
+    {
+        var tenant = CreateName("tenant");
+        var (fast, gapFree, unused) = (CreateName("receipt"), CreateName("invoice"), CreateName("unused"));
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup
+                    .Policy(gapFree, new SequencePolicy { Mode = SequenceMode.GapFree })
+                    .Policy(unused, new SequencePolicy { Mode = SequenceMode.GapFree }),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            await host.Generator.NextAsync(fast, cancellationToken: AbortToken);
+            await host.Generator.NextAsync(fast, "2026", AbortToken);
+            await host.Generator.NextAsync(fast, "2026", AbortToken);
+
+            await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+            await unit.Unit.Sequences.NextAsync(gapFree, cancellationToken: AbortToken);
+            await unit.CommitAsync(AbortToken);
+        }
+
+        var inspector = host.Inspector;
+
+        for (var round = 0; round < 2; round++)
+        {
+            await inspector.ListCountersAsync(new SequenceCounterQuery { TenantId = tenant }, AbortToken);
+            await inspector.ListCountersAsync(
+                new SequenceCounterQuery
+                {
+                    TenantId = tenant,
+                    Mode = SequenceMode.GapFree,
+                    CurrentPartitionsOnly = true,
+                },
+                AbortToken
+            );
+            await inspector.ListPartitionsAsync(
+                new SequencePartitionQuery { TenantId = tenant, Name = fast },
+                AbortToken
+            );
+            await inspector.ListPartitionsAsync(
+                new SequencePartitionQuery { TenantId = tenant, Name = unused },
+                AbortToken
+            );
+            await inspector.GetSummaryAsync(new SequenceSummaryQuery { TenantId = tenant }, AbortToken);
+        }
+
+        (await Fixture.ReadValueAsync(new SequenceKey(tenant, fast, ""), AbortToken)).Should().Be(1);
+        (await Fixture.ReadValueAsync(new SequenceKey(tenant, fast, "2026"), AbortToken)).Should().Be(2);
+        (await Fixture.ReadValueAsync(new SequenceKey(tenant, gapFree, ""), AbortToken)).Should().Be(1);
+        (await Fixture.ReadValueAsync(new SequenceKey(tenant, unused, ""), AbortToken))
+            .Should()
+            .BeNull("reading a registered name that has no row creates none");
+    }
+
+    public virtual async Task should_page_counters_in_key_order_with_no_duplicate_and_no_gap()
+    {
+        var tenant = CreateName("tenant");
+        var prefix = CreateName("page");
+        var names = Enumerable.Range(0, 7).Select(i => $"{prefix}-{i}").ToList();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            foreach (var name in names)
+            {
+                await host.Generator.NextAsync(name, cancellationToken: AbortToken);
+            }
+        }
+
+        var pages = new List<SequenceCounterPage>();
+        SequenceKey? after = null;
+
+        do
+        {
+            var page = await host.Inspector.ListCountersAsync(
+                new SequenceCounterQuery
+                {
+                    TenantId = tenant,
+                    After = after,
+                    Limit = 3,
+                },
+                AbortToken
+            );
+            pages.Add(page);
+            after = page.Next;
+        } while (after is not null && pages.Count < 5);
+
+        pages.Select(static p => p.Items.Count).Should().Equal(3, 3, 1);
+        pages[^1].Next.Should().BeNull();
+        var keys = pages.SelectMany(static p => p.Items).Select(static c => c.Key).ToList();
+        var expected = names.Order(StringComparer.Ordinal).Select(name => new SequenceKey(tenant, name, "")).ToList();
+        keys.Should().Equal(expected);
+    }
+
+    public virtual async Task should_filter_counters_by_tenant_name_search_and_mode()
+    {
+        var tenant = CreateName("tenant");
+        var otherTenant = CreateName("tenant");
+        var (fast, gapFree, reported) = (CreateName("receipt"), CreateName("invoice"), CreateName("terminal"));
+        var searchable = "FIND-" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+        var accented = "ÉTAT-" + Guid.NewGuid().ToString("N");
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup
+                    .Policy(gapFree, new SequencePolicy { Mode = SequenceMode.GapFree })
+                    .Policy(reported, new SequencePolicy { Mode = SequenceMode.Reported }),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            await host.Generator.NextAsync(fast, cancellationToken: AbortToken);
+            await host.Generator.NextAsync(searchable, cancellationToken: AbortToken);
+            await host.Generator.NextAsync(accented, cancellationToken: AbortToken);
+
+            await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+            await unit.Unit.Sequences.NextAsync(gapFree, cancellationToken: AbortToken);
+            await unit.Unit.Sequences.AdvanceToAsync(reported, 5, "device-1", AbortToken);
+            await unit.CommitAsync(AbortToken);
+        }
+
+        using (host.CurrentTenant.Change(otherTenant))
+        {
+            await host.Generator.NextAsync(fast, cancellationToken: AbortToken);
+        }
+
+        var inspector = host.Inspector;
+
+        async Task<IEnumerable<string>> namesAsync(SequenceCounterQuery query)
+        {
+            var page = await inspector.ListCountersAsync(query, AbortToken);
+
+            return page.Items.Select(static c => c.Key.Name);
+        }
+
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant }))
+            .Should()
+            .BeEquivalentTo(fast, searchable, accented, gapFree, reported);
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Name = gapFree }))
+            .Should()
+            .BeEquivalentTo(gapFree);
+        (await namesAsync(new SequenceCounterQuery { Search = searchable.ToLowerInvariant()[5..] }))
+            .Should()
+            .BeEquivalentTo([searchable], "the search ignores ASCII case and spans every tenant");
+        (await namesAsync(new SequenceCounterQuery { Search = accented }))
+            .Should()
+            .BeEquivalentTo([accented], "a non-ASCII letter matches as typed on every engine");
+        (await namesAsync(new SequenceCounterQuery { Search = "ét" + accented[2..].ToUpperInvariant() }))
+            .Should()
+            .BeEmpty("a non-ASCII letter's case is never folded, on any engine");
+        (await namesAsync(new SequenceCounterQuery { Search = "É" + accented[1..].ToLowerInvariant() }))
+            .Should()
+            .BeEquivalentTo([accented], "ASCII letters beside a non-ASCII one still ignore case");
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Search = "FIND%" }))
+            .Should()
+            .BeEmpty("wildcards in the search match only themselves");
+        (await namesAsync(new SequenceCounterQuery { Search = otherTenant.ToUpperInvariant() }))
+            .Should()
+            .BeEquivalentTo([fast], "the search also matches the tenant id");
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Mode = SequenceMode.GapFree }))
+            .Should()
+            .BeEquivalentTo(gapFree);
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Mode = SequenceMode.Reported }))
+            .Should()
+            .BeEquivalentTo(reported);
+        (await namesAsync(new SequenceCounterQuery { TenantId = tenant, Mode = SequenceMode.Fast }))
+            .Should()
+            .BeEquivalentTo([fast, searchable, accented], "names with no registered policy take the fast default");
+    }
+
+    public virtual async Task should_keep_only_current_partitions_of_resetting_policies_and_every_partition_of_the_others()
+    {
+        var tenant = CreateName("tenant");
+        var (monthly, device) = (CreateName("monthly"), CreateName("device"));
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 8, 9, 0, 0, TimeSpan.Zero));
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup
+                    .Policy(monthly, new SequencePolicy { Reset = SequenceReset.Month, Format = "M-{yyyy}{MM}-{seq}" })
+                    .Policy(device, new SequencePolicy { Mode = SequenceMode.Reported }),
+            services => services.AddSingleton<TimeProvider>(clock),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            await host.Generator.NextAsync(monthly, "2026-09", AbortToken);
+            (await host.Generator.NextNumberAsync(monthly, AbortToken)).Partition.Should().Be("2026-10");
+
+            await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+            await unit.Unit.Sequences.AdvanceToAsync(device, 1, "dev-1", AbortToken);
+            await unit.Unit.Sequences.AdvanceToAsync(device, 1, "dev-2", AbortToken);
+            await unit.CommitAsync(AbortToken);
+        }
+
+        var all = await host.Inspector.ListCountersAsync(new SequenceCounterQuery { TenantId = tenant }, AbortToken);
+        var current = await host.Inspector.ListCountersAsync(
+            new SequenceCounterQuery { TenantId = tenant, CurrentPartitionsOnly = true },
+            AbortToken
+        );
+
+        all.Items.Where(static c => !c.IsCurrentPartition)
+            .Select(static c => c.Key)
+            .Should()
+            .Equal(new SequenceKey(tenant, monthly, "2026-09"));
+        current
+            .Items.Select(static c => c.Key)
+            .Should()
+            .BeEquivalentTo([
+                new SequenceKey(tenant, monthly, "2026-10"),
+                new SequenceKey(tenant, device, "dev-1"),
+                new SequenceKey(tenant, device, "dev-2"),
+            ]);
+    }
+
+    public virtual async Task should_list_partitions_newest_first_marking_the_current_one()
+    {
+        var tenant = CreateName("tenant");
+        var monthly = CreateName("monthly");
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 8, 9, 0, 0, TimeSpan.Zero));
+        await using var host = await Fixture.CreateHostAsync(
+            setup => setup.Policy(monthly, new SequencePolicy { Reset = SequenceReset.Month }),
+            services => services.AddSingleton<TimeProvider>(clock),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            for (var month = 7; month <= 9; month++)
+            {
+                for (var i = 0; i < month; i++)
+                {
+                    await host.Generator.NextAsync(monthly, $"2026-{month:D2}", AbortToken);
+                }
+            }
+
+            await host.Generator.NextNumberAsync(monthly, AbortToken);
+        }
+
+        var first = await host.Inspector.ListPartitionsAsync(
+            new SequencePartitionQuery
+            {
+                TenantId = tenant,
+                Name = monthly,
+                Limit = 2,
+            },
+            AbortToken
+        );
+        var second = await host.Inspector.ListPartitionsAsync(
+            new SequencePartitionQuery
+            {
+                TenantId = tenant,
+                Name = monthly,
+                Before = first.Next,
+                Limit = 2,
+            },
+            AbortToken
+        );
+
+        first
+            .Items.Select(static c => (c.Key.Partition, c.Value, c.IsCurrentPartition))
+            .Should()
+            .Equal(("2026-10", 1L, true), ("2026-09", 9L, false));
+        first.Next.Should().Be("2026-09");
+        second
+            .Items.Select(static c => (c.Key.Partition, c.Value, c.IsCurrentPartition))
+            .Should()
+            .Equal(("2026-08", 8L, false), ("2026-07", 7L, false));
+        second.Next.Should().BeNull();
+    }
+
+    public virtual async Task should_count_counters_by_mode_and_report_the_next_reset()
+    {
+        var tenant = CreateName("tenant");
+        var (fast, gapFree, reported) = (CreateName("receipt"), CreateName("invoice"), CreateName("terminal"));
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 8, 9, 0, 0, TimeSpan.Zero));
+        var yearly = new SequencePolicy { Mode = SequenceMode.GapFree, Reset = SequenceReset.Year };
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup.Policy(gapFree, yearly).Policy(reported, new SequencePolicy { Mode = SequenceMode.Reported }),
+            services => services.AddSingleton<TimeProvider>(clock),
+            AbortToken
+        );
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            await host.Generator.NextAsync(fast, "a", AbortToken);
+            await host.Generator.NextAsync(fast, "b", AbortToken);
+
+            await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+            await unit.Unit.Sequences.NextNumberAsync(gapFree, AbortToken);
+            await unit.Unit.Sequences.AdvanceToAsync(reported, 3, cancellationToken: AbortToken);
+            await unit.CommitAsync(AbortToken);
+        }
+
+        var summary = await host.Inspector.GetSummaryAsync(new SequenceSummaryQuery { TenantId = tenant }, AbortToken);
+        var current = await host.Inspector.GetSummaryAsync(
+            new SequenceSummaryQuery
+            {
+                TenantId = tenant,
+                CurrentPartitionsOnly = true,
+                Search = gapFree,
+            },
+            AbortToken
+        );
+
+        summary
+            .Should()
+            .Be(
+                new SequenceCounterSummary
+                {
+                    Total = 4,
+                    Fast = 2,
+                    GapFree = 1,
+                    Reported = 1,
+                    Capped = false,
+                    NextResetAt = yearly.NextResetAt(clock.GetUtcNow()),
+                }
+            );
+        current.Total.Should().Be(1);
+        current.GapFree.Should().Be(1);
+    }
+
+    public virtual async Task should_stop_counting_at_the_cap_and_report_it()
+    {
+        var tenant = CreateName("tenant");
+        var name = CreateName("capped");
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                await host.Generator.NextAsync(name, $"p{i}", AbortToken);
+            }
+        }
+
+        var reader = host.Services.GetRequiredService<ISequenceCounterReader>();
+
+        SequenceCounterCountRequest request(int cap) =>
+            new()
+            {
+                Filter = new SequenceCounterFilter { TenantId = tenant },
+                Modes = new SequenceModeNames { DefaultMode = SequenceMode.Fast },
+                Cap = cap,
+            };
+
+        (await reader.CountAsync(request(3), AbortToken)).Should().Be(new SequenceCounterCounts(3, 3, 0, 0, true));
+        (await reader.CountAsync(request(5), AbortToken)).Should().Be(new SequenceCounterCounts(5, 5, 0, 0, false));
+    }
+
+    public virtual async Task should_show_the_last_formatted_number_and_when_the_counter_changed()
+    {
+        var tenant = CreateName("tenant");
+        var name = CreateName("receipt");
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup.Policy(name, new SequencePolicy { Format = "R-{yyyy}-{seq:D4}", Reset = SequenceReset.Year }),
+            AbortToken
+        );
+
+        SequenceNumber last;
+
+        using (host.CurrentTenant.Change(tenant))
+        {
+            await host.Generator.NextNumberAsync(name, AbortToken);
+            last = await host.Generator.NextNumberAsync(name, AbortToken);
+        }
+
+        var counter = (
+            await host.Inspector.ListCountersAsync(
+                new SequenceCounterQuery { TenantId = tenant, Name = name },
+                AbortToken
+            )
+        )
+            .Items.Should()
+            .ContainSingle()
+            .Subject;
+
+        counter.Key.Should().Be(new SequenceKey(tenant, name, last.Partition!));
+        counter.Value.Should().Be(2);
+        counter.LastNumber.Should().Be(last.Text);
+        counter.IsCurrentPartition.Should().BeTrue();
+        counter.UpdatedAt.Should().NotBe(default);
+        counter.NextResetAt.Should().BeAfter(counter.UpdatedAt);
     }
 
     #endregion

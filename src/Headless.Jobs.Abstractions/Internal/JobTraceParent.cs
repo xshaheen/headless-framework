@@ -48,4 +48,13 @@ internal static class JobTraceParent
         link = default;
         return false;
     }
+
+    /// <summary>
+    /// Returns the trace id of a stored <c>traceparent</c>, or the default id for a null or unreadable value, so only a
+    /// well-formed id ever reaches a log entry.
+    /// </summary>
+    internal static ActivityTraceId GetTraceId(string? traceParent)
+    {
+        return TryGetLink(traceParent, out var link) ? link.Context.TraceId : default;
+    }
 }

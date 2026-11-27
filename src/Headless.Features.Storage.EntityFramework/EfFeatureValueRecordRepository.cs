@@ -15,7 +15,7 @@ namespace Headless.Features;
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 /// <param name="valueCache">
 /// The feature-value cache shared with <c>FeatureValueStore</c>, the named one when
-/// <see cref="FeatureManagementOptions.FeatureValueCacheName"/> is set. A write here stores the written value in the
+/// <see cref="FeatureManagementOptions.FeatureValueCacheName"/> is set. A write here syncs the current value into the
 /// affected cache entry (an empty item for a delete), so a direct repository write (bypassing <c>IFeatureManager</c>) is
 /// reflected on the next read and a concurrent reader's older load cannot overwrite it.
 /// </param>
@@ -23,7 +23,7 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     FeatureValueCache valueCache,
     ILogger<EfFeatureValueRecordRepository<TContext>> logger
-) : IFeatureValueRecordRepository
+) : IFeatureValueRecordRepository, IFeatureValueRepositoryForStore
     where TContext : DbContext
 {
     private const string _VersionConflictMessage = "The feature values changed after the version was read.";
@@ -31,7 +31,14 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
     private const string _Owner = "the EF Core features storage";
     private const string _Operation = "feature value";
 
-    private readonly ICache _cache = valueCache.Cache;
+    private bool WritesCache { get; init; } = true;
+
+    IFeatureValueRecordRepository IFeatureValueRepositoryForStore.ForStore(ICache storeCache)
+    {
+        return ReferenceEquals(storeCache, valueCache.Cache)
+            ? new EfFeatureValueRecordRepository<TContext>(dbFactory, valueCache, logger) { WritesCache = false }
+            : this;
+    }
 
     /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
@@ -366,12 +373,28 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
             )
             .ConfigureAwait(false);
 
-        FeatureValueCacheInvalidation.UpsertAfterCommit(
-            unitOfWork,
-            _cache,
-            FeatureValueCacheInvalidation.WrittenItems([.. inserted, .. updated], deleted),
-            logger
-        );
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (
+            var scope in inserted
+                .Concat(updated)
+                .Concat(deleted)
+                .GroupBy(record => (record.ProviderName, record.ProviderKey))
+        )
+        {
+            FeatureValueCacheInvalidation.SyncAfterCommit(
+                unitOfWork,
+                valueCache.Cache,
+                this,
+                scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray(),
+                scope.Key.ProviderName,
+                scope.Key.ProviderKey,
+                logger
+            );
+        }
     }
 
     /// <summary>
@@ -383,12 +406,34 @@ internal sealed class EfFeatureValueRecordRepository<TContext>(
         IReadOnlyCollection<FeatureValueRecord> deleted
     )
     {
-        await _cache
-            .UpsertAllAsync(
-                FeatureValueCacheInvalidation.WrittenItems(written, deleted),
-                FeatureValueCacheInvalidation.Expiration,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        if (!WritesCache)
+        {
+            return;
+        }
+
+        foreach (var scope in written.Concat(deleted).GroupBy(record => (record.ProviderName, record.ProviderKey)))
+        {
+            var names = scope.Select(record => record.Name).Distinct(StringComparer.Ordinal).ToArray();
+
+            try
+            {
+                await FeatureValueCacheInvalidation
+                    .SyncAsync(
+                        valueCache.Cache,
+                        this,
+                        names,
+                        scope.Key.ProviderName,
+                        scope.Key.ProviderKey,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Cache maintenance cannot reverse the repository's durable write.
+            catch (Exception exception)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateFeatureCache(exception, names.Length);
+            }
+        }
     }
 }

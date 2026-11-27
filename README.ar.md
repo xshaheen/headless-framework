@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-220 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+226 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,13 +53,13 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 7 transports.
 
-**هتركّب 3 packages، مش 220.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 226.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
 **الحاجات الصعبة متكتوبة خلاص.** الـ background jobs بتعمل claim للشغل بشكل atomic عن طريق `FOR UPDATE SKIP LOCKED` في PostgreSQL و `UPDLOCK, READPAST, ROWLOCK` في SQL Server. والـ messaging بتكتب في transactional outbox جوه نفس الـ save بتاع EF Core. والـ distributed locks بتستخدم advisory locks في PostgreSQL و application locks في SQL Server، مش `SET NX` مرتجل. والـ node membership بتقرا الـ liveness من ساعة الـ server، مش من ساعة الـ node نفسها. كل نقطة من دول مكان بتضيع فيه messages أو بيتنفّذ فيه job مرتين بسبب implementation شكله سليم وهو مش سليم.
 
-**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` بيضيف الـ Messaging module، للـ messages من كل outbox والـ failures متجمعة حسب السبب، والـ nodes اللي بتتكشف عن طريق Kubernetes أو Consul.
+**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` بيضيف الـ Messaging module، للـ messages من كل outbox والـ failures متجمعة حسب السبب، والـ nodes اللي بتتكشف عن طريق Kubernetes أو Consul. و `Headless.Cluster.Dashboard` بيضيف الـ Cluster module، تشوف بيه حالة الـ nodes والـ metadata اللي مختلفة بينهم، والـ health checks بتاعة الـ host وتعمل لها probe وقت ما تحب. و `Headless.Leases.Dashboard` بيضيف الـ Leases module، تشوف بيه الـ fenced leases بكل حالاتها والـ distributed locks اللي ماسكينها دلوقتي، من غير ما تغيّر فيهم حاجة.
 
 **توثيق مظبوط لوكلاء الـ AI.** [`docs/llms/`](docs/llms/) فيه docs لكل domain، متكتوبة عشان الـ agents تجيبها وقت الحاجة. شوف [استخدام Headless مع وكلاء الـ AI](#استخدام-headless-مع-وكلاء-الـ-ai).
 
@@ -189,7 +189,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`، `UseS3`، `UseStore` (لأي `ITusStore` تاني) |
 | Emails | `AddHeadlessEmails` | `UseAwsSes`، `UseAzure`، `UseMailkit`، `UseDevelopment`، `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`، `UseAwsSns`، `UseInfobip`، `UseCequens`، `UseConnekio`، `UseVictoryLink`، `UseVodafone`، `UseDevelopment` |
-| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseNoop` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`، `UseApns`، `UseDevelopment`، `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`، `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`، `UsePostgreSql`، `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`، `UseSqlServer` |
@@ -294,7 +294,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 220 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 226 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -612,6 +612,7 @@ Firebase Cloud Messaging خلف abstraction واضحة، ومعاه dev provider
 | Package | الوصف |
 |---------|-------|
 | [Headless.RateLimiting](src/Headless.RateLimiting/README.md) | Attempt limiter بـ fixed window فوق `ICache`، ومفاتيح الـ subject متخزّنة pseudonymised |
+| [Headless.RateLimiting.Dashboard](src/Headless.RateLimiting.Dashboard/README.md) | الـ Rate limits module بتاع الـ Headless dashboard: تشوف محاولات subject واحد وتعمل reset للـ lockout |
 
 ### Coordination
 
@@ -626,6 +627,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Membership على Redis عن طريق Lua وساعة Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | Membership في SQL Server بـ writes محروسة |
 | [Headless.Coordination.Sqlite](src/Headless.Coordination.Sqlite/README.md) | Membership في SQLite للـ processes اللي على نفس الـ host |
+| [Headless.Cluster.Dashboard](src/Headless.Cluster.Dashboard/README.md) | الـ Cluster module في الـ dashboard: حالة الـ nodes، واتفاق الـ metadata، والـ health checks |
 
 ### Sequences
 
@@ -635,6 +637,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 |---------|-------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator` و`SequenceRange` والـ accessor `unit.Sequences` |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
+| [Headless.Sequences.Dashboard](src/Headless.Sequences.Dashboard/README.md) | الـ Sequences module في الـ dashboard: تشوف كل الـ counters المتخزنة والـ partitions بتاعتها من غير ما تاخد رقم |
 | [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Counter store relational مشترك لـ providers الـ SQL |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
@@ -654,6 +657,7 @@ Leases دائمة بين الـ processes بتوقف الـ writes بتاعة at
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | Leases في SQL Server بـ sweep بيستخدم `READPAST` |
 | [Headless.Fencing.Sqlite](src/Headless.Fencing.Sqlite/README.md) | Leases في SQLite، والـ grant بيعمل commit لوحده |
 | [Headless.Fencing.EntityFramework](src/Headless.Fencing.EntityFramework/README.md) | Mapping في EF Core لـ lease على الـ row بتاع الـ entity نفسه، والـ descriptor بتاعه، وqueries للـ leases بساعة الـ database |
+| [Headless.Leases.Dashboard](src/Headless.Leases.Dashboard/README.md) | الـ Leases module في الـ dashboard: الـ fenced leases حسب الحالة والـ distributed locks المحجوزة، للقراية بس |
 
 ### Idempotency
 
@@ -664,6 +668,7 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations` و`IdempotentAdmission` والـ accessor `unit.Idempotency` |
 | [Headless.Idempotency](src/Headless.Idempotency/README.md) | الـ registration، وorchestration للـ admission، والـ purge بعد مدة الـ retention |
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Records الـ idempotency في cache مشترك (Redis) للـ autonomous calls بين الـ replicas من غير SQL |
+| [Headless.Idempotency.Dashboard](src/Headless.Idempotency.Dashboard/README.md) | الـ Idempotency module بتاع الـ Headless dashboard: إعدادات الـ store وlookup للقراية بس لـ key واحد |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | Records جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | Records الـ idempotency في PostgreSQL |
 | [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | HTTP idempotency middleware بأسلوب Stripe: بيـ cache الـ response ويرجّعه عند الـ retry |
@@ -774,6 +779,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 | Package | الوصف |
 |---------|-------|
 | [Headless.Dashboard](src/Headless.Dashboard/README.md) | Dashboard shell للـ feature modules، وauthentication primitives للـ dashboards اللي الـ host بيكتبها |
+| [Headless.DevInbox.Dashboard](src/Headless.DevInbox.Dashboard/README.md) | الـ Dev inbox module في الـ dashboard: الـ emails والـ SMS والـ push notifications اللي الـ host التقطها في الـ Development |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | Extensions لـ FluentValidation |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Source generator للـ primitive types |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | الـ abstractions بتاعة الـ generator |

@@ -108,6 +108,11 @@ internal static class ConformanceCaseAllowList
         ),
         new(
             "CacheIdempotencyConformanceTests",
+            "should_inspect_without_waiting_on_an_uncommitted_write_to_the_record",
+            "Needs an uncommitted enlisted write; the cache provider refuses enlistment."
+        ),
+        new(
+            "CacheIdempotencyConformanceTests",
             "should_purge_only_records_past_retention_whose_lease_is_not_live",
             "The cache's own entry expiry is the purge, so PurgeAsync deletes nothing by design."
         ),
@@ -197,6 +202,11 @@ internal static class ConformanceCaseAllowList
             "The in-memory store has no database, so there is no caller's connection to read on; it ignores the connection argument."
         ),
         new(
+            "InMemoryLeasesConformanceTests",
+            "should_judge_listed_expiry_by_the_database_clock_whatever_the_application_clock",
+            "The injected TimeProvider is the in-memory store's clock authority by design, so there is no separate application clock to ignore."
+        ),
+        new(
             "PostgreSqlDistributedLockConformanceTests",
             "should_get_expiration_for_locked_resource",
             "A PostgreSQL advisory lock is session-scoped with no lease, so expiration is always null."
@@ -274,6 +284,11 @@ internal static class ConformanceCaseAllowList
         new(
             "SqlServerIdempotencyConformanceTests",
             "should_peek_without_waiting_on_an_uncommitted_write_to_the_record",
+            "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
+        ),
+        new(
+            "SqlServerIdempotencyConformanceTests",
+            "should_inspect_without_waiting_on_an_uncommitted_write_to_the_record",
             "Without read committed snapshot isolation a plain READ COMMITTED read waits on an uncommitted write's exclusive row lock; SqlServerRcsiIdempotencyConformanceTests runs this case on an RCSI database."
         ),
         new(

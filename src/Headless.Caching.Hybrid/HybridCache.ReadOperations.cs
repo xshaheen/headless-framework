@@ -109,6 +109,7 @@ public sealed partial class HybridCache
         // tag metadata, so it would seed a tagless L1 entry that RemoveByTagAsync could never invalidate (stale).
         if (l2Cache is IFactoryCacheStore l2Store && LocalCache is IFactoryCacheStore l1Store)
         {
+            using var tagPublication = _TrackTagPublication();
             var l1Generation = _CaptureL1Generation(key);
 
             var l2EntryRead = await _ReadFromL2Async(
@@ -130,7 +131,8 @@ public sealed partial class HybridCache
 
             // A direct read serves only a logically-fresh entry; a stale/tag-invalidated reserve reads as a miss
             // here (serving a stale reserve is the factory coordinator's job, not a plain GetAsync).
-            if (!l2Entry.IsFresh(_GetUtcNow()))
+            var now = _GetUtcNow();
+            if (!l2Entry.IsFresh(now))
             {
                 return CacheValue<T>.NoValue;
             }
@@ -139,6 +141,7 @@ public sealed partial class HybridCache
             // the generic TryGetEntryAsync promotion gate), so the local copy is version-pinned for invalidation.
             await _PromoteReadToLocalAsync(l1Store, key, l2Entry, l1Generation, cancellationToken)
                 .ConfigureAwait(false);
+            await _RearmDirectSlidingHitAsync(key, l2Entry, now, cancellationToken).ConfigureAwait(false);
 
             return l2Entry.IsNull ? CacheValue<T>.Null : new CacheValue<T>(l2Entry.Value, hasValue: true);
         }
@@ -331,6 +334,7 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        using var tagPublication = _TrackTagPublication();
         // One bulk read under a single _ReadFromL2Async wrapper (matching the native bulk read's one circuit/timeout
         // boundary) so the whole batch degrades together to the partial L1 result on fault/timeout. The store
         // returns entries position-aligned with missedKeys so the freshness/seed loop below can index them directly,

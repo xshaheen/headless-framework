@@ -36,7 +36,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         (await fixture.QueueExistsAsync(queue, AbortToken))
             .Should()
             .BeTrue();
-        (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken)).Should().BeTrue();
+        (await fixture.QueueExistsAsync("headless_dlq." + queue, AbortToken)).Should().BeTrue();
         await topology.VerifyAsync(AbortToken);
 
         // and when — a message waits in the queue, then the state is cleared
@@ -56,7 +56,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         (await fixture.QueueExistsAsync(queue, AbortToken))
             .Should()
             .BeFalse();
-        (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken)).Should().BeFalse();
+        (await fixture.QueueExistsAsync("headless_dlq." + queue, AbortToken)).Should().BeFalse();
         (await _ExchangeExistsAsync(RabbitMqPhysicalAddress.Exchange(exchange, MessageLane.Queue)))
             .Should()
             .BeTrue("the lane exchanges are shared by every service on the broker, so teardown keeps them");
@@ -142,10 +142,10 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
     [Fact]
     public async Task should_keep_another_services_queue_and_bindings_when_one_host_tears_down()
     {
-        // given — two services share the default exchange name and each consumes its own queue
+        // The second live queue would have the same name as the first dead-letter queue under suffix naming.
         var (first, firstName, exchange) = _Build();
         await using var _ = first;
-        var (second, secondName, _) = _Build(exchange: exchange);
+        var (second, secondName, _) = _Build(firstName + ".dlq", exchange);
         await using var __ = second;
         await first.ProvisionResourcesAsync(AbortToken);
         await second.ProvisionResourcesAsync(AbortToken);
@@ -211,7 +211,7 @@ public sealed class RabbitMqTopologyProvisionerTests(RabbitMqFixture fixture) : 
         await publisher.DeleteResourcesAsync(AbortToken);
 
         // then
-        (await fixture.QueueExistsAsync(queue + ".dlq", AbortToken))
+        (await fixture.QueueExistsAsync("headless_dlq." + queue, AbortToken))
             .Should()
             .BeTrue();
         (await _MessageCountAsync(queue))

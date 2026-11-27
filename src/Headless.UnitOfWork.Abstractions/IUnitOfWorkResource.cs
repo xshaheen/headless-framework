@@ -25,9 +25,8 @@ public interface IUnitOfWorkResource
     bool IsOwned { get; }
 
     /// <summary>
-    /// Gets a value indicating whether the underlying transaction has already reached a terminal state — used
-    /// only to shape the forgotten-completion warning for an observed unit disposed without
-    /// <see cref="IUnitOfWork.CompleteAsync" /> or <see cref="IUnitOfWork.RollbackAsync" />.
+    /// Gets a value indicating whether the underlying transaction has already reached a terminal state.
+    /// A finished transaction cannot host new work, even when an observed unit still awaits completion.
     /// </summary>
     bool IsTransactionCompleted { get; }
 

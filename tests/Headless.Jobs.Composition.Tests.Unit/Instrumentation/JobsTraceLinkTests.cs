@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using Headless;
+using Headless.Context;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -234,6 +235,7 @@ public sealed class JobsTraceLinkTests : TestBase
             await dashboard.RunCronJobNowAsync(definitionId, AbortToken);
         }
 
+        (await harness.OccurrencesAsync()).Should().ContainSingle().Subject.Status.Should().Be(JobStatus.Queued);
         await harness.ExecuteAsync(dispatched);
 
         // then
@@ -272,6 +274,46 @@ public sealed class JobsTraceLinkTests : TestBase
         _ShouldLinkOnlyTo(parent, schedule.Context);
     }
 
+    [Fact]
+    public async Task should_carry_the_scheduling_request_trace_id_into_the_run_for_its_log_entries()
+    {
+        // given: a request span schedules a job that runs later in a trace of its own
+        using var recorder = SpanRecorder.All();
+        await using var harness = Harness.Create();
+        TraceJob.Observed.Clear();
+        ActivityTraceId requestTraceId;
+
+        using (var requestSpan = _Requests.StartActivity("request"))
+        {
+            requestTraceId = requestSpan!.TraceId;
+            await harness.Scheduler.ScheduleAsync<TraceJob>(harness.Now.AddMinutes(1), AbortToken);
+        }
+
+        // when
+        await harness.RunDueAsync(TimeSpan.FromMinutes(1));
+
+        // then: the value the logging profile writes as CausationTraceId on every entry the job logs
+        var (causationTraceId, ownTraceId) = TraceJob.Observed.Should().ContainSingle().Subject;
+        causationTraceId.Should().Be(requestTraceId.ToHexString());
+        ownTraceId.Should().NotBe(requestTraceId, "the run's own trace does not lead back to the request");
+        CausalScope.CausationTraceId.Should().BeNull("nothing leaks out of the run");
+    }
+
+    [Fact]
+    public async Task should_carry_no_trace_id_into_the_run_when_nothing_was_traced_at_scheduling()
+    {
+        // given: no listener and no ambient span while scheduling, so the row stores no trace context
+        await using var harness = Harness.Create();
+        TraceJob.Observed.Clear();
+        await harness.Scheduler.ScheduleAsync<TraceJob>(harness.Now.AddMinutes(1), AbortToken);
+
+        // when
+        await harness.RunDueAsync(TimeSpan.FromMinutes(1));
+
+        // then
+        TraceJob.Observed.Should().ContainSingle().Which.CausationTraceId.Should().BeNull();
+    }
+
     private static string _TraceParent(Activity activity)
     {
         // The W3C header form, written out here rather than read from the code under test. The flags byte carries
@@ -290,6 +332,9 @@ public sealed class JobsTraceLinkTests : TestBase
 
     public sealed class TraceJob : IJob
     {
+        /// <summary>What each run saw; the collection runs one test at a time, so a test clears it first.</summary>
+        public static ConcurrentQueue<(string? CausationTraceId, ActivityTraceId OwnTraceId)> Observed { get; } = new();
+
         public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
@@ -299,7 +344,14 @@ public sealed class JobsTraceLinkTests : TestBase
         private TraceJobsModule() { }
 
         static void IJobsModule.Register(JobsCatalogBuilder catalog) =>
-            _Register(catalog, static (_, _, _) => Task.CompletedTask);
+            _Register(
+                catalog,
+                static (_, _, _) =>
+                {
+                    TraceJob.Observed.Enqueue((CausalScope.CausationTraceId, Activity.Current?.TraceId ?? default));
+                    return Task.CompletedTask;
+                }
+            );
     }
 
     public sealed class FailingTraceJobsModule : IJobsModule
@@ -379,6 +431,12 @@ public sealed class JobsTraceLinkTests : TestBase
             _time.Advance(advance);
             var (_, claimed) = await _provider.GetRequiredService<IInternalJobManager>().GetNextJobs(AbortToken);
             claimed.Should().NotBeEmpty("a run is due");
+            await ExecuteAsync(claimed);
+        }
+
+        /// <summary>Admits and runs leased states, as the dispatcher's worker does.</summary>
+        public async Task ExecuteAsync(IReadOnlyCollection<JobExecutionState> claimed)
+        {
             var registry = _provider.GetRequiredService<JobFunctionRegistry>();
             var manager = _provider.GetRequiredService<IInternalJobManager>();
             var admitted = new List<JobExecutionState>();
@@ -390,12 +448,6 @@ public sealed class JobsTraceLinkTests : TestBase
             }
 
             admitted.Should().HaveSameCount(claimed);
-            await ExecuteAsync(admitted);
-        }
-
-        /// <summary>Runs already admitted states, as the dispatcher's worker does.</summary>
-        public async Task ExecuteAsync(IReadOnlyCollection<JobExecutionState> admitted)
-        {
             var handler = ActivatorUtilities.CreateInstance<JobsExecutionTaskHandler>(
                 _provider,
                 new JobsExecutionCancellationRegistry(),
@@ -422,6 +474,7 @@ public sealed class JobsTraceLinkTests : TestBase
         public JobsDashboardBackend<TimeJobEntity, CronJobEntity> DashboardBackend(List<JobExecutionState> dispatched)
         {
             var dispatcher = Substitute.For<IJobsDispatcher>();
+            dispatcher.IsEnabled.Returns(true);
             dispatcher
                 .DispatchAsync(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask)

@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>NetTopologySuite helpers for geospatial values and persistence in Headless Framework packages.</Description>
     <PackageTags>headless;nettopologysuite;dotnet</PackageTags>
   </PropertyGroup>

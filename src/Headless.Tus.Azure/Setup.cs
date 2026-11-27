@@ -18,6 +18,12 @@ namespace Headless.Tus;
 [PublicAPI]
 public static class SetupTusAzure
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the tus upload container, which <c>resources provision -k</c> selects
+    /// and a provisioner that needs the container selects in its <c>DependsOn</c>.
+    /// </summary>
+    public const string ContainerResourceKind = "AzureBlob";
+
     extension(HeadlessTusSetupBuilder setup)
     {
         /// <summary>

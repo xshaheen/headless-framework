@@ -79,6 +79,27 @@ public static class DashboardValidation
     }
 
     /// <summary>
+    /// Parses a declared member name of <typeparamref name="TEnum"/>, ignoring case. Refuses numeric strings,
+    /// comma-joined combinations, and leading or trailing white space.
+    /// </summary>
+    public static bool TryParseEnumName<TEnum>(string? value, out TEnum result)
+        where TEnum : struct, Enum
+    {
+        if (
+            !string.IsNullOrEmpty(value)
+            && Enum.GetNames<TEnum>().Contains(value, StringComparer.OrdinalIgnoreCase)
+            && Enum.TryParse(value, ignoreCase: true, out result)
+        )
+        {
+            return true;
+        }
+
+        result = default;
+
+        return false;
+    }
+
+    /// <summary>
     /// The member of <typeparamref name="TEnum"/> that <paramref name="value"/> names, case-insensitive, or
     /// <see langword="null"/> when it is empty or names none. A number counts only when the enum declares it, so a query
     /// never reaches a value no member names.

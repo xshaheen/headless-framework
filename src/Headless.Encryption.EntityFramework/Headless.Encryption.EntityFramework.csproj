@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Entity Framework Core mapping for Headless field-level encryption: stores the EncryptedValue ciphertext frame in a binary column, without decrypting it.</Description>
     <PackageTags>headless;encryption;entity-framework;ef-core;dotnet</PackageTags>
     <RootNamespace>Headless.Encryption</RootNamespace>

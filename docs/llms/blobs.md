@@ -179,7 +179,7 @@ A non-seekable upload stream is handled per provider: AWS and R2 stream it as a 
 Blob paths carry no tenant, so two tenants that each have a user `1` collide on `avatars/1.png`. `ScopeByTenant()` (`Headless.Blobs.MultiTenancy`) rewrites every location, query, bulk path, and presign request with the ambient tenant, and strips the tenant from every returned key. Application code keeps using logical locations.
 
 - `TenantBlobScopingStrategy.PathPrefix` (default) makes the tenant id the first key segment inside your container.
-- `ContainerPerTenant` gives each tenant a container named `{ContainerPrefix}{tenantId}` and makes your container the first key segment.
+- `ContainerPerTenant` gives each tenant a container named `{ContainerPrefix}{tenantId}` and makes your container the first key segment. FileSystem, Redis, and SFTP reject a logical container name if their blob path normalizer changes it.
 
 `IBlobContainerManager` is not scoped. A scoped store implements `IScopedBlobStorage`. Its `Unscoped` property is the wrapped store, which takes physical locations. Code that holds physical locations unwraps it: `storage is IScopedBlobStorage s ? s.Unscoped : storage`. Host-level blobs and the accepted tenant id shapes are in [Tenant-Scoped Blobs and Caches](multi-tenancy/blobs-and-caches.md#tenant-scoped-blobs-and-caches).
 

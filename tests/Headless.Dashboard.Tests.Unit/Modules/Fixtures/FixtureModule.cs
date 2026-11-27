@@ -55,6 +55,10 @@ internal sealed class DiagModule() : FixtureModule("diag", "diag");
 
 internal sealed class AuditModule() : FixtureModule("audit", "audit");
 
+internal sealed class DevInboxModule() : FixtureModule("devinbox", "devinbox");
+
 internal sealed class DiagModuleOptions : DashboardModuleOptions;
 
 internal sealed class AuditModuleOptions : DashboardModuleOptions;
+
+internal sealed class DevInboxModuleOptions : DashboardModuleOptions;

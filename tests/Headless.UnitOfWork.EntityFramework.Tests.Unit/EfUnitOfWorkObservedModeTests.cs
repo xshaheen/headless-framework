@@ -47,6 +47,31 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
         (await host.CountProbeRowsAsync()).Should().Be(1, "the caller's own commit made the row durable");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_refuse_to_run_a_joined_block_after_an_observed_transaction_commits(bool joinFromSibling)
+    {
+        await using var host = await EfUnitOfWorkHost.CreateAsync();
+        await using var owner = host.CreateSession();
+        await using var sibling = host.CreateSession();
+        await using var transaction = await owner.Db.Database.BeginTransactionAsync(AbortToken);
+        await using var unit = owner.Factory.Enlist(owner.Db, transaction);
+        var joiner = joinFromSibling ? sibling : owner;
+        var blockRuns = 0;
+
+        await transaction.CommitAsync(AbortToken);
+
+        var act = () =>
+            joiner.Factory.RunAsync(joiner.Db, (_, _) => Task.FromResult(++blockRuns), cancellationToken: AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*transaction already completed*");
+        blockRuns.Should().Be(0);
+        owner.Db.UnitOfWork().Should().BeSameAs(unit);
+        await unit.CompleteAsync(AbortToken);
+        unit.State.Should().Be(UnitOfWorkState.Completed);
+    }
+
     [Fact]
     public async Task should_not_log_when_the_caller_rolled_back_and_the_unit_rolled_back_explicitly()
     {

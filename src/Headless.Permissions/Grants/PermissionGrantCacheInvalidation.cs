@@ -11,38 +11,6 @@ namespace Headless.Permissions;
 internal static class PermissionGrantCacheInvalidation
 {
     /// <summary>
-    /// The cache entries a repository write leaves behind: each written record's status, and an undefined status for
-    /// each deleted record. A deleted record is stored as undefined rather than removed, so a reader that loaded the row
-    /// before the delete cannot fill it back: readers fill only an absent entry.
-    /// </summary>
-    public static Dictionary<string, PermissionGrantCacheItem> WrittenItems(
-        IEnumerable<PermissionGrantRecord> written,
-        IEnumerable<PermissionGrantRecord> deleted
-    )
-    {
-        var items = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
-
-        foreach (var record in deleted)
-        {
-            items[CacheKey(record)] = new PermissionGrantCacheItem(isGranted: null);
-        }
-
-        // After the deletes, so a record written in the same call wins over a deleted one with the same key.
-        foreach (var record in written)
-        {
-            items[CacheKey(record)] = new PermissionGrantCacheItem(record.IsGranted);
-        }
-
-        return items;
-    }
-
-    /// <summary>Returns the cache key of <paramref name="record"/>.</summary>
-    public static string CacheKey(PermissionGrantRecord record)
-    {
-        return PermissionGrantCacheItem.CalculateCacheKey(record.Name, record.ProviderName, record.ProviderKey);
-    }
-
-    /// <summary>
     /// Brings the entries of <paramref name="names"/> for one provider target to what the repository holds now, under
     /// the current tenant. A store write calls it after its commit instead of storing the status it wrote, so two
     /// writers whose cache writes land in the opposite order to their commits still leave the last committed status
@@ -155,49 +123,6 @@ internal static class PermissionGrantCacheInvalidation
 #pragma warning restore CA1031
             {
                 logger.LogFailedToInvalidateGrantCache(ex, names.Count);
-            }
-        });
-    }
-
-    /// <summary>
-    /// Writes <paramref name="cacheValues" /> after <paramref name="unitOfWork" /> commits. A rolled-back unit writes
-    /// nothing. Writing the committed status rather than removing the entry keeps out a reader that loaded the rows
-    /// before the commit, because readers fill only an absent entry. A write fault is logged, not thrown: the commit
-    /// is already durable, and the entry expires on its own.
-    /// </summary>
-    public static void UpsertAfterCommit(
-        IUnitOfWork unitOfWork,
-        ICache<PermissionGrantCacheItem> cache,
-        ICurrentTenant currentTenant,
-        IDictionary<string, PermissionGrantCacheItem> cacheValues,
-        TimeSpan expiration,
-        ILogger logger
-    )
-    {
-        if (cacheValues.Count == 0)
-        {
-            return;
-        }
-
-        var tenantId = currentTenant.Id;
-        var tenantName = currentTenant.Name;
-
-        unitOfWork.OnCompleted(async () =>
-        {
-            try
-            {
-                // The cache is tenant-scoped through the current tenant, which the code completing the unit may no
-                // longer hold.
-                using (currentTenant.Change(tenantId, tenantName))
-                {
-                    await cache.UpsertAllAsync(cacheValues, expiration).ConfigureAwait(false);
-                }
-            }
-#pragma warning disable CA1031 // The commit is durable; a cache fault must not turn it into a reported failure.
-            catch (Exception ex)
-#pragma warning restore CA1031
-            {
-                logger.LogFailedToInvalidateGrantCache(ex, cacheValues.Count);
             }
         });
     }

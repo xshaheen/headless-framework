@@ -118,6 +118,7 @@ public static class SetupFencingSqlite
             factory.BeginAsync((SqliteConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
         SqliteFencingSchemaContribution.Create,
+        FencingReadDialect.Sqlite,
         EnlistedGrantRefusal
     );
 

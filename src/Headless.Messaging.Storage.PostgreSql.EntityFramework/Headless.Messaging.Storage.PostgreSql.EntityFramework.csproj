@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Entity Framework integration for Headless PostgreSQL messaging storage.</Description>
     <PackageTags>headless;messaging;storage;postgresql;entity-framework;dotnet</PackageTags>
   </PropertyGroup>

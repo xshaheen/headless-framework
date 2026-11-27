@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
@@ -43,11 +42,12 @@ public static class HeadlessPrefixServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="HeadlessPrefixOptions" />, bound from <see cref="HeadlessPrefixOptions.ConfigurationKey" />,
-        /// validated when the host starts, and logged once at start. Feature registrations call it; repeated calls
-        /// add nothing.
+        /// validated when the host starts, and logged once at start. Every Headless feature that writes shared names
+        /// calls it. Call it yourself when your application applies the prefix to its own names, through
+        /// <see cref="HeadlessPrefixOptions.Apply" />, and registers no such feature; without it,
+        /// <c>IOptions&lt;HeadlessPrefixOptions&gt;</c> resolves an empty prefix. Repeated calls add nothing.
         /// </summary>
         /// <returns>The same service collection.</returns>
-        [EditorBrowsable(EditorBrowsableState.Never)]
         public IServiceCollection AddHeadlessPrefix()
         {
             if (services.Any(static descriptor => descriptor.ServiceType == typeof(HeadlessPrefixRegistration)))

@@ -1432,9 +1432,8 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_renewal_deadline_runs_on_real_time_when_the_app_clock_stands_still()
     {
-        // The renewal deadline bounds an I/O call, so it must wait real time. The registered clock only paces the
-        // renewal cadence: a host whose TimeProvider never advances past the first renewal tick must still see a hung
-        // store trip the deadline and cancel the job, instead of leaving it running behind a lease nobody renews.
+        // The store can ignore cancellation and the app clock can stop after the first tick. The I/O deadline must
+        // still cancel the job and let it exit while the renewal is pending.
         var timeProvider = new FakeTimeProvider();
         var services = new ServiceCollection();
         var internalManager = Substitute.For<IInternalJobManager>();
@@ -1447,19 +1446,10 @@ public sealed class RetryBehaviorTests : TestBase
         var serviceProvider = services.BuildServiceProvider();
 
         var renewalCalls = 0;
+        var blockedRenewal = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         internalManager
             .RenewLeaseAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                if (Interlocked.Increment(ref renewalCalls) == 1)
-                {
-                    return 1;
-                }
-
-                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
-
-                return 1;
-            });
+            .Returns(_ => Interlocked.Increment(ref renewalCalls) == 1 ? Task.FromResult(1) : blockedRenewal.Task);
 
         var handler = new JobsExecutionTaskHandler(
             serviceProvider,
@@ -1507,18 +1497,20 @@ public sealed class RetryBehaviorTests : TestBase
             // which hangs. The app clock never moves again.
             timeProvider.Advance(TimeSpan.FromMilliseconds(100));
 
-            await execution.WaitAsync(HeadlessTestTaskExtensions.DefaultTimeout, AbortToken);
+            await execution.Bounded();
+            context.LeaseLossReason.Should().Be(JobsLeaseLossReason.RenewalTimedOut);
+            context.Status.Should().NotBe(JobStatus.Cancelled);
+            renewalCalls.Should().Be(2);
+            await internalManager
+                .DidNotReceive()
+                .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
         }
         finally
         {
+            blockedRenewal.TrySetResult(1);
             await runCts.CancelAsync();
+            await execution.Bounded();
         }
-
-        context.LeaseLost.Should().BeTrue();
-        renewalCalls.Should().Be(2);
-        await internalManager
-            .DidNotReceive()
-            .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

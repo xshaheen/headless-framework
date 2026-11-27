@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Redis integration for Headless distributed locks.</Description>
     <PackageTags>headless;distributed-locks;redis;dotnet</PackageTags>
   </PropertyGroup>

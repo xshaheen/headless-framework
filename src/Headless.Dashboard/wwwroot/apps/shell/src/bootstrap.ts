@@ -32,6 +32,8 @@ export interface BootstrapSidebarSection {
 export interface BootstrapProduct {
   id: string
   label: string
+  /** `true` when the product serves development only, such as the Dev inbox; its tab carries a `DEV` badge. */
+  developmentOnly?: true
   modules: string[]
   sections: BootstrapSidebarSection[]
 }
@@ -118,16 +120,23 @@ function isSidebarSection(value: unknown): value is BootstrapSidebarSection {
   )
 }
 
-function isProduct(value: unknown): value is BootstrapProduct {
-  return (
-    isRecord(value) &&
+/** The server sends `developmentOnly` only when it is true, so any other value leaves the product an ordinary one. */
+function readProduct(value: unknown): BootstrapProduct | undefined {
+  return isRecord(value) &&
     typeof value.id === 'string' &&
     typeof value.label === 'string' &&
     Array.isArray(value.modules) &&
     value.modules.every((id) => typeof id === 'string') &&
     Array.isArray(value.sections) &&
     value.sections.every(isSidebarSection)
-  )
+    ? {
+        id: value.id,
+        label: value.label,
+        ...(value.developmentOnly === true ? { developmentOnly: true } : {}),
+        modules: value.modules,
+        sections: value.sections,
+      }
+    : undefined
 }
 
 function isCommand(value: unknown): value is BootstrapCommand {
@@ -210,9 +219,13 @@ function readState(value: unknown): BootstrapState | undefined {
   }
 
   const modules = value.modules.map(readModule)
-  const products = arrayOf(value.products, isProduct)
+  const products =
+    value.products == null ? [] : Array.isArray(value.products) ? value.products.map(readProduct) : undefined
 
-  if (!modules.every((module): module is BootstrapModule => module !== undefined) || !products) {
+  if (
+    !modules.every((module): module is BootstrapModule => module !== undefined) ||
+    !products?.every((product): product is BootstrapProduct => product !== undefined)
+  ) {
     return undefined
   }
 

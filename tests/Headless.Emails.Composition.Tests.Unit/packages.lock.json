@@ -251,11 +251,6 @@
           "System.Memory.Data": "8.0.1"
         }
       },
-      "BouncyCastle.Cryptography": {
-        "type": "Transitive",
-        "resolved": "2.7.0",
-        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
-      },
       "Castle.Core": {
         "type": "Transitive",
         "resolved": "5.1.1",
@@ -629,6 +624,13 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.emails": {
         "type": "Project",
         "dependencies": {
@@ -636,7 +638,7 @@
           "Headless.Emails.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
-          "MimeKit": "[4.18.2, )"
+          "MimeKit.Core": "[5.0.0, )"
         }
       },
       "headless.emails.abstractions": {
@@ -666,8 +668,10 @@
       "headless.emails.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Emails": "[1.0.0, )",
-          "Headless.Emails.Abstractions": "[1.0.0, )"
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.emails.mailkit": {
@@ -675,7 +679,7 @@
         "dependencies": {
           "Headless.Emails": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "MailKit": "[4.18.2, )",
+          "MailKit": "[5.0.0, )",
           "Microsoft.Extensions.ObjectPool": "[10.0.15, )"
         }
       },
@@ -698,6 +702,12 @@
       "headless.generator.primitives.abstractions": {
         "type": "Project"
       },
+      "headless.hashing.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
@@ -713,11 +723,36 @@
           "OpenTelemetry.Api": "[1.21.0, )"
         }
       },
+      "headless.multitenancy.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.15, )"
+        }
+      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.testing": {
+        "type": "Project",
+        "dependencies": {
+          "AwesomeAssertions": "[9.6.0, )",
+          "Bogus": "[35.6.5, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hashing.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.12, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.15, )",
+          "Microsoft.Extensions.Logging": "[10.0.15, )",
+          "Microsoft.Extensions.TimeProvider.Testing": "[10.11.0, )",
+          "xunit.v3.extensibility.core": "[4.0.3, )"
         }
       },
       "AWSSDK.Extensions.NETCore.Setup": {
@@ -758,11 +793,21 @@
       },
       "MailKit": {
         "type": "CentralTransitive",
-        "requested": "[4.18.2, )",
-        "resolved": "4.18.2",
-        "contentHash": "ofqddpSbdrD00NqTD0ZyVfKvrl/ZZ70VFFEQ+DuR8r8CdbY3U02/sdb0CSQBNUqJifsXfVHIwRe1ToR2MvJJkw==",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "PG6hnsklTzd/iK9A6j03OxDOas9mh8zOBkbPzcsLmFOODE8Hw3HTy7HAKiJvVHXNpKc3/KMVG/4QvOAKCBbGhA==",
         "dependencies": {
-          "MimeKit": "4.18.2"
+          "MimeKit.Core": "5.0.0"
+        }
+      },
+      "Meziantou.Extensions.Logging.Xunit.v3": {
+        "type": "CentralTransitive",
+        "requested": "[3.0.12, )",
+        "resolved": "3.0.12",
+        "contentHash": "tZlH1+mlRR3bBqC7tcpPzCvvacwJ3bixPPwFz4SRr0n33h3ueYyVNa4N2Lk8V/LWQboTKnwdcY+QXJizlrWp8A==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.14",
+          "xunit.v3.extensibility.core": "4.0.2"
         }
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
@@ -897,15 +942,17 @@
           "Microsoft.Extensions.Options": "10.0.15"
         }
       },
-      "MimeKit": {
+      "Microsoft.Extensions.TimeProvider.Testing": {
         "type": "CentralTransitive",
-        "requested": "[4.18.2, )",
-        "resolved": "4.18.2",
-        "contentHash": "aYnwCCq+ZgQIsnHSJd3TMeGqf/Rz/9jYEItXpOoG3E2REOCZtLishwBSDFl2wQ/W2SB5wBsvE38DgHZ0IEyz4Q==",
-        "dependencies": {
-          "BouncyCastle.Cryptography": "2.7.0",
-          "System.Security.Cryptography.Pkcs": "10.0.13"
-        }
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "DTivKZ2Du0dJideTTa6vPj/eXKNRu+RxtjBX7NOOUXHBtHx1ehbE+lM+j3/5M3wU6BqzcZqEEyR4+FnPKs2rTA=="
+      },
+      "MimeKit.Core": {
+        "type": "CentralTransitive",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "0RLaVyex/BjUGqiw9xtGwzyCMaBcsu33Rth61bDCeVeQaaQK7tjcy4TA+nHKTqwUdp4OGd+gnhuq2fuR+c20qA=="
       },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",
@@ -941,12 +988,6 @@
         "dependencies": {
           "System.Diagnostics.DiagnosticSource": "11.0.0"
         }
-      },
-      "System.Security.Cryptography.Pkcs": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.15, )",
-        "resolved": "10.0.15",
-        "contentHash": "4jEv/lXDuQkh60lPU3hlwASErXdv1ZMKmsxVuBfZWiVKT5Q2QGo58kTa6rN519+PU+m4Hsj1m3yT8fN+Xw0XZw=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

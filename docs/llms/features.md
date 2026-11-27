@@ -90,7 +90,10 @@ public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
 
 Three built-in providers resolve a value, from lowest to highest priority: `DefaultValue` (the definition's `DefaultValue`), `Edition`, and `Tenant`. With no provider named, `GetAsync` asks the highest-priority provider first and returns the first non-null value. The constants are on `FeatureValueProviderNames`.
 
-A custom provider added with `services.AddFeatureValueProvider<T>()` goes after `Tenant`, so it has the highest priority of all. The last provider registered wins.
+Place a custom provider with one of two calls. Both work whether they run before or after `AddHeadlessFeatures`:
+
+- `services.AddFeatureValueProvider<T>()` adds `T` above `Tenant`, so it has the highest priority of all. Among several such calls, the last one wins.
+- `services.AddFeatureValueProviderBelow<T, THigher>()` adds `T` directly below `THigher`. A read at `THigher` falls back to `T`, and a read at `T` falls back to the providers below it. For example, `AddFeatureValueProviderBelow<PlanFeatureValueProvider, TenantFeatureValueProvider>()` gives `Tenant`, `Plan`, `Edition`, `DefaultValue`. It moves a provider already in the chain, and throws `InvalidOperationException` when the feature options are first resolved if `THigher` is not in the chain.
 
 `Tenant` and `Edition` resolve their key as the explicit provider key when you pass one (`GetForTenantAsync(name, tenantId)`), else the ambient tenant or its edition. Reads and writes use the same rule, so a value written for one tenant reads back for that tenant only.
 
@@ -104,7 +107,7 @@ Otherwise, and whenever no principal exists (a job or a message consumer restore
 builder.Services.AddSingleton<ITenantEditionResolver, MyEditionResolver>();
 ```
 
-`ITenantEditionResolver.GetEditionIdAsync(tenantId, cancellationToken)` maps a tenant id to its edition id. Without a resolver, those reads see no edition value. The framework calls the resolver on every such read, so cache its answer.
+`ITenantEditionResolver.GetEditionIdAsync(tenantId, cancellationToken)` maps a tenant id to its edition id. Without a resolver, those reads see no edition value. The framework calls the resolver when a requested feature still needs an edition value. Cache its answer if resolving the edition requires I/O.
 
 Writes follow the same rule. `SetForTenantAsync` clears a value that equals what the tenant inherits. When the manager cannot tell the edition of the tenant being written (no matching principal and no resolver), it stores the value as written instead of comparing it with the caller's edition. A host administrator's downgrade is therefore never dropped as a no-op. `GetForTenantAsync(name, tenantId)` and `GetAllForTenantAsync(tenantId)` with fallback read the edition of `tenantId`, not the caller's.
 
@@ -265,7 +268,7 @@ await factory.RunAsync(db, async (unit, ct) =>
 
 - The host start does not seed. In production, run the `seed` verb in the deployment (`dotnet app.dll seed`). In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 - A failed save retries up to 10 times with jittered exponential back-off, capped at 30 seconds, on the system clock. A `FakeTimeProvider` does not speed the retries up. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. A failed seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup`.
-- Re-seeding unchanged definitions writes nothing.
+- Re-seeding unchanged definitions leaves the database untouched. When a previous attempt committed the rows before updating the common cache stamp, the next attempt updates that stamp.
 - A definition's `ExtraProperties` keep their key case. Values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read them with `GetProperty<T>(name)`.
 - A definition value too long for its column throws `ArgumentOutOfRangeException` when definitions are saved. See [Column lengths](#column-lengths).
 
@@ -329,7 +332,7 @@ public sealed class TenantOnboardingService(IFeatureManager features)
 ### API and behavior
 
 - `IFeatureManager.GetAsync(name, …)` returns a `FeatureValue` with the resolved string value and the `FeatureValueProvider` that supplied it.
-- `IFeatureManager.GetAllAsync(IReadOnlySet<string> featureNames)` resolves a set of names through the full chain in one call and returns a `Dictionary<string, FeatureValue>`. A feature with no value maps to a `FeatureValue` whose `Value` is `null`. Undefined names are omitted. Each provider is asked once for the whole set, so prefer it over a loop of `GetAsync`.
+- `IFeatureManager.GetAllAsync(IReadOnlyCollection<string> featureNames)` resolves a list, array, or set of names through the full chain in one call and returns a `Dictionary<string, FeatureValue>`. A feature with no value maps to a `FeatureValue` whose `Value` is `null`. Undefined names are omitted. Each provider is asked once for the whole set, so prefer it over a loop of `GetAsync`.
 - `GetAllAsync(providerName, …)`, `GetAllForTenantAsync`, `GetAllForEditionAsync`, and `GetAllDefaultAsync` read one provider's values and return `IReadOnlyList<FeatureValue>`.
 - Extension members on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`. The multi-name `IsEnabledAsync(requiresAll, featureNames)` and `EnsureEnabledAsync(requiresAll, featureNames)` read every name in one `GetAllAsync` call.
 - `EnsureEnabledAsync` throws `ConflictException` for a disabled feature. The Headless exception handler returns it as 409 with error code `g:feature_currently_not_available`.
@@ -480,7 +483,7 @@ Widen the column before, or with, the code that writes longer values. Narrowing 
 
 ### Custom value providers
 
-Implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write) and register it with `services.AddFeatureValueProvider<T>()`. Registration is idempotent by type, and the provider takes the highest priority.
+Implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write) and register it with `services.AddFeatureValueProvider<T>()` (highest priority) or `services.AddFeatureValueProviderBelow<T, THigher>()` (directly below `THigher`), as [Resolution order](#resolution-order) describes. `AddFeatureValueProvider<T>()` is idempotent by type.
 
 - Implement `IFeatureValueReadProvider.GetAllAsync`. Every multi-name read (`GetAllAsync(featureNames)`, `GetAllAsync(providerName, …)`, multi-name `IsEnabledAsync` and `EnsureEnabledAsync`) asks each provider once with the whole batch through it. Without it, the provider's features disappear from bulk results.
 - `IFeatureValueProvider.SetAllAsync` defaults to one `SetAsync` or `ClearAsync` per entry. Override it when your source can apply a batch atomically.
@@ -595,6 +598,9 @@ Then add an EF migration for the feature tables. The EF provider writes no DDL.
 
 - `ConfigureHeadlessFeatures(this)` reads `FeaturesStorageOptions` from the context's service provider and picks the naming style from the database provider: snake_case on Npgsql, PascalCase on every other provider.
 - `ConfigureHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` takes options you already hold. Pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database.
+- On SQL Server, `ConfigureHeadlessFeatures(this)` sets `FeatureValueRecord.ProviderKey` to `Latin1_General_100_BIN2` so keys that differ in case or accent identify separate scopes. If you pass `FeaturesStorageOptions` directly or map the entity yourself, set the column collation with `UseCollation("Latin1_General_100_BIN2")`.
+- Startup throws `InvalidOperationException` if the SQL Server model gives `FeatureValueRecord.ProviderKey` a different or unspecified collation. The validator also accepts a model default of `Latin1_General_100_BIN2` when the column inherits it. The check reads EF metadata, so apply the migration to bring the database into line with the model.
+- For an existing EF-managed SQL Server database, generate and apply a collation migration. In both migration directions, drop the index filtered by `ProviderKey IS NULL` before altering the column. Recreate the index afterward. EF Core only rebuilds indexes that list `ProviderKey` as a key or included column.
 - `FeaturesStorageOptions` defaults: `Schema = "headless"`, the schema every Headless feature shares (see [Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)). Table names default to `feature_values`, `feature_definitions`, and `feature_group_definitions` on PostgreSQL, and `FeatureValues`, `FeatureDefinitions`, and `FeatureGroupDefinitions` elsewhere. See [Column lengths](#column-lengths).
 - Identifier names are validated against SQL Server rules, the stricter set.
 

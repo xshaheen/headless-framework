@@ -25,29 +25,33 @@ internal sealed class SetIfHigherScriptDefinition : RedisScriptDefinition
             // integer-valued differences use %d (avoids %.14g scientific notation that long.Parse would reject for
             // large values), and fractional differences use tostring so the double overload keeps its precision.
             // A Lua-number reply is never returned directly because Redis would truncate it to an integer.
-            """
-            local c = tonumber(redis.call('get', @key))
-            local v = tonumber(@value)
-            if c then
-              if v > c then
-                redis.call('set', @key, @value)
-                if (@expires ~= nil and @expires ~= '') then
-                  redis.call('pexpire', @key, math.ceil(@expires))
+            NativeGenerationScript.Mutating
+                + """
+                local generation = prepareNativeMutation(@key, @generationKey, @flushGeneration)
+                local c = tonumber(redis.call('get', @key))
+                local v = tonumber(@value)
+                if c then
+                  if v > c then
+                    redis.call('set', @key, @value)
+                    if (@expires ~= nil and @expires ~= '') then
+                      redis.call('pexpire', @key, math.ceil(@expires))
+                    end
+                    recordNativeGeneration(@key, @generationKey, generation)
+                    local d = v - c
+                    if d == math.floor(d) then
+                      return string.format('%d', d)
+                    end
+                    return tostring(d)
+                  end
+                  return 0
+                else
+                  redis.call('set', @key, @value)
+                  if (@expires ~= nil and @expires ~= '') then
+                    redis.call('pexpire', @key, math.ceil(@expires))
+                  end
+                  recordNativeGeneration(@key, @generationKey, generation)
+                  return redis.call('get', @key)
                 end
-                local d = v - c
-                if d == math.floor(d) then
-                  return string.format('%d', d)
-                end
-                return tostring(d)
-              end
-              return 0
-            else
-              redis.call('set', @key, @value)
-              if (@expires ~= nil and @expires ~= '') then
-                redis.call('pexpire', @key, math.ceil(@expires))
-              end
-              return redis.call('get', @key)
-            end
-            """
+                """
         ) { }
 }

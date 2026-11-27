@@ -25,7 +25,7 @@ Choose an endpoint style:
 Other packages:
 
 - `Headless.Api.Abstractions`: the interfaces alone (`IRequestContext`, `IWebClientInfoProvider`, `IProblemDetailsCreator`), for libraries that must not pull the API stack.
-- `Headless.Api.FluentValidation`: file rules (size, content type, magic bytes) for `IFormFile` uploads, plus the request contracts `PhoneNumberRequest`, `GeoCoordinateRequest`, and `PageMetadataRequest`.
+- `Headless.Api.FluentValidation`: file rules (size, content type, magic bytes) for `IFormFile` uploads, plus rules for the request contracts `PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`, and `IndexPageRequest`.
 - `Headless.DataProtection.Blobs`: persists ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Identity`: ASP.NET Core Identity helpers: token providers, localized `auth:` and `user:` errors, `HeadlessLookupNormalizer`, and the `Basic` and `ApiKey` authentication schemes.
 - `Headless.Api.UserAgent`: the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
@@ -51,7 +51,7 @@ Other packages:
 - Prefer `Headless.Api.MinimalApi` for new projects. Call `.ValidateArguments()` on a route group. Use `.Validate<T>()` on one endpoint only when the group convention does not fit, and never both for one argument. Return `ApiResult` through `ToHttpResult()`, `sender.DispatchAsync(...)`, or a `Map*Request` helper, not a hand-written bridge.
 - Validate a mediator request in one place: either at the endpoint (`ValidateArguments()`, `AddHeadlessMvcArgumentValidation()`) or in the mediator (`AddMediatorValidationRequestBehavior()`), never both. With both, every validator runs twice.
 - For MVC, inherit from `ApiControllerBase` and call `ConfigureHeadlessMvc()`. Do not configure `MvcOptions` by hand for what it covers.
-- Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) instead of hand-written file or request-contract validation.
+- Use the `Headless.Api.FluentValidation` rules (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`, `IndexPage()`) instead of hand-written file or request-contract validation.
 - In a distributed or containerized deployment, persist Data Protection keys with `PersistKeysToBlobStorage()` and give the key container a name unique to the app and environment.
 - Do not add middleware that pushes the user, account, correlation ID, client IP, or request headers into a log scope. `AddHeadless()` adds them to every entry written during a request. Classify a field by name with `ClassifyProperty` to redact it.
 
@@ -238,8 +238,9 @@ The ASP.NET Core building blocks that `Headless.Api.ServiceDefaults` composes: s
 - `AddStatusCodesRewriterMiddleware()` and `UseStatusCodesRewriter()`: rewrite bare 400, 401, 403, and 404 responses as `application/problem+json`.
   - The 400 case covers a Minimal API body that cannot be bound while `RouteHandlerOptions.ThrowOnBadRequest` is off (the default outside Development), so it answers with the same `bad-request` problem as the thrown path.
   - When authorization forbids a request and a handler called `Fail(new AuthorizationFailureReason(...))`, the 403 problem carries the reasons' messages as `detail`. The caller sees those messages, so keep internal detail out of them.
+  - This covers the authorization middleware and MVC's `AuthorizeFilter` (`options.Filters.Add(new AuthorizeFilter(policy))`), because both evaluate through `IPolicyEvaluator`. A 403 from a failed `IAuthorizationService.AuthorizeAsync` call followed by `Forbid()` carries no reasons.
   - A challenge (401) is unchanged. A handler that set its own rejection keeps its response.
-  - It wraps the registered `IAuthorizationMiddlewareResultHandler`. A result handler registered after this call replaces the wrapper.
+  - It decorates the registered `IPolicyEvaluator`, so your own `IAuthorizationMiddlewareResultHandler` keeps the detail whether you register it before or after `AddHeadless`. An `IPolicyEvaluator` you register after this call replaces the decorator and drops the detail.
 - `IStatusCodeRejectionFeature`: lets a handler that fails a request (an authorization handler, a filter) supply the response the rewriter writes. Set it with `httpContext.TrySetStatusCodeRejection(rejection)`, which keeps the first rejection set. `TryWriteResponseAsync` returns `false` to fall back to the bare-status rewrite. The tenant identifier mismatch rejection always replaces an earlier rejection, because it must match the unknown-tenant response byte for byte.
 - `ConfigureHeadlessDefaultApi()`: Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomains, preload), lowercase route URLs with no trailing slash, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), and the `self` liveness health check tagged `live`.
 - `AddHeadlessJsonService()`: `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, and `ISerializer`, all `TryAddSingleton`, so a registration you make first wins.
@@ -536,13 +537,15 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` | 409 with a concurrency-failure error |
-| EF Core `DbUpdateException` whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` (`RelationalFaults.IsUniqueViolation` in `Headless.Extensions` tests the same) | 409 with `errors[].code: g:unique_violation`. Event 5013 (Warning) logs only the provider exception type and SQLSTATE, never the message, which on SQL Server carries the duplicate value |
+| EF Core `DbUpdateException` whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` (`RelationalFaults.IsUniqueViolation` in `Headless.Extensions` tests the same) | 409 with `errors[].code: g:unique_violation`. To return your own error for a named index instead, save with `SaveChangesOrConflictAsync` ([Unique conflicts](orm.md#unique-conflicts)). Event 5013 (Warning) logs only the provider exception type and SQLSTATE, never the message, which on SQL Server carries the duplicate value |
 | `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` | 503 with `error.code: g:resource_busy` and no `Retry-After`, because the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
 | `ServiceUnavailableException` and derived types, such as `AttemptLimiterUnavailableException` | 503 with `Cache-Control: no-store`, the exception's `Error` descriptor when it has one, and no `Retry-After`. The message and inner exception stay in the logs (event 5016). Throw it, or a derived type, when a dependency the request needs cannot answer. Keep its message safe to log |
 | `TimeoutException` | 503 with no `Retry-After`. A timeout while serving the request (a cache factory, Redis, a database command) is the server's wait running out. A 408 would invite clients to resend a request whose writes may have committed. Only ASP.NET Core's request-timeout middleware answers 408 |
 | `NotImplementedException` | 501 |
 | `BadHttpRequestException` (a Minimal API body that cannot be bound while `ThrowOnBadRequest` is on, as in Development, an unsupported content type, or an oversized body) | Its `StatusCode`: 400 `bad-request`, or 413 `payload-too-large`. The exception message, which names the failed parameter or the JSON parse position, stays out of the body and is logged at Information (event 5015) |
 | `OperationCanceledException`, or an inner one at any depth, when `HttpContext.RequestAborted` is the source | 499 with no body |
+
+Each row also matches a type derived from the exception it names. To give a business failure its own type that your code catches by name, derive it from `ConflictException`, `ForbiddenException`, `UnauthorizedException`, `TooManyRequestsException`, or `EntityNotFoundException` and pass your message and descriptors to the protected constructor: `class OrderAlreadyShippedException(ErrorDescriptor error) : ConflictException("Order already shipped.", [error])`. The response is the base type's body, with the descriptors in `errors` (or `error`), and the message stays in the logs. Do not register an `IExceptionHandler` or a `MapException<TException>` mapping for it: the framework handler answers it first, and `MapException` throws for a derived type.
 
 An exception you mapped answers with its mapped status. The handler passes every other exception on, and the host default or a later handler renders it.
 
@@ -698,7 +701,7 @@ For a custom pipeline that does not call `UseHeadless()`, `UseStatusCodesRewrite
 
 Telemetry:
 
-- With HTTP tenancy configured, the request span and every span started during the request carry `tenant.id`, and every log record written during the request carries `TenantId`. Every exporter sees both. Do not add them yourself. `TenantTelemetryOptions` holds the names and switches. See [Multi-tenancy observability](multi-tenancy/observability.md#observability).
+- With HTTP tenancy configured, the request span and every span started during the request carry `tenant.id`, and every log entry written during the request carries `TenantId`. Every exporter and logging provider sees the log field. Do not add them yourself. `TenantTelemetryOptions` holds the names and switches. See [Multi-tenancy observability](multi-tenancy/observability.md#observability).
 - With API surfaces registered, the default response enricher adds `headless.api.surface.name` to completed request spans. Replacing `EnrichWithHttpResponse` replaces this default too. To keep it, capture the existing delegate and call it from yours.
 
 OpenAPI documents per surface:
@@ -854,6 +857,7 @@ FluentValidation rules for ASP.NET Core file uploads and the reusable Headless A
 - `PhoneNumber()`: validates `PhoneNumberRequest` country code and local subscriber number.
 - `GeoCoordinate()`: validates `GeoCoordinateRequest` latitude and longitude ranges.
 - `PageMetadata()`: validates `PageMetadataRequest` SEO field lengths and element counts.
+- `IndexPage()`: validates an `IndexPageRequest`: `Index` zero or greater (`g:greater_than_or_equal`), `Size` greater than zero (`g:greater_than`). It sets no upper bound; add `PageSize(max)` on `Size` for your own cap. A `null` page passes.
 - Error messages ship in English, formal Arabic, and Egyptian Arabic.
 
 Validate an upload at the endpoint, where the `IFormFile` is bound. A command handled after the endpoint stores the file carries a reference to the stored content, such as a blob location, not the live upload.

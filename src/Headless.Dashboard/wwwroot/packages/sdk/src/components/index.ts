@@ -12,6 +12,7 @@ export {
   type StaleNoticeProps,
 } from './display/banner.tsx'
 export { BarChart, type BarChartProps, type BarColumn, type BarSeries } from './display/bar-chart.tsx'
+export { Callout, type CalloutProps } from './display/callout.tsx'
 export { Card, CardRow, Cards, type CardProps, type CardRowProps, type CardState } from './display/card.tsx'
 export { Actions, Fields, type FieldsProps } from './display/fields.tsx'
 export { DensityControl, useDensity, type Density } from './density.tsx'
@@ -21,6 +22,7 @@ export { FilterSelect, type FilterSelectProps } from './display/filter-select.ts
 export { FilterToolbar, type FilterToolbarProps } from './display/filter-toolbar.tsx'
 export { Meter, type MeterProps, type MeterThreshold } from './display/meter.tsx'
 export { KeyValueTable, type KeyValueRow, type KeyValueTableProps } from './display/key-value-table.tsx'
+export { LookupForm, type LookupFormProps } from './display/lookup-form.tsx'
 export { PageHeader, type PageHeaderProps } from './display/page-header.tsx'
 export { Timestamp, type TimestampProps } from './display/timestamp.tsx'
 export { Section, type SectionProps } from './display/section.tsx'

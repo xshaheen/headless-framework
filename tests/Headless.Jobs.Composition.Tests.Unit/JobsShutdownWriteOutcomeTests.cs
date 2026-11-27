@@ -98,27 +98,6 @@ public sealed class JobsShutdownWriteOutcomeTests : TestBase
         fixture.ShutdownWriteFailures.Should().Be(write == ShutdownWrite.Throws ? 1 : 0);
     }
 
-    [Theory]
-    [InlineData(ShutdownWrite.Throws)]
-    [InlineData(ShutdownWrite.MatchesNoRow)]
-    public async Task should_end_as_lease_loss_when_the_hand_back_of_an_undispatched_run_does_not_land(
-        ShutdownWrite write
-    )
-    {
-        // given: a row claimed for an immediate run the frozen pool refused
-        await using var fixture = Fixture.Create(write);
-        var context = fixture.Context((_, _) => Task.CompletedTask);
-
-        // when
-        var release = () => fixture.Handler.ReleaseUndispatchedAsync(context).WaitAsync(_RunBound, AbortToken);
-
-        // then: the dispatcher goes on to hand back the rest of its batch
-        await release.Should().NotThrowAsync();
-        context.LeaseLost.Should().BeTrue();
-        await fixture.ShouldHaveWrittenNothingElseAsync();
-        fixture.ShutdownWriteFailures.Should().Be(write == ShutdownWrite.Throws ? 1 : 0);
-    }
-
     [Fact]
     public async Task should_end_as_lease_loss_when_the_hand_back_under_an_unknown_membership_matches_no_row()
     {

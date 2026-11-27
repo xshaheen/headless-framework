@@ -135,9 +135,11 @@ public abstract partial class DataStorageTestsBase
         var storage = GetStorage();
         var fingerprint = $"v1:{Guid.NewGuid():N}";
         var name = $"groups-published-{Guid.NewGuid():N}";
+        var ids = new Guid[3];
         for (var i = 0; i < 3; i++)
         {
             var message = await storage.StoreMessageAsync(name, CreateMessage(), cancellationToken: AbortToken);
+            ids[i] = message.StorageId;
             message.FailureFingerprint = fingerprint;
             message.ExceptionInfo = "broker refused";
             (
@@ -162,6 +164,24 @@ public abstract partial class DataStorageTestsBase
         groups[0].Count.Should().Be(2);
         groups[0].ConsumerIdentity.Should().BeNull();
         groups[0].MessageType.Should().Be(MessageType.Publish);
+
+        if (storage.GetMonitoringApi() is IStorageIdMonitoringApi exact)
+        {
+            var views = await exact.GetMessageViewsAsync(
+                MessageType.Publish,
+                [ids[0], ids[2], Guid.NewGuid()],
+                AbortToken
+            );
+            views.Select(static row => row.View.StorageId).Should().BeEquivalentTo(new[] { ids[0], ids[2] });
+            views
+                .Should()
+                .OnlyContain(row =>
+                    row.View.Name == name
+                    && row.View.Content == null
+                    && row.View.FailureFingerprint == fingerprint
+                    && row.ExceptionInfo == "broker refused"
+                );
+        }
     }
 
     public virtual async Task should_freeze_an_operation_scope_at_its_high_water_mark_and_never_re_execute_a_message_twice()
@@ -407,6 +427,14 @@ public abstract partial class DataStorageTestsBase
         );
         view.Items.Should().ContainSingle().Which.IsHeld.Should().BeTrue();
         view.Items[0].HoldReason.Should().BeNull();
+        if (storage.GetMonitoringApi() is IStorageIdMonitoringApi exact)
+        {
+            var rows = await exact.GetMessageViewsAsync(MessageType.Subscribe, [generation.StorageId], AbortToken);
+            var held = rows.Should().ContainSingle().Which.View;
+            held.IsHeld.Should().BeTrue();
+            held.IncarnationId.Should().Be(generation.InboxGeneration.IncarnationId);
+        }
+
         var ledger = await operations.QueryReceiptsAsync(
             new MessagingOperationReceiptQuery { Actor = actor },
             _Viewer(),

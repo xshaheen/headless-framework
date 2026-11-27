@@ -152,7 +152,10 @@
         <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
     </Folder>
     <Folder Name="/Dashboard/Tests/">
+        <Project Path="tests/Headless.Cluster.Dashboard.Tests.Unit/Headless.Cluster.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Dashboard.Tests.Unit/Headless.Dashboard.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.DevInbox.Dashboard.Tests.Unit/Headless.DevInbox.Dashboard.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Leases.Dashboard.Tests.Unit/Headless.Leases.Dashboard.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Docs/Tests/">
         <Project Path="tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj" />
@@ -289,6 +292,7 @@
     <Folder Name="/Idempotency/">
         <Project Path="src\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
         <Project Path="src\Headless.Idempotency.Caching\Headless.Idempotency.Caching.csproj" />
+        <Project Path="src\Headless.Idempotency.Dashboard\Headless.Idempotency.Dashboard.csproj" />
         <Project Path="src\Headless.Idempotency\Headless.Idempotency.csproj" />
         <Project Path="src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
         <Project Path="src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
@@ -298,6 +302,7 @@
     <Folder Name="/Idempotency/Tests/">
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Integration\Headless.Idempotency.Caching.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Unit\Headless.Idempotency.Caching.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Idempotency.Dashboard.Tests.Unit\Headless.Idempotency.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.Tests.Unit\Headless.Idempotency.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.InMemory.Tests.Unit\Headless.Idempotency.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.PostgreSql.Tests.Integration\Headless.Idempotency.PostgreSql.Tests.Integration.csproj" />
@@ -320,7 +325,10 @@
         <Project Path="tests\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Dashboard/">
+        <Project Path="src/Headless.Cluster.Dashboard/Headless.Cluster.Dashboard.csproj" />
         <Project Path="src/Headless.Dashboard/Headless.Dashboard.csproj" />
+        <Project Path="src/Headless.DevInbox.Dashboard/Headless.DevInbox.Dashboard.csproj" />
+        <Project Path="src/Headless.Leases.Dashboard/Headless.Leases.Dashboard.csproj" />
     </Folder>
     <Folder Name="/Imaging/Tests/">
         <Project Path="tests\Headless.Imaging.NetVips.Tests.Unit\Headless.Imaging.NetVips.Tests.Unit.csproj" />
@@ -580,8 +588,10 @@
     </Folder>
     <Folder Name="/RateLimiting/">
         <Project Path="src\Headless.RateLimiting\Headless.RateLimiting.csproj" />
+        <Project Path="src\Headless.RateLimiting.Dashboard\Headless.RateLimiting.Dashboard.csproj" />
     </Folder>
     <Folder Name="/RateLimiting/Tests/">
+        <Project Path="tests\Headless.RateLimiting.Dashboard.Tests.Unit\Headless.RateLimiting.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests\Headless.RateLimiting.Tests.Integration\Headless.RateLimiting.Tests.Integration.csproj" />
         <Project Path="tests\Headless.RateLimiting.Tests.Unit\Headless.RateLimiting.Tests.Unit.csproj" />
     </Folder>
@@ -614,6 +624,7 @@
     <Folder Name="/Sequences/">
         <Project Path="src\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
         <Project Path="src\Headless.Sequences\Headless.Sequences.csproj" />
+        <Project Path="src\Headless.Sequences.Dashboard\Headless.Sequences.Dashboard.csproj" />
         <Project Path="src\Headless.Sequences.Sql\Headless.Sequences.Sql.csproj" />
         <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
         <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
@@ -621,6 +632,7 @@
         <Project Path="benchmarks\Headless.Sequences.Benchmarks\Headless.Sequences.Benchmarks.csproj" />
     </Folder>
     <Folder Name="/Sequences/Tests/">
+        <Project Path="tests\Headless.Sequences.Dashboard.Tests.Unit\Headless.Sequences.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sequences.Tests.Unit\Headless.Sequences.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sequences.PostgreSql.Tests.Integration\Headless.Sequences.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sequences.SqlServer.Tests.Integration\Headless.Sequences.SqlServer.Tests.Integration.csproj" />

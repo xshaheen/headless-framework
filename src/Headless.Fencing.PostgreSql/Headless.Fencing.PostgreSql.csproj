@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>PostgreSQL provider for Headless fenced leases: database-clock grants with store-wide generations, update-locked fence reads inside the caller's unit of work, and skip-locked expired-lease sweeps.</Description>
     <PackageTags>headless;fencing;lease;fencing-token;postgresql;dotnet</PackageTags>
     <RootNamespace>Headless.Fencing.PostgreSql</RootNamespace>

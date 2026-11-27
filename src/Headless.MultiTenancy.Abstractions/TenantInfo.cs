@@ -60,9 +60,9 @@ public class TenantInfo : IHasExtraProperties
     public bool IsEnabled { get; }
 
     /// <summary>
-    /// Read-along payload for the tenant. Never participates in lookups or caching keys. Per-tenant
-    /// application configuration belongs in Settings/Features/Permissions keyed by <see cref="Id"/>,
-    /// not here.
+    /// Read-along JSON-serializable metadata for the tenant. Catalog snapshots store nested values as detached
+    /// <see cref="System.Text.Json.JsonElement"/> instances. Per-tenant application configuration belongs in
+    /// Settings/Features/Permissions keyed by <see cref="Id"/>.
     /// </summary>
     public ExtraProperties ExtraProperties { get; init; } = [];
 }

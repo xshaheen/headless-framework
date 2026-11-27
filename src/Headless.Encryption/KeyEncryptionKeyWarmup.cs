@@ -19,7 +19,7 @@ internal sealed class KeyEncryptionKeyWarmup(DataKeyRing ring) : IWarmup
             await ring.TryGetActiveAsync(FieldContext.HostScope, DataKeyKind.Data, cancellationToken)
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
-                $"The host-scope data key is missing. Run 'resources provision -k {EncryptionKeysProvisioner.ResourceKind}' to create it."
+                $"The host-scope data key is missing. Run 'resources provision -k {SetupEncryption.KeysResourceKind}' to create it."
             );
     }
 }

@@ -6,6 +6,14 @@ namespace Tests;
 public sealed class PostgreSqlMembershipConformanceTests(PostgreSqlMembershipFixture fixture)
     : MembershipConformanceTests<PostgreSqlMembershipFixture>(fixture)
 {
+    protected override string ExpectedProviderName => "PostgreSql";
+
+    [Fact]
+    public override void should_report_the_provider_name_in_the_cluster_summary()
+    {
+        base.should_report_the_provider_name_in_the_cluster_summary();
+    }
+
     [Fact]
     public override Task should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths()
     {

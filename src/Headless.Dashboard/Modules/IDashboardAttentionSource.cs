@@ -98,6 +98,13 @@ public sealed record DashboardAttentionItem
     /// <summary>Gets how urgent the item is.</summary>
     public DashboardAttentionSeverity Severity { get; init; }
 
+    /// <summary>
+    /// Gets what kind of item this is: work in the module, by default, or a check of the host's health, which the
+    /// shell lists in its own <c>Health checks</c> section after the products' sections.
+    /// </summary>
+    /// <remarks>A health-check item still counts toward the Attention total and its product tab's dot.</remarks>
+    public DashboardAttentionKind Kind { get; init; }
+
     /// <summary>Gets how many objects the item covers.</summary>
     public long Count { get; init; }
 
@@ -142,4 +149,15 @@ public enum DashboardAttentionSeverity
 
     /// <summary>Needs an operator now, such as work that failed for good.</summary>
     Critical = 1,
+}
+
+/// <summary>What kind of Needs-you item it is, which decides the section the shell lists it in.</summary>
+[PublicAPI]
+public enum DashboardAttentionKind
+{
+    /// <summary>Work in the module, such as failed runs; the shell lists it under its module.</summary>
+    Work = 0,
+
+    /// <summary>A check of the host's health, such as a store that does not answer; listed under Health checks.</summary>
+    HealthCheck = 1,
 }

@@ -31,10 +31,10 @@ internal sealed class ClientVisibleSettingsReader(
         var names = definitions
             .Where(definition => definition.IsVisibleToClients)
             .Select(definition => definition.Name)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToArray();
 
         // The batch read rejects an empty name set.
-        if (names.Count == 0)
+        if (names.Length == 0)
         {
             return new Dictionary<string, string?>(StringComparer.Ordinal);
         }

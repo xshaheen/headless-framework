@@ -36,6 +36,7 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
             await provider.DisposeAsync();
         }
 
+        Directory.Delete(_baseDirectoryPath, recursive: true);
         await base.DisposeAsyncCore();
     }
 
@@ -85,6 +86,98 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     }
 
     #region List / Round-trip
+
+    [Fact]
+    public async Task should_require_a_stable_logical_container_segment()
+    {
+        var provider = _Build(_Tenant, TenantBlobScopingStrategy.ContainerPerTenant);
+        var manager = provider.GetRequiredService<IBlobContainerManager>();
+        await manager.EnsureContainerAsync(_Tenant, AbortToken);
+        var storage = provider.GetRequiredService<IBlobStorage>();
+        var stable = new BlobLocation("daily2026", "report.txt");
+        await storage.UploadContentAsync(stable, "sample", AbortToken);
+
+        var upload = () =>
+            storage.UploadContentAsync(new BlobLocation("daily:2026", "other.txt"), "sample", AbortToken).AsTask();
+
+        await upload.Should().ThrowAsync<ArgumentException>();
+        (await storage.GetBlobContentAsync(stable, AbortToken)).Should().Be("sample");
+        (await storage.GetBlobsListAsync(new BlobQuery(stable.Container), cancellationToken: AbortToken))
+            .Should()
+            .ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("archive")]
+    public async Task should_require_a_stable_logical_container_segment_through_a_decoration(string? store)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Services.AddSingleton<ICurrentTenant>(new FixedCurrentTenant(_Tenant));
+        builder.Services.AddHeadlessBlobs(blobs =>
+        {
+            if (store is null)
+            {
+                blobs.UseFileSystem(options => options.BaseDirectoryPath = _baseDirectoryPath);
+            }
+            else
+            {
+                blobs.AddNamed(
+                    store,
+                    instance => instance.UseFileSystem(options => options.BaseDirectoryPath = _baseDirectoryPath)
+                );
+            }
+        });
+        builder.Services.DecorateHeadlessBlobs(
+            new BlobStorageDecoration(
+                static (inner, _, _) =>
+                {
+                    var wrapper = Substitute.For<IBlobStorage>();
+                    wrapper
+                        .UploadAsync(
+                            Arg.Any<BlobLocation>(),
+                            Arg.Any<Stream>(),
+                            Arg.Any<string?>(),
+                            Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                            Arg.Any<CancellationToken>()
+                        )
+                        .Returns(call =>
+                            inner.UploadAsync(
+                                call.Arg<BlobLocation>(),
+                                call.Arg<Stream>(),
+                                call.Arg<string?>(),
+                                call.Arg<IReadOnlyDictionary<string, string>?>(),
+                                call.Arg<CancellationToken>()
+                            )
+                        );
+                    wrapper.DisposeAsync().Returns(_ => inner.DisposeAsync());
+
+                    return wrapper;
+                }
+            )
+        );
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Blobs(b =>
+                b.ScopeByTenant(options => options.Strategy = TenantBlobScopingStrategy.ContainerPerTenant)
+            )
+        );
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var manager = provider.GetRequiredKeyedService<IBlobContainerManager>(store);
+        await manager.EnsureContainerAsync(_Tenant, AbortToken);
+        var storage = provider.GetRequiredKeyedService<IBlobStorage>(store);
+        var stable = new BlobLocation("daily2026", "report.txt");
+        await storage.UploadContentAsync(stable, "sample", AbortToken);
+
+        var upload = () =>
+            storage
+                .UploadContentAsync(new BlobLocation("daily:2026", "report.txt"), "replacement", AbortToken)
+                .AsTask();
+
+        await upload.Should().ThrowAsync<ArgumentException>().WithParameterName("container");
+        var physicalPath = Path.Combine(_baseDirectoryPath, _Tenant, stable.Container, stable.Path);
+        (await File.ReadAllTextAsync(physicalPath, AbortToken)).Should().Be("sample");
+    }
 
     [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
@@ -379,14 +472,19 @@ public sealed class TenantScopedFileSystemBlobStorageTests : BlobStorageTestsBas
     #endregion
 
 
-    private ServiceProvider _Build(string tenantId)
+    private ServiceProvider _Build(
+        string tenantId,
+        TenantBlobScopingStrategy strategy = TenantBlobScopingStrategy.PathPrefix
+    )
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
         builder.Services.AddSingleton<ICurrentTenant>(new FixedCurrentTenant(tenantId));
         builder.Services.AddHeadlessBlobs(blobs =>
             blobs.UseFileSystem(options => options.BaseDirectoryPath = _baseDirectoryPath)
         );
-        builder.AddHeadlessTenancy(tenancy => tenancy.Blobs(b => b.ScopeByTenant()));
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Blobs(b => b.ScopeByTenant(options => options.Strategy = strategy))
+        );
 
         var provider = builder.Services.BuildServiceProvider();
         _providers.Add(provider);

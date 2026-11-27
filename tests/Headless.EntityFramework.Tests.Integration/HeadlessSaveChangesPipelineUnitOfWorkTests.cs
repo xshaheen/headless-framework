@@ -26,9 +26,11 @@ namespace Tests;
 public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContextTestFixture fixture) : TestBase
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_enlist_the_pipeline_owned_transaction_and_drain_after_the_commit(bool sync)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task should_drain_the_committed_unit_even_when_tracker_cleanup_faults(bool sync, bool trackerFault)
     {
         // given — no transaction on the context: the pipeline opens one and enlists it in the scope's unit of work.
         await using var provider = await _BuildProviderAsync();
@@ -36,12 +38,23 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
         db.Probes.Add(_ProbeWithEvents("owned"));
+        if (trackerFault)
+        {
+            db.ChangeTracker.StateChanged += static (_, args) =>
+            {
+                if (args is { OldState: EntityState.Added, NewState: EntityState.Unchanged })
+                {
+                    throw new InvalidOperationException("Tracker notification failed.");
+                }
+            };
+        }
 
         // when
-        await _SaveAsync(db, sync, AbortToken);
+        var saved = await _SaveAsync(db, sync, AbortToken);
 
         // then — the handler and the outbox dispatcher saw the same observed unit over the pipeline's transaction,
         // the after-commit registration drained once, and the unit ended with the save.
+        saved.Should().Be(1);
         evidence.HandlerCalls.Should().Be(1);
         evidence.HandlerUnit.Should().NotBeNull();
         var unitOfWork = evidence.HandlerUnit!;
@@ -54,6 +67,77 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         unitOfWork.State.Should().Be(UnitOfWorkState.Completed);
         db.UnitOfWork().Should().BeNull("the pipeline's unit ends with the save");
         (await _CountProbesAsync(provider)).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_run_async_callbacks_without_capturing_the_sync_saves_context(
+        bool useSynchronizationContext
+    )
+    {
+        await using var provider = await _BuildProviderAsync();
+        var evidence = provider.GetRequiredService<PipelineEvidence>();
+        var completed = false;
+        evidence.OnHandled = async (unit, _, _) =>
+        {
+            // Assert before yielding, so a capture regression fails before an exclusive scheduler can deadlock.
+            TaskScheduler.Current.Should().BeSameAs(TaskScheduler.Default);
+            await Task.Yield();
+            unit!.OnCompleted(async () =>
+            {
+                TaskScheduler.Current.Should().BeSameAs(TaskScheduler.Default);
+                await Task.Yield();
+                completed = true;
+            });
+        };
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
+        db.Probes.Add(_ProbeWithEvents("synchronous"));
+
+        if (useSynchronizationContext)
+        {
+            var previous = SynchronizationContext.Current;
+            var context = new RecordingSynchronizationContext();
+
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+                db.SaveChanges().Should().Be(1);
+                SynchronizationContext.Current.Should().BeSameAs(context);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+
+            context.Posts.Should().Be(0);
+        }
+        else
+        {
+            var schedulers = new ConcurrentExclusiveSchedulerPair();
+
+            try
+            {
+                await Task.Factory.StartNew(
+                    () =>
+                    {
+                        SynchronizationContext.Current.Should().BeNull();
+                        db.SaveChanges().Should().Be(1);
+                    },
+                    AbortToken,
+                    TaskCreationOptions.DenyChildAttach,
+                    schedulers.ExclusiveScheduler
+                );
+            }
+            finally
+            {
+                schedulers.Complete();
+                await schedulers.Completion;
+            }
+        }
+
+        completed.Should().BeTrue();
     }
 
     [Theory]
@@ -452,6 +536,20 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
     private sealed record ProbeShipped(string Name);
 
     private sealed class TransientProbeException() : Exception("Simulated transient failure.");
+
+    private sealed class RecordingSynchronizationContext : SynchronizationContext
+    {
+        private int _posts;
+
+        public int Posts => Volatile.Read(ref _posts);
+
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            // Forward captured callbacks to the thread pool so this test detects the capture without hanging.
+            Interlocked.Increment(ref _posts);
+            base.Post(callback, state);
+        }
+    }
 
     private sealed class RetryOnceStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)

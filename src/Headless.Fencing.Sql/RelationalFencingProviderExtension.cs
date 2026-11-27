@@ -83,6 +83,7 @@ internal sealed class RelationalFencingProviderExtension<TOptions, TOptionsValid
                 options.CommandTimeoutSeconds,
                 new FencingTable(provider.Dialect, schema),
                 provider.BeginOwnedUnit,
+                provider.ReadDialect,
                 provider.EnlistedGrantRefusal
             );
         });
@@ -108,6 +109,7 @@ internal sealed class RelationalFencingProviderExtension<TOptions, TOptionsValid
 /// <param name="SchemaContribution">
 /// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
 /// </param>
+/// <param name="ReadDialect">The engine SQL the inspector's reads need.</param>
 /// <param name="EnlistedGrantRefusal">
 /// Why the provider refuses a grant inside a caller's unit, or <see langword="null" /> when it accepts one.
 /// </param>
@@ -117,5 +119,6 @@ internal sealed record RelationalFencingProvider(
     Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
     Action<IServiceCollection> AddUnitOfWork,
     Func<RelationalFencingOptions, FencingStorageOptions, SchemaContribution> SchemaContribution,
+    FencingReadDialect ReadDialect,
     string? EnlistedGrantRefusal = null
 );

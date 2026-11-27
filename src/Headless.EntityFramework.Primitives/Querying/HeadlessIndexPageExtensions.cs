@@ -12,8 +12,9 @@ namespace Microsoft.EntityFrameworkCore;
 /// </summary>
 /// <remarks>
 /// Negative <c>index</c> values address pages from the end of the result set: index <c>-1</c>
-/// returns the last page, <c>-2</c> the second-to-last, and so on. When both <c>index</c> and
-/// <c>size</c> are <see langword="null"/> the full result set is returned as a single page.
+/// returns the last page, <c>-2</c> the second-to-last, and so on. Every overload that takes an
+/// index and size, or a page request, pages. Only the overloads without them read the full result
+/// set, so an optional page parameter can never turn into an unbounded read.
 /// </remarks>
 [PublicAPI]
 public static class HeadlessIndexPageExtensions
@@ -70,42 +71,21 @@ public static class HeadlessIndexPageExtensions
         }
 
         /// <summary>
-        /// Materializes a page of results when both <paramref name="index"/> and <paramref name="size"/>
-        /// are provided, or the full result set when either is <see langword="null"/>.
+        /// Materializes the page of results described by the <paramref name="request"/>.
         /// </summary>
-        /// <param name="index">Optional zero-based page index.</param>
-        /// <param name="size">Optional page size. Must be positive when not <see langword="null"/>.</param>
+        /// <param name="request">The page request carrying index and size.</param>
         /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all results.</returns>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is not positive.</exception>
+        /// <returns>An <c>IndexPage</c> containing the requested slice and the total count.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The request size is not positive.</exception>
         public ValueTask<IndexPage<T>> ToIndexPageAsync(
-            int? index,
-            int? size,
+            IIndexPageRequest request,
             CancellationToken cancellationToken = default
         )
         {
-            Argument.IsPositive(size);
+            Argument.IsNotNull(request);
 
-            return index.HasValue && size.HasValue
-                ? source.ToIndexPageAsync(index.Value, size.Value, cancellationToken)
-                : source.ToIndexPageAsync(cancellationToken);
-        }
-
-        /// <summary>
-        /// Materializes a page of results described by the <paramref name="request"/>, or the full
-        /// result set when <paramref name="request"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="request">Optional page request carrying index and size.</param>
-        /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all results.</returns>
-        public ValueTask<IndexPage<T>> ToIndexPageAsync(
-            IIndexPageRequest? request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return request is null
-                ? source.ToIndexPageAsync(cancellationToken)
-                : source.ToIndexPageAsync(request.Index, request.Size, cancellationToken);
+            return source.ToIndexPageAsync(request.Index, request.Size, cancellationToken);
         }
 
         /// <summary>
@@ -187,56 +167,34 @@ public static class HeadlessIndexPageExtensions
         }
 
         /// <summary>
-        /// Materializes a page of ordered, projected results when both <paramref name="index"/> and
-        /// <paramref name="size"/> are provided, or the full result when either is <see langword="null"/>.
+        /// Materializes the page of ordered, projected results described by the <paramref name="request"/>.
         /// </summary>
         /// <param name="orderBy">Key selector for ordering.</param>
         /// <param name="ascending">When <see langword="true"/> orders ascending; otherwise descending.</param>
         /// <param name="selector">Projection applied after ordering.</param>
-        /// <param name="index">Optional zero-based page index.</param>
-        /// <param name="size">Optional page size. Must be positive when not <see langword="null"/>.</param>
+        /// <param name="request">The page request carrying index and size.</param>
         /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all projected results.</returns>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is not positive.</exception>
-        public async ValueTask<IndexPage<TResult>> ToIndexPageAsync<TKey, TResult>(
-            Expression<Func<T, TKey>> orderBy,
-            bool ascending,
-            Expression<Func<T, TResult>> selector,
-            int? index,
-            int? size,
-            CancellationToken cancellationToken = default
-        )
-        {
-            Argument.IsPositive(size);
-
-            return index.HasValue && size.HasValue
-                ? await source
-                    .ToIndexPageAsync(orderBy, ascending, selector, index.Value, size.Value, cancellationToken)
-                    .ConfigureAwait(false)
-                : await source.ToIndexPageAsync(orderBy, ascending, selector, cancellationToken).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Materializes a page of ordered, projected results described by the <paramref name="request"/>,
-        /// or the full result set when <paramref name="request"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="orderBy">Key selector for ordering.</param>
-        /// <param name="ascending">When <see langword="true"/> orders ascending; otherwise descending.</param>
-        /// <param name="selector">Projection applied after ordering.</param>
-        /// <param name="request">Optional page request carrying index and size.</param>
-        /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all projected results.</returns>
+        /// <returns>An <c>IndexPage</c> containing the requested slice and the total count.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The request size is not positive.</exception>
         public ValueTask<IndexPage<TResult>> ToIndexPageAsync<TKey, TResult>(
             Expression<Func<T, TKey>> orderBy,
             bool ascending,
             Expression<Func<T, TResult>> selector,
-            IIndexPageRequest? request,
+            IIndexPageRequest request,
             CancellationToken cancellationToken = default
         )
         {
-            return request is null
-                ? source.ToIndexPageAsync(orderBy, ascending, selector, cancellationToken)
-                : source.ToIndexPageAsync(orderBy, ascending, selector, request.Index, request.Size, cancellationToken);
+            Argument.IsNotNull(request);
+
+            return source.ToIndexPageAsync(
+                orderBy,
+                ascending,
+                selector,
+                request.Index,
+                request.Size,
+                cancellationToken
+            );
         }
 
         /// <summary>
@@ -312,60 +270,25 @@ public static class HeadlessIndexPageExtensions
         }
 
         /// <summary>
-        /// Materializes a page of ordered results when both <paramref name="index"/> and
-        /// <paramref name="size"/> are provided, or the full ordered result when either is <see langword="null"/>.
+        /// Materializes the page of ordered results described by the <paramref name="request"/>.
         /// </summary>
         /// <param name="orderBy">Key selector for ordering.</param>
         /// <param name="ascending">When <see langword="true"/> orders ascending; otherwise descending.</param>
-        /// <param name="index">Optional zero-based page index.</param>
-        /// <param name="size">Optional page size. Must be positive when not <see langword="null"/>.</param>
+        /// <param name="request">The page request carrying index and size.</param>
         /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all ordered results.</returns>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="size"/> is not positive.</exception>
-        public async ValueTask<IndexPage<T>> ToIndexPageAsync<TKey>(
-            Expression<Func<T, TKey>> orderBy,
-            bool ascending,
-            int? index,
-            int? size,
-            CancellationToken cancellationToken = default
-        )
-        {
-            Argument.IsNotNull(source);
-            Argument.IsPositive(size);
-
-            if (index.HasValue && size.HasValue)
-            {
-                return await source
-                    .ToIndexPageAsync(orderBy, ascending, index.Value, size.Value, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
-
-            var items = await orderQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
-
-            return new(items, 0, items.Count, items.Count);
-        }
-
-        /// <summary>
-        /// Materializes a page of ordered results described by the <paramref name="request"/>,
-        /// or the full ordered result set when <paramref name="request"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="orderBy">Key selector for ordering.</param>
-        /// <param name="ascending">When <see langword="true"/> orders ascending; otherwise descending.</param>
-        /// <param name="request">Optional page request carrying index and size.</param>
-        /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
-        /// <returns>An <c>IndexPage</c> containing the requested slice or all ordered results.</returns>
+        /// <returns>An <c>IndexPage</c> containing the requested slice and the total count.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">The request size is not positive.</exception>
         public ValueTask<IndexPage<T>> ToIndexPageAsync<TKey>(
             Expression<Func<T, TKey>> orderBy,
             bool ascending,
-            IIndexPageRequest? request,
+            IIndexPageRequest request,
             CancellationToken cancellationToken = default
         )
         {
-            return request is null
-                ? source.ToIndexPageAsync(orderBy, ascending, cancellationToken)
-                : source.ToIndexPageAsync(orderBy, ascending, request.Index, request.Size, cancellationToken);
+            Argument.IsNotNull(request);
+
+            return source.ToIndexPageAsync(orderBy, ascending, request.Index, request.Size, cancellationToken);
         }
     }
 

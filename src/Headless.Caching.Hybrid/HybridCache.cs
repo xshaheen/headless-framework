@@ -45,7 +45,7 @@ public sealed partial class HybridCache(
     ICacheFactoryLockProvider? factoryLockProvider = null,
     CacheInstrumentationConfig? instrumentation = null,
     CacheEventsConfig? eventsConfig = null
-) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
+) : ICache, IFactoryCacheStore, ISnapshotSlidingCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -63,6 +63,8 @@ public sealed partial class HybridCache(
         ? CachingDiagnostics.DefaultCacheName
         : cacheOptions.CacheName;
 
+    private readonly IHybridTagHistory? _tagHistory = _ConfigureTagHistory(l1Cache, l2Cache);
+
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
@@ -71,7 +73,17 @@ public sealed partial class HybridCache(
         CachingMetrics.TierHybrid,
         instrumentation?.IncludeKeyInTraces ?? false,
         eventsConfig
-    );
+    )
+    {
+        TrackFactoryPublication = l1Cache is IHybridTagHistory history ? history.TrackPublication : null,
+    };
+
+    private static IHybridTagHistory? _ConfigureTagHistory(IInMemoryCache local, IRemoteCache distributed)
+    {
+        var history = local as IHybridTagHistory;
+        history?.SetDurableMarkerReader(distributed as IDurableTagMarkerReader);
+        return history;
+    }
 
     private long _localCacheHits;
     private long _invalidateCacheCalls;

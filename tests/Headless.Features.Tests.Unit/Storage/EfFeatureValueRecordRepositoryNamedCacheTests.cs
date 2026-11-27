@@ -26,6 +26,18 @@ public sealed class EfFeatureValueRecordRepositoryNamedCacheTests : TestBase
 
     public EfFeatureValueRecordRepositoryNamedCacheTests()
     {
+        _namedCache
+            .GetAllAsync<FeatureValueCacheItem>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CacheValue<FeatureValueCacheItem>>(StringComparer.Ordinal));
+        _namedCache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<FeatureValueCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
         var cacheProvider = Substitute.For<ICacheProvider>();
         cacheProvider.GetCache(_CacheName).Returns(_namedCache);
 
@@ -71,11 +83,7 @@ public sealed class EfFeatureValueRecordRepositoryNamedCacheTests : TestBase
         // then
         await _namedCache
             .Received(4)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(items => items.Keys.Single() == key),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .TryInsertAsync(key, Arg.Any<FeatureValueCacheItem>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
         _defaultCache.ReceivedCalls().Should().BeEmpty();
     }
 

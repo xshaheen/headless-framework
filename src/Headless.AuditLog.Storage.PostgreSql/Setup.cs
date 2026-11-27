@@ -14,6 +14,12 @@ namespace Headless.AuditLog;
 [PublicAPI]
 public static class SetupAuditLogPostgreSql
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the monthly audit-log partitions, which
+    /// <c>resources provision -k</c> selects. The audit-log table itself is a <c>Schema</c> resource.
+    /// </summary>
+    public const string PartitionsResourceKind = "AuditLogPartitions";
+
     extension(HeadlessAuditLogSetupBuilder setup)
     {
         /// <summary>

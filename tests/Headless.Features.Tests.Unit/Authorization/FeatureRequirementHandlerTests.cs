@@ -109,7 +109,9 @@ public sealed class FeatureRequirementHandlerTests : TestBase
         await featureManager
             .Received(1)
             .GetAllAsync(
-                Arg.Is<IReadOnlySet<string>>(names => names.SetEquals(new[] { _Reports, _Exports })),
+                Arg.Is<IReadOnlyCollection<string>>(names =>
+                    names.ToHashSet(StringComparer.Ordinal).SetEquals(new[] { _Reports, _Exports })
+                ),
                 Arg.Any<CancellationToken>()
             );
         await featureManager.DidNotReceiveWithAnyArgs().GetAsync(default!, default, default, default, AbortToken);
@@ -210,10 +212,10 @@ public sealed class FeatureRequirementHandlerTests : TestBase
                 return new FeatureValue(name, value, Provider: null);
             });
         featureManager
-            .GetAllAsync(Arg.Any<IReadOnlySet<string>>(), Arg.Any<CancellationToken>())
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                var names = call.ArgAt<IReadOnlySet<string>>(0);
+                var names = call.ArgAt<IReadOnlyCollection<string>>(0);
 
                 return names.ToDictionary(
                     name => name,

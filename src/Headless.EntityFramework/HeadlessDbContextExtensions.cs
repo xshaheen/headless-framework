@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
+using Headless.Checks;
+using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Microsoft.EntityFrameworkCore;
@@ -25,6 +28,83 @@ public static class HeadlessDbContextExtensions
         catch (InvalidOperationException)
         {
             return null; // GetService throw on service not found
+        }
+    }
+
+    /// <summary>
+    /// Saves the context's changes and turns a unique-key violation of <paramref name="constraintName" /> into a
+    /// <see cref="ConflictException" /> carrying <paramref name="conflict" />.
+    /// </summary>
+    /// <remarks>
+    /// Use it where a handler checks that no other row holds a value and a concurrent writer can still take the value
+    /// before the save. The index that enforces the value decides the race, and the caller gets its own error instead
+    /// of the generic <c>g:unique_violation</c>. Any other failure, a violation of another constraint included,
+    /// propagates unchanged. See <see cref="RelationalFaults.IsUniqueViolation(Exception, out string?)" /> for which
+    /// engines report the constraint name.
+    /// </remarks>
+    /// <param name="context">The context to save.</param>
+    /// <param name="constraintName">
+    /// The violated constraint or unique index, as the database names it (for an EF index, its
+    /// <c>GetDatabaseName()</c>), compared ordinally.
+    /// </param>
+    /// <param name="conflict">The error the conflict carries.</param>
+    /// <param name="cancellationToken">The token to cancel the save.</param>
+    /// <returns>The number of state entries written to the database.</returns>
+    /// <exception cref="ConflictException">The save violated <paramref name="constraintName" />.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException"><paramref name="constraintName" /> is empty.</exception>
+    public static Task<int> SaveChangesOrConflictAsync(
+        this DbContext context,
+        string constraintName,
+        ErrorDescriptor conflict,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(constraintName);
+        Argument.IsNotNull(conflict);
+
+        return context.SaveChangesOrConflictAsync(
+            new Dictionary<string, ErrorDescriptor>(StringComparer.Ordinal) { [constraintName] = conflict },
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Saves the context's changes and turns a unique-key violation of a constraint in <paramref name="conflicts" />
+    /// into a <see cref="ConflictException" /> carrying that constraint's error.
+    /// </summary>
+    /// <remarks>
+    /// The dictionary's comparer matches the name the database reports; build it with <see cref="StringComparer.Ordinal" />
+    /// unless your names need otherwise. A violation of a constraint the dictionary does not hold, a violation whose
+    /// engine reported no name, and any other failure propagate unchanged. The violation is matched wherever the save
+    /// reports it, a commit of the context's own transaction included.
+    /// </remarks>
+    /// <param name="context">The context to save.</param>
+    /// <param name="conflicts">The error for each constraint or unique index name.</param>
+    /// <param name="cancellationToken">The token to cancel the save.</param>
+    /// <returns>The number of state entries written to the database.</returns>
+    /// <exception cref="ConflictException">The save violated a constraint in <paramref name="conflicts" />.</exception>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null" />.</exception>
+    public static async Task<int> SaveChangesOrConflictAsync(
+        this DbContext context,
+        IReadOnlyDictionary<string, ErrorDescriptor> conflicts,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(conflicts);
+
+        try
+        {
+            return await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (RelationalFaults.IsUniqueViolation(exception, out var constraintName)
+                && constraintName is not null
+                && conflicts.TryGetValue(constraintName, out var conflict)
+            )
+        {
+            throw new ConflictException(conflict, exception);
         }
     }
 

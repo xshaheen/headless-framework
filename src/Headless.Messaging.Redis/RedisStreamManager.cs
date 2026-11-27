@@ -180,9 +180,12 @@ internal sealed class RedisStreamManager(
         [EnumeratorCancellation] CancellationToken token
     )
     {
-        // Subscription set is fixed for the consumer's lifetime, so materialize positions once
-        // instead of rebuilding the StreamPosition[] on every poll iteration.
+        // XREADGROUP only returns pending entries after the supplied id. Advance independently for each stream so a
+        // delivery left unacknowledged does not keep the startup pass from reaching newer entries.
         var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.Beginning)).ToArray();
+        var positionIndexes = positions
+            .Select(static (position, index) => (position.Key, Index: index))
+            .ToDictionary(static item => item.Key, static item => item.Index);
 
         while (true)
         {
@@ -198,10 +201,18 @@ internal sealed class RedisStreamManager(
 
             yield return result;
 
-            //Once we consumed our history of pending messages, we can break the loop.
+            // A short batch on every stream means the startup scan has reached the end of its pending entries.
             if (result.All(s => s.Entries.Length < _options.StreamEntriesCount))
             {
                 break;
+            }
+
+            foreach (var stream in result)
+            {
+                if (stream.Entries.Length > 0)
+                {
+                    positions[positionIndexes[stream.Key]] = new StreamPosition(stream.Key, stream.Entries[^1].Id);
+                }
             }
 
             await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);

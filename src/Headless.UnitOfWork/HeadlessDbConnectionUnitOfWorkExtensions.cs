@@ -29,6 +29,7 @@ public static class HeadlessDbConnectionUnitOfWorkExtensions
         /// </remarks>
         /// <returns>The active bound unit, or <see langword="null" />.</returns>
         /// <exception cref="ArgumentNullException">The connection is <see langword="null" />.</exception>
+        /// <exception cref="InvalidOperationException">The bound unit is still completing.</exception>
         public IUnitOfWork? UnitOfWork()
         {
             Argument.IsNotNull(connection);

@@ -14,17 +14,20 @@ internal sealed class IncrementWithExpireScriptDefinition : RedisScriptDefinitio
             // math.modf returns (intpart, frac); branching on the first return value means the
             // condition was true only when intpart == 0 (i.e. |value| < 1), which is exactly
             // backwards. Fix: capture the fractional part and branch on it.
-            """
-            local intpart, frac = math.modf(@value)
-            if frac == 0 then
-              redis.call('incrby', @key, @value)
-            else
-              redis.call('incrbyfloat', @key, @value)
-            end
-            if (@expires ~= nil and @expires ~= '') then
-              redis.call('pexpire', @key, math.ceil(@expires))
-            end
-            return redis.call('get', @key)
-            """
+            NativeGenerationScript.Mutating
+                + """
+                local generation = prepareNativeMutation(@key, @generationKey, @flushGeneration)
+                local intpart, frac = math.modf(@value)
+                if frac == 0 then
+                  redis.call('incrby', @key, @value)
+                else
+                  redis.call('incrbyfloat', @key, @value)
+                end
+                if (@expires ~= nil and @expires ~= '') then
+                  redis.call('pexpire', @key, math.ceil(@expires))
+                end
+                recordNativeGeneration(@key, @generationKey, generation)
+                return redis.call('get', @key)
+                """
         ) { }
 }

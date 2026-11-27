@@ -18,6 +18,7 @@ namespace Headless.Jobs.Infrastructure;
 internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>,
         IJobPersistenceProvider<TTimeJob, TCronJob>,
+        IJobImmediateAdmission<TCronJob>,
         ICoordinatedJobWriter<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -2007,9 +2008,25 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
     }
 
-    public async Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
+    Task<TimeJobEntity[]> IJobImmediateAdmission<TCronJob>.QueueImmediateTimeJobsAsync(
+        Guid[] ids,
+        CancellationToken cancellationToken
+    ) => AcquireImmediateTimeJobsAsync(ids, JobStatus.Queued, cancellationToken);
+
+    Task<CronJobOccurrenceEntity<TCronJob>[]> IJobImmediateAdmission<TCronJob>.QueueImmediateCronOccurrencesAsync(
+        Guid[] occurrenceIds,
+        CancellationToken cancellationToken
+    ) => _AcquireImmediateCronOccurrencesAsync(occurrenceIds, JobStatus.Queued, cancellationToken);
+
+    public Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
         Guid[]? occurrenceIds,
         CancellationToken cancellationToken = default
+    ) => _AcquireImmediateCronOccurrencesAsync(occurrenceIds, JobStatus.InProgress, cancellationToken);
+
+    private async Task<CronJobOccurrenceEntity<TCronJob>[]> _AcquireImmediateCronOccurrencesAsync(
+        Guid[]? occurrenceIds,
+        JobStatus status,
+        CancellationToken cancellationToken
     )
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0 || !OwnerIdentity.TryGetStampOwner(out var owner))
@@ -2054,7 +2071,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     $"({idColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.Id), c.Id)} AND {updatedColumn} = {set.Parameter(nameof(CronJobOccurrenceEntity<>.UpdatedAt), c.UpdatedAt)})"
                 )
             );
-            set.Value(nameof(CronJobOccurrenceEntity<>.Status), JobStatus.InProgress)
+            set.Value(nameof(CronJobOccurrenceEntity<>.Status), status)
                 .DatabaseNow(nameof(CronJobOccurrenceEntity<>.UpdatedAt));
 
             granted.AddRange(

@@ -103,10 +103,13 @@ internal sealed class CacheReplaceIfEqualScriptDefinition : RedisScriptDefinitio
 
             -- RedisValue.EmptyString is the no-expiry sentinel passed for @expires.
             if @expires ~= '' then
-              return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
+              redis.call('set', @key, @value, 'PX', @expires)
+            else
+              redis.call('set', @key, @value)
             end
 
-            return redis.call('set', @key, @value) and 1 or 0
+            redis.call('del', @generationKey)
+            return 1
             """
         ) { }
 }

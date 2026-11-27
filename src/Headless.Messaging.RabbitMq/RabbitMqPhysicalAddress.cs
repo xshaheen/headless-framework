@@ -8,13 +8,13 @@ namespace Headless.Messaging.RabbitMq;
 /// <remarks>
 /// The base exchange and every queue take the host's isolation prefix (<c>Headless:Prefix</c>) in front, joined with
 /// <c>.</c>, which a prefix never contains, so environments that share one virtual host never share an exchange or a
-/// queue. Lane and dead-letter exchanges and dead-letter queues derive from those names and carry the prefix with them;
-/// routing keys are scoped by their exchange and stay as they are. An empty prefix leaves every name exactly as it is
-/// without one.
+/// queue. Lane and dead-letter exchanges derive from the base exchange. Dead-letter queues have their own namespace
+/// and include the live queue's name. Routing keys are scoped by their exchange and stay as they are.
 /// </remarks>
 internal static class RabbitMqPhysicalAddress
 {
     private const string _BusQueuePrefix = "bus.";
+    private const string _DeadLetterQueuePrefix = "headless_dlq.";
 
     // RabbitMQ accepts queue and exchange names up to 255 bytes.
     private const int _MaxNameLength = 255;
@@ -76,7 +76,7 @@ internal static class RabbitMqPhysicalAddress
     /// Queue lane.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The host prefix makes a Queue-lane queue or its dead-letter queue longer than RabbitMQ allows.
+    /// The host prefix makes a Queue-lane queue longer than RabbitMQ allows.
     /// </exception>
     public static string Queue(string hostPrefix, MessageLane lane, string subscriptionName, string logicalName)
     {
@@ -103,20 +103,23 @@ internal static class RabbitMqPhysicalAddress
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };
 
-        if (
-            lane is MessageLane.Queue
-            && prefixed.Length + RabbitMqQueueTopology.DeadLetterQueueSuffix.Length > _MaxNameLength
-        )
+        if (lane is MessageLane.Queue && prefixed.Length > _MaxNameLength)
         {
             throw new InvalidOperationException(
                 $"The RabbitMQ queue for message '{logicalName}' with the host prefix '{hostPrefix}' (Headless:Prefix) "
-                    + $"is longer than {_MaxNameLength} characters with its dead-letter queue. Shorten the message name or the prefix."
+                    + $"is longer than {_MaxNameLength} characters. Shorten the message name or the prefix."
             );
         }
 
         RabbitMqValidation.ValidateQueueName(prefixed);
         return prefixed;
     }
+
+    // No live queue starts with this segment: its first segment is a lane or a host prefix, which cannot contain '_'.
+    // A full live name always contains a dot, so shortened dead-letter names cannot collide with the readable form.
+    public static string DeadLetterQueue(string queueName) =>
+        _DeadLetterQueuePrefix
+        + (queueName.Length <= _MaxNameLength - _DeadLetterQueuePrefix.Length ? queueName : queueName.ToSha256());
 
     private static BusNameRules _BusRules(int hostPrefixLength) =>
         new(

@@ -161,7 +161,11 @@ public sealed class OutboxRecoveryTests : TestBase
         var row = await host.WaitForRowAsync(row => row.StatusName == StatusName.Succeeded, AbortToken);
         row.Retries.Should().Be(0);
         probe.Exhausted.Should().BeEmpty();
-        host.ConsumerCircuit().ConsecutiveFailures.Should().Be(0);
+        var circuit = await host.WaitForConsumerCircuitAsync(
+            static circuit => circuit.ConsecutiveFailures == 0,
+            AbortToken
+        );
+        circuit.State.Should().Be(CircuitBreakerState.Closed);
     }
 
     // One send per pickup with no back-off, so a persisted retry is due on the next poll.

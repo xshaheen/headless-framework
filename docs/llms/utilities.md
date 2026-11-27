@@ -38,6 +38,7 @@ CAPTCHA verification is its own domain: see [captcha.md](captcha.md).
 - Put a misconfiguration that must stop the host in an `IHeadlessStartupValidator`, not in a hosted service. Keep it to in-memory checks.
 - Put first-request preparation (cache loads, script loads) in an `IWarmup`, not in a startup validator or a hosted service's `StartAsync`. Make `WarmUpAsync` safe to repeat: a failed warm-up retries.
 - Register options with `Configure<TOptions, TValidator>(...)` or `AddOptions<TOptions, TValidator>()` from `Headless.Hosting`. Both validate with FluentValidation when the host starts.
+- To put the isolation prefix on a name your application writes to a shared store, such as its own Redis channel or a SignalR backplane prefix, call `services.AddHeadlessPrefix()`, resolve `IOptions<HeadlessPrefixOptions>`, and call `Apply(name, separator)`. Do not read `configuration["Headless:Prefix"]` and format `{prefix}:{name}` yourself: that misses a `ConfigureHeadlessPrefix` call, skips validation, and writes `:{name}` when the prefix is empty. Use `HeadlessPrefixOptions.ConfigurationKey` and `HeadlessPrefixOptions.MaxLength` instead of the key and the limit as literals. See [Prefix your own names](#prefix-your-own-names).
 - Use `HeadlessRedisScriptsLoader` only for Lua scripts, not for general Redis calls. Reuse each script definition's single `Instance`.
 - Use `GeoConstants.GoogleMapsSrid` (4326) as the SRID for geography data. Call `SanitizeForSqlGeography()` before you save a polygon to a SQL Server `geography` column.
 - For a sitemap of more than 50,000 URLs or 50 MB, call `WriteAsync(onShard)` and write each shard inside the callback, not `WriteToAsync`, which throws `ArgumentException` for input past either limit. A shard is invalid after the callback returns.
@@ -287,7 +288,7 @@ The host's deploy verbs, health checks, startup validation, seeders, resource pr
 | Capability | Entry point | Section |
 | --- | --- | --- |
 | Host verbs for deploy and verification | `RunHeadlessAsync(args)` | [Host verbs](#host-verbs) |
-| Environments that share one Redis or message broker | `Headless:Prefix`, `ConfigureHeadlessPrefix` | [Isolation prefix](#isolation-prefix) |
+| Environments that share one Redis or message broker | `Headless:Prefix`, `ConfigureHeadlessPrefix`, `HeadlessPrefixOptions.Apply` | [Isolation prefix](#isolation-prefix) |
 | Readiness checks for dependencies | `AddHeadlessHealthCheck`, `ConfigureHeadlessHealthCheck`, `RemoveHealthChecks` | [Health checks](#health-checks) |
 | Pre-rollout dependency check | the `check` verb | [Health check command](#health-check-command) |
 | What the host registered, without starting it | the `describe` verb | [Host manifest](#host-manifest) |
@@ -369,6 +370,45 @@ You can also set the environment variable `Headless__Prefix=wt1`, or call `servi
 A provider package applies the prefix to its own options with `services.ApplyHeadlessPrefix<TOptions>((options, prefix) => ...)`. The options factory applies it after every `Configure`, `PostConfigure`, and validation step, once per named instance, so a later consumer `PostConfigure` cannot remove it.
 
 **Verify:** at start the host logs `Headless names in shared stores start with the prefix '{Prefix}'`, and `dotnet MyApp.dll describe` shows the prefix as `host.prefix`.
+
+#### Prefix your own names
+
+The prefix covers only the names Headless features write. When your application writes its own names to a shared store, such as a Redis pub/sub channel or the SignalR Redis backplane, apply the same prefix to them, or two environments hear each other's messages.
+
+1. Call `services.AddHeadlessPrefix()`. It registers `HeadlessPrefixOptions`, binds it from `HeadlessPrefixOptions.ConfigurationKey` (`Headless:Prefix`), and validates it at start. Every Headless feature that writes shared names already calls it, and a repeated call adds nothing. Without it, a host that registers no such feature resolves an empty prefix and ignores the configured value.
+2. Resolve `IOptions<HeadlessPrefixOptions>` and call `Apply(name, separator)`. It returns `name` unchanged when the prefix is empty, and `{prefix}{separator}{name}` otherwise. Use `:` for Redis names, so `SCAN wt1:*` finds them next to the cache and coordination keys.
+
+```csharp
+using Headless.Hosting;
+using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+
+builder.Services.AddHeadlessPrefix();
+
+// A Redis channel the application publishes to and subscribes on.
+builder.Services.AddSingleton(provider =>
+{
+    var prefix = provider.GetRequiredService<IOptions<HeadlessPrefixOptions>>().Value;
+
+    return new OrderEventsChannel(RedisChannel.Literal(prefix.Apply("app:order-events", ":")));
+});
+
+// The SignalR backplane channels. Configure the options through DI so the prefix comes from the host.
+builder.Services.AddSignalR().AddStackExchangeRedis(builder.Configuration.GetConnectionString("Redis")!);
+builder.Services
+    .AddOptions<RedisOptions>()
+    .Configure<IOptions<HeadlessPrefixOptions>>(
+        (options, prefix) => options.Configuration.ChannelPrefix = RedisChannel.Literal(prefix.Value.Apply("signalr:", ":"))
+    );
+
+public sealed record OrderEventsChannel(RedisChannel Channel);
+```
+
+- **Length budget.** When a store limits the length of your names, subtract `HeadlessPrefixOptions.MaxLength` plus the separator length from that limit. Do not repeat `20` as a literal.
+- **Registration-time values.** `Apply` needs the resolved options. When an API takes the name only while you register services, configure that API's options with `Configure<IOptions<HeadlessPrefixOptions>>(...)` as above, instead of reading configuration.
+
+**Verify:** with `Headless__Prefix=wt1`, run `redis-cli PUBSUB CHANNELS 'wt1:*'` while the host is subscribed and confirm that your channels are listed with the prefix. A unit test can resolve `IOptions<HeadlessPrefixOptions>` from a `ServiceCollection` with `ConfigureHeadlessPrefix("wt1")` and assert that `Apply("app:order-events", ":")` returns `wt1:app:order-events`.
 
 ### Health checks
 
@@ -468,6 +508,39 @@ builder.Services.AddHeadlessHealthCheck(
 - Tag a check with `host-state` when it reads state only a started host has.
 
 **Choose a community check instead** (the Xabaril `AspNetCore.HealthChecks.*` packages) when you need health decided from a query's result (for example replication lag), a dependency no Headless provider owns, or a connection string the application does not otherwise use. Register it under another name next to the contributed checks, or drop the contributed one with `RemoveHealthChecks`.
+
+### Health check monitor
+
+`AddHeadlessHealthCheckMonitor()` registers `IHealthCheckMonitor`, which lists the host's health checks, runs them when a caller asks, and keeps each check's last 30 results in memory. Use it to back an operator view of check history. It is opt-in.
+
+```csharp
+builder.Services.AddHeadlessHealthCheckMonitor(); // aliveTag defaults to "live", the tag /alive filters on
+```
+
+If your `/alive` endpoint filters on another tag, pass that tag (`AddHeadlessHealthCheckMonitor("liveness")`), so `HealthCheckDescriptor.IsLiveness` matches what `/alive` runs. A second call adds nothing and keeps the first call's tag.
+
+| Member | Cost | Use it for |
+| --- | --- | --- |
+| `GetChecks()` | Memory read | Each current registration: `Name`, `Tags`, `FailureStatus`, `Timeout` (`null` when the registration has none), and `IsLiveness`. |
+| `GetSnapshot()` | Memory read | Each current registration with its `Results` (newest last, at most 30), and the overall `Status`. |
+| `ProbeAllAsync(ct)` | Runs every check against its dependency | An operator's "run all checks now" action. Returns the run's `HealthReport`. |
+| `ProbeAsync(name, ct)` | Runs one check against its dependency | An operator's "run this check" action. Matches the name case-insensitively and returns `null` for a name no registration has. |
+
+Display code reads `GetSnapshot()`. Do not call a probe method on every page refresh: each probe reaches the real dependency, and some checks write to their store, such as the opt-in data-protection key-ring check (`AddDataProtectionKeyRing()`), which uploads and deletes a sentinel blob.
+
+To show this history to operators, add the dashboard's Cluster module (`AddCluster()`, [Headless.Cluster.Dashboard](coordination.md#headlessclusterdashboard)). Register your health checks before `AddCluster()` and it registers the monitor for you; register them after, and call `AddHeadlessHealthCheckMonitor()` yourself, or its Health view names this call as the missing step.
+
+Observed behavior:
+
+- The monitor runs no check on its own. It adds no publisher, no startup probe, and no hosted service beyond the inert one `AddHealthChecks()` registers. History fills only from `ProbeAllAsync` and `ProbeAsync`, so its spacing follows when callers probe, and a node nobody probes has none.
+- A request to `/health` or `/alive`, or the [`check` verb](#health-check-command), runs the checks without feeding the history.
+- `Status` is the worst latest status among the registrations with at least one result, and `null` before any probe. A registration never probed does not count.
+- A check removed with `RemoveHealthChecks` or turned off in configuration is neither listed nor probed, and its earlier history is not returned.
+- Each result keeps `Status`, `Duration`, `Description`, and `CompletedAt` (from the registered `TimeProvider`). It keeps no exception and no data. A check that throws is stored with the description `The '{name}' health check failed.`, so a driver message never reaches the history.
+- Concurrent `ProbeAllAsync` calls share one run. A caller that cancels stops only its own wait. When every caller has cancelled, the run is cancelled and records nothing, so a hung check does not block later probes.
+- A run that started before the latest recorded result of a check does not overwrite it: a slow bulk run that finishes after a newer single-check probe keeps the newer result.
+
+**Verify:** call `ProbeAllAsync`, then assert `GetSnapshot().Checks[n].Results` holds one result per check.
 
 ### Health check command
 
@@ -609,13 +682,23 @@ To change a kind's check, call `services.ConfigureResourceProvisioning(o => o.St
 
 #### Resource kinds
 
-| Kind | Registered by | Name | Provision | Verify | Purge | Delete |
-| --- | --- | --- | --- | --- | --- | --- |
-| `Schema` | Every relational storage feature, one per schema contribution | `{dialect}/{schema}/{feature}`. When one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one. | Applies the missing steps, export-only contributions included | Fails on a missing step or a changed checksum | Deletes the rows of its tables, keeping host-state tables, sequences, and history | Drops its tables and sequences and deletes its history rows, so the next `provision` recreates them. A contribution that declares no objects supports neither. |
-| `EntityFramework` | `AddDbContextMigrations<TContext>()` | The context type name | Applies the pending migrations, after every `Schema` resource | Fails naming each pending migration | Unsupported | Unsupported |
-| `RabbitMQ` (any transport with topology) | `UseRabbitMq` | `topology` | Declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message with its `.dlq`, and the bindings | Passively declares each exchange and queue | Purges each queue this host consumes and its `.dlq`, never a queue it only publishes to | Deletes the queues this host consumes and their `.dlq`. Leaves the shared lane exchanges and their `.dlx` (see [RabbitMQ](messaging/rabbitmq.md#headlessmessagingrabbitmq)). |
-| `AzureBlob` | `UseAzure` in `AddHeadlessTus` | The container name | Creates the container with `ContainerPublicAccessType` | Fails when the container does not exist | Deletes the blobs under `BlobPrefix`, every tenant's uploads included, keeping the container | Deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it (see [Tus](tus.md#headlesstusazure)) |
-| `S3Bucket` | `UseS3` in `AddHeadlessTus` | The bucket name | Creates the bucket. A bucket the account already owns counts as created. | Fails when the bucket does not exist | Deletes the store's objects under `Prefix`, every tenant's uploads included, keeping the bucket and every other object | Deletes the same objects, then the bucket only when nothing else is left in it (see [Tus](tus.md#headlesstuss3)) |
+Each kind has a public constant on the type that registers it. Compare `Kind` with the constant, never a copied string: the value is what an operator passes to `-k`, and the constant keeps the two in step.
+
+| Kind | Constant | Registered by | Name | Provision | Verify | Purge | Delete |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Schema` | `SchemaRunner.ResourceKind` | Every relational storage feature, one per schema contribution | `{dialect}/{schema}/{feature}`. When one feature and schema live in two databases (an additional outbox on its own database), each name ends in `@` and a short hash of its database, so `-n` can pick one. | Applies the missing steps, export-only contributions included | Fails on a missing step or a changed checksum | Deletes the rows of its tables, keeping host-state tables, sequences, and history | Drops its tables and sequences and deletes its history rows, so the next `provision` recreates them. A contribution that declares no objects supports neither. |
+| `EntityFramework` | `HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind` | `AddDbContextMigrations<TContext>()` | The context type name | Applies the pending migrations, after every `Schema` resource | Fails naming each pending migration | Unsupported | Unsupported |
+| `RabbitMQ` (any transport with topology) | `SetupMessagingRabbitMq.TopologyResourceKind` | `UseRabbitMq` | `topology` | Declares the lane exchanges, one queue per competing consumer subscription and registered Queue-lane message, and the bindings. With dead-lettering enabled, also declares the `.dlx` exchanges and `headless_dlq.` queues those live queues use | Passively declares the lane exchanges and checks that the live queues and any configured dead-letter queues exist | Purges the queues this host consumes and their configured dead-letter queues | Deletes the queues this host consumes and their configured dead-letter queues. Keeps the exchanges. See [RabbitMQ topology](messaging/rabbitmq.md#names-and-topology). |
+| `AzureBlob` | `SetupTusAzure.ContainerResourceKind` | `UseAzure` in `AddHeadlessTus` | The container name | Creates the container with `ContainerPublicAccessType` | Fails when the container does not exist | Deletes the blobs under `BlobPrefix`, every tenant's uploads included, keeping the container | Deletes the blobs under `BlobPrefix`, then the container only when nothing else is left in it (see [Tus](tus.md#headlesstusazure)) |
+| `S3Bucket` | `SetupTusS3.BucketResourceKind` | `UseS3` in `AddHeadlessTus` | The bucket name | Creates the bucket. A bucket the account already owns counts as created. | Fails when the bucket does not exist | Deletes the store's objects under `Prefix`, every tenant's uploads included, keeping the bucket and every other object | Deletes the same objects, then the bucket only when nothing else is left in it (see [Tus](tus.md#headlesstuss3)) |
+
+These kinds belong to one package each, and its guide describes the operations:
+
+| Kind | Constant | Registered by |
+| --- | --- | --- |
+| `EncryptionKeys` | `SetupEncryption.KeysResourceKind` | `AddHeadlessEncryption` ([Encryption](encryption.md)) |
+| `MaxMind` | `SetupMaxMind.DatabasesResourceKind` | `UseMaxMind` ([IP geolocation](ip-geolocation.md)) |
+| `AuditLogPartitions` | `SetupAuditLogPostgreSql.PartitionsResourceKind` | `UsePostgreSql` with `AuditLogPartitioning.Monthly` ([Audit log](audit-log.md#monthly-partitions-postgresql)) |
 
 #### Provision as a development or test host starts
 
@@ -642,7 +725,43 @@ Implement `IResourceProvisioner` (`Kind`, `Name`, `ProvisionAsync`, `VerifyAsync
 - Throw `ResourceProvisioningException` from `VerifyAsync` with a message that tells the operator what to run.
 - Return `false` from `CanPurge` or `CanDelete` when that operation does not apply. Callers then skip it and report `Unsupported`, which is not a failure. Any exception an operation throws, `NotSupportedException` included, is `Failed`.
 - Override `StartupCheck` to choose `FailStart` or `None` instead of the `GateReadiness` default.
-- Override `DependsOn` to name the provisioners this one must follow. Two resources that depend on each other fail every operation with the cycle in the message.
+- Override `DependsOn` to name the provisioners this one must follow. Select them by the kind's public constant, from the [resource kinds](#resource-kinds) tables. Two resources that depend on each other fail every operation with the cycle in the message.
+
+```csharp
+// Creates reporting views over tables that the application's EF Core migrations create.
+public sealed class ReportingViewsProvisioner : IResourceProvisioner
+{
+    public string Kind => "ReportingViews";
+
+    public string Name => "views";
+
+    // Right: the constant. Wrong: p.Kind == "EntityFramework", a copy that nothing checks.
+    public IEnumerable<IResourceProvisioner> DependsOn(IReadOnlyList<IResourceProvisioner> provisioners) =>
+        provisioners.Where(static p =>
+            string.Equals(p.Kind, HeadlessDbContextMigrationsServiceCollectionExtensions.MigrationsResourceKind, StringComparison.Ordinal)
+        );
+
+    public Task ProvisionAsync(CancellationToken cancellationToken) { /* CREATE OR REPLACE VIEW ... */ return Task.CompletedTask; }
+
+    public Task VerifyAsync(CancellationToken cancellationToken) { /* one cheap read */ return Task.CompletedTask; }
+
+    public bool CanPurge => false;
+
+    public bool CanDelete => false;
+
+    public Task PurgeAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task DeleteAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<KeyValuePair<string, string>>> GetStatusAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<KeyValuePair<string, string>>>([]);
+}
+
+builder.Services.AddDbContextMigrations<AppDbContext>();
+builder.Services.AddResourceProvisioner(_ => new ReportingViewsProvisioner());
+```
+
+**Verify:** `dotnet MyApp.dll resources provision` prints the `EntityFramework` line before the `ReportingViews` line, whatever the registration order.
 - Keep `Name` free of host names, connection strings, and credentials: deploy logs print it.
 
 ### Database seeders
@@ -945,6 +1064,7 @@ var key = phone.Normalize(); // lookup-normalized form
 
 - `PhoneNumber` lives in `Headless.Primitives` and holds only `CountryCode` and a digits-only `Number`, so EF mappings and API models use it without libphonenumber. Its `ToString()` returns the raw `+{CountryCode} {Number}`, not a formatted number.
 - `Number` is libphonenumber's national significant number. It keeps a leading zero that a region dials as part of the subscriber number: `FromInternationalFormat("+39 06 1234 5678").Number` is `0612345678`, and `MobilePhoneNumberValidator.IsValid(..., out normalizedNumber)` returns `+2250701234567` for Côte d'Ivoire. A national trunk prefix such as Egypt's `0` is not part of it.
+- `Normalize()`, `Normalize(code, number)`, and `NormalizeInternationalNumber(...)` keep every digit of the national significant number: `NormalizeInternationalNumber("+201200000100")` returns `+201200000100`, and `Normalize(20, "01200000100")` drops only the trunk `0`. They pass the formatted number through `Headless.Text.LookupNormalizer.NormalizePhoneNumber`, which trims, removes spaces, and converts digits to ASCII and drops no digit. Versions before this one dropped one trailing `0`, so a key stored by them for a number ending in `0` is one digit short: re-normalize those rows from the source number.
 - The country and region overloads of `IsValid` require the parsed number to carry that calling code. A `+`-prefixed number from another country (`"+16502530000"` checked against `20`) is refused. Regions that share a calling code, such as `US` and `CA` under `+1`, are not told apart. The `MobilePhoneNumber(...)` rules behave the same way.
 - Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
 - Convert to and from libphonenumber's `PhoneNumber` with `ToUtilsPhoneNumber()` and `PhoneNumber.FromPhoneNumber(...)`. There is no conversion operator.

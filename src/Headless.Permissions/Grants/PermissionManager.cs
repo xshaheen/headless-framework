@@ -189,9 +189,9 @@ public sealed class PermissionManager(
                 .SetVersionedAsync(writes, providerKey, version, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (DBConcurrencyException)
+        catch (DBConcurrencyException exception)
         {
-            throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+            throw new ConflictException(errorsDescriptor.VersionMismatch(providerName), exception);
         }
 
         await _PublishChangedAsync([.. grants.Keys], providerName, providerKey).ConfigureAwait(false);
@@ -443,7 +443,8 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken
     )
     {
-        var providers = new List<IPermissionGrantProvider>();
+        var providers = new List<(IPermissionGrantProvider Provider, List<PermissionDefinition> Permissions)>();
+        var hasRestrictions = permissions.Exists(static permission => permission.Providers.Count != 0);
         var allBuiltIn = true;
 
         foreach (var provider in grantProviderManager.ValueProviders)
@@ -453,7 +454,16 @@ public sealed class PermissionManager(
                 continue;
             }
 
-            providers.Add(provider);
+            var allowed = hasRestrictions
+                ? permissions.FindAll(permission => _AllowsProvider(permission, provider.Name))
+                : permissions;
+
+            if (allowed.Count == 0)
+            {
+                continue;
+            }
+
+            providers.Add((provider, allowed));
             allBuiltIn &= provider is UserPermissionGrantProvider or RolePermissionGrantProvider;
         }
 
@@ -465,23 +475,24 @@ public sealed class PermissionManager(
 
             for (var i = 0; i < providers.Count; i++)
             {
-                checks[i] = providers[i].CheckAsync(permissions, currentUser, cancellationToken);
+                var (provider, allowed) = providers[i];
+                checks[i] = provider.CheckAsync(allowed, currentUser, cancellationToken);
             }
 
             var grants = await Task.WhenAll(checks).ConfigureAwait(false);
 
             for (var i = 0; i < providers.Count; i++)
             {
-                results.Add((providers[i].Name, grants[i]));
+                results.Add((providers[i].Provider.Name, grants[i]));
             }
 
             return results;
         }
 
-        foreach (var provider in providers)
+        foreach (var (provider, allowed) in providers)
         {
             var providerGrants = await provider
-                .CheckAsync(permissions, currentUser, cancellationToken)
+                .CheckAsync(allowed, currentUser, cancellationToken)
                 .ConfigureAwait(false);
 
             results.Add((provider.Name, providerGrants));
@@ -489,6 +500,9 @@ public sealed class PermissionManager(
 
         return results;
     }
+
+    private static bool _AllowsProvider(PermissionDefinition permission, string providerName) =>
+        permission.Providers.Count == 0 || permission.Providers.Contains(providerName, StringComparer.Ordinal);
 
     private async Task<List<GrantedPermissionResult>> _CoreGetOrDefaultAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
@@ -506,14 +520,7 @@ public sealed class PermissionManager(
         var result = permissions.Select(x => new GrantedPermissionResult(x.Name, isGranted: false)).ToList();
 
         var checkNeededPermissions = permissions
-            .Where(x =>
-                x.IsEnabled
-                && (
-                    providerName is null
-                    || x.Providers.Count == 0
-                    || x.Providers.Contains(providerName, StringComparer.Ordinal)
-                )
-            )
+            .Where(x => x.IsEnabled && (providerName is null || _AllowsProvider(x, providerName)))
             .ToList();
 
         if (checkNeededPermissions.Count == 0)
@@ -535,41 +542,50 @@ public sealed class PermissionManager(
         // First pass: check for explicit denials (Prohibited)
         // AWS IAM-style: explicit deny overrides all grants
         var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+        var decisionsByName = permissions
+            .Zip(result)
+            .ToDictionary(
+                pair => pair.First.Name,
+                pair => (Definition: pair.First, Result: pair.Second),
+                StringComparer.Ordinal
+            );
 
-        foreach (var (_, providerGrants) in providerGrantsList)
+        foreach (var (name, providerGrants) in providerGrantsList)
         {
             foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
-                if (providerResult.Status is PermissionGrantStatus.Prohibited)
+                if (
+                    providerResult.Status is PermissionGrantStatus.Prohibited
+                    && decisionsByName.TryGetValue(permissionName, out var decision)
+                    && decision.Definition.IsEnabled
+                    && _AllowsProvider(decision.Definition, name)
+                )
                 {
                     explicitDenials.Add(permissionName);
                 }
             }
         }
 
-        // Second pass: apply grants only if not explicitly denied. Index results by name once instead of a
-        // linear First() scan per granted permission (quadratic for large permission batches).
-        var resultsByName = result.ToDictionary(x => x.Name, StringComparer.Ordinal);
-
+        // Custom providers can return additional statuses, so only eligible definitions can decide access.
         foreach (var (grantProviderName, providerGrants) in providerGrantsList)
         {
             foreach (var (permissionName, providerResult) in providerGrants.Statuses)
             {
-                if (providerResult.Status is not PermissionGrantStatus.Granted)
+                if (
+                    providerResult.Status is not PermissionGrantStatus.Granted
+                    || explicitDenials.Contains(permissionName)
+                    || !decisionsByName.TryGetValue(permissionName, out var decision)
+                    || !decision.Definition.IsEnabled
+                    || !_AllowsProvider(decision.Definition, grantProviderName)
+                )
                 {
                     continue;
                 }
 
-                // Explicit deny overrides grant
-                if (explicitDenials.Contains(permissionName))
-                {
-                    continue;
-                }
-
-                var grant = resultsByName[permissionName];
-
-                grant.IsGranted = true;
-                grant.AddProvider(new GrantPermissionProvider(grantProviderName, providerResult.ProviderKeys));
+                decision.Result.IsGranted = true;
+                decision.Result.AddProvider(
+                    new GrantPermissionProvider(grantProviderName, providerResult.ProviderKeys)
+                );
             }
         }
 

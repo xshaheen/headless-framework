@@ -4,35 +4,71 @@ namespace Headless.Caching;
 
 public sealed partial class HybridCache
 {
-    /// <summary>
-    /// Reads back the L1 stamps for a key just written by a scalar upsert. The physical-expiry stamp lets a queued
-    /// recovery item verify (at replay time) that the L1 entry it captured is still the one in the store; the birth
-    /// time (<c>CreatedAt</c>) is the original write instant the replay carries to L2, so a tag or clear invalidation
-    /// issued between the write and its replay still outranks the replayed entry. Both are <see langword="null"/>
-    /// when L1 does not expose the entry store (the replay then falls back to a presence-only check and the enqueue
-    /// time) — symmetric with how <see cref="_QueueSetEntryRecovery{T}"/> consumes its stamp.
-    /// </summary>
-    private async ValueTask<(DateTime? PhysicalExpiresAt, DateTime? CreatedAt)> _CaptureLocalStampsAsync<T>(
+    private readonly record struct ScalarUpsertSnapshot(
+        DateTimeOffset WrittenAt,
+        (long Global, long Key) Generation,
+        string? ConcurrencyStamp,
+        DateTime? PhysicalExpiresAt
+    );
+
+    private async ValueTask<ScalarUpsertSnapshot?> _WriteLocalScalarAsync<T>(
         string key,
-        CancellationToken ct
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken
     )
     {
-        if (LocalCache is not IFactoryCacheStore l1Store)
+        if (RecoveryQueue is null)
         {
-            return (null, null);
+            await _L1For(key).UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
+            return null;
         }
 
-        var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
-        return current.Found ? (current.PhysicalExpiresAt, current.CreatedAt) : (null, null);
+        var writtenAt = _timeProvider.GetUtcNow();
+        var committed = await _L1For(key, out var generation)
+            .UpsertAsync(key, value, expiration, cancellationToken)
+            .ConfigureAwait(false);
+        if (!committed || !_L1GenerationHolds(key, generation))
+        {
+            return null;
+        }
+
+        if (LocalCache is not IFactoryCacheStore l1Store)
+        {
+            return new ScalarUpsertSnapshot(writtenAt, generation, ConcurrencyStamp: null, PhysicalExpiresAt: null);
+        }
+
+        // Capture the store-owned stamp while the generation still belongs to this write. A detached retry
+        // could otherwise read the stamp of a different value under the same key.
+        CacheStoreEntry<object> current;
+        try
+        {
+            current = await l1Store
+                .TryGetEntryAsync<object>(key, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            _logger.LogCacheStoreReadFailed(exception, key);
+            return null;
+        }
+
+        if (!current.Found || !_L1GenerationHolds(key, generation))
+        {
+            return null;
+        }
+
+        if (current.CreatedAt is { } createdAt)
+        {
+            writtenAt = new DateTimeOffset(createdAt, TimeSpan.Zero);
+        }
+
+        return new ScalarUpsertSnapshot(writtenAt, generation, current.ConcurrencyStamp, current.PhysicalExpiresAt);
     }
 
     /// <summary>
-    /// Builds the stamp-aware L1-staleness guard shared by <see cref="_QueueScalarUpsertRecovery{T}"/> and
-    /// <see cref="_QueueSetEntryRecovery{T}"/>: a queued write may replay only while L1 still holds an entry
-    /// carrying the exact physical stamp the write produced — a different stamp means a newer local write landed
-    /// and the queued write is obsolete. When L1 does not expose <see cref="IFactoryCacheStore"/> (or no stamp was
-    /// captured) it falls back to a presence-only check. Returns <see langword="true"/> when the write should still
-    /// replay.
+    /// Checks that the L1 entry still corresponds to the operation queued for recovery. When L1 exposes no stamp,
+    /// presence is the only fallback available here.
     /// </summary>
     /// <param name="key">The key the queued write targets.</param>
     /// <param name="l1PhysicalStamp">The physical expiry the write left on the L1 entry.</param>
@@ -42,19 +78,24 @@ public sealed partial class HybridCache
     /// so the L2 markers outrank it there too; against any other L2 it falls back to a plain write born at replay
     /// time, where only this guard keeps an invalidation this node has seen from losing to the replay.
     /// </param>
+    /// <param name="concurrencyStamp">The exact store-owned stamp, when the original write captured one.</param>
     private Func<CancellationToken, ValueTask<bool>> _BuildL1StampGuard<T>(
         string key,
         DateTime? l1PhysicalStamp,
-        bool requireLogicallyLive = false
+        bool requireLogicallyLive = false,
+        string? concurrencyStamp = null
     )
     {
         return async ct =>
         {
-            if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
+            if (LocalCache is IFactoryCacheStore l1Store && (concurrencyStamp is not null || l1PhysicalStamp.HasValue))
             {
                 var current = await l1Store.TryGetEntryAsync<T>(key, cancellationToken: ct).ConfigureAwait(false);
 
-                if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
+                var stampMatches = concurrencyStamp is not null
+                    ? string.Equals(current.ConcurrencyStamp, concurrencyStamp, StringComparison.Ordinal)
+                    : current.PhysicalExpiresAt == l1PhysicalStamp;
+                if (!current.Found || !stampMatches)
                 {
                     return false;
                 }
@@ -94,23 +135,37 @@ public sealed partial class HybridCache
         };
     }
 
-    private void _QueueScalarUpsertRecovery<T>(
+    private async ValueTask _QueueScalarUpsertRecoveryAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
-        (DateTime? PhysicalExpiresAt, DateTime? CreatedAt) l1Stamps
+        ScalarUpsertSnapshot? snapshot,
+        CancellationToken cancellationToken
     )
     {
-        var queue = RecoveryQueue!;
-        var now = _timeProvider.GetUtcNow();
+        if (RecoveryQueue is not { } queue || snapshot is not { } write)
+        {
+            return;
+        }
 
-        // The write instant is the L1 entry's birth time, not the enqueue time: on the background path the L2 write
-        // (and so this enqueue) runs after the L1 write, and an invalidation in between must still win.
-        var writtenAt = l1Stamps.CreatedAt ?? now.UtcDateTime;
+        var deadline = expiration.HasValue
+            ? write.WrittenAt.SafeAdd(expiration.Value)
+            : _timeProvider.GetUtcNow().SafeAdd(queue.DefaultRetention);
+        var l1Guard = _BuildL1StampGuard<object>(
+            key,
+            write.PhysicalExpiresAt,
+            requireLogicallyLive: true,
+            concurrencyStamp: write.ConcurrencyStamp
+        );
 
-        // Values without a TTL have no natural item expiry; bound them by the generous fixed window.
-        var deadline = expiration.HasValue ? now.SafeAdd(expiration.Value) : now.SafeAdd(queue.DefaultRetention);
-        var l1Guard = _BuildL1StampGuard<T>(key, l1Stamps.PhysicalExpiresAt, requireLogicallyLive: true);
+        async ValueTask<bool> isCurrent(CancellationToken ct) =>
+            (write.ConcurrencyStamp is not null || _L1GenerationHolds(key, write.Generation))
+            && await l1Guard(ct).ConfigureAwait(false);
+
+        if (!_L1GenerationHolds(key, write.Generation) && !await isCurrent(cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
 
         queue.Enqueue(
             key,
@@ -118,15 +173,13 @@ public sealed partial class HybridCache
             deadline,
             async ct =>
             {
-                // L1 is the source of truth: only replay while it still holds the exact physical stamp this write
-                // produced (a different stamp means a newer local write landed and the queued write is obsolete), and
-                // while no tag or clear invalidation has reached that entry since.
-                if (!await l1Guard(ct).ConfigureAwait(false))
+                if (!await isCurrent(ct).ConfigureAwait(false))
                 {
                     return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
-                if (expiration.HasValue && deadline <= _timeProvider.GetUtcNow())
+                var now = _timeProvider.GetUtcNow();
+                if (expiration.HasValue && deadline <= now)
                 {
                     return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
@@ -143,20 +196,22 @@ public sealed partial class HybridCache
                         IsNull = value is null,
                         LogicalExpiresAt = expiresAt,
                         PhysicalExpiresAt = expiresAt,
-                        CreatedAt = writtenAt,
+                        CreatedAt = write.WrittenAt.UtcDateTime,
                     };
 
                     await l2Store.SetEntryAsync(key, entry, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;
+                    TimeSpan? remaining = expiration.HasValue ? deadline - now : null;
                     await l2Cache.UpsertAsync(key, value, remaining, ct).ConfigureAwait(false);
                 }
 
-                await _PublishReplayedInvalidationAsync(key, now, ct).ConfigureAwait(false);
+                await _PublishReplayedInvalidationAsync(key, write.WrittenAt, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
-            }
+            },
+            enqueuedAt: write.WrittenAt,
+            scalarWriteGeneration: write.Generation.Key
         );
     }
 

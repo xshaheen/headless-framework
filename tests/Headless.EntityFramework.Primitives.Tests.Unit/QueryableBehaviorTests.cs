@@ -87,7 +87,7 @@ public sealed class QueryableBehaviorTests : TestBase
         var request = new TestDataGridRequest
         {
             Orders = [new OrderBy(nameof(QueryRow.Name), Ascending: false)],
-            Page = new TestIndexPageRequest { Index = 0, Size = 2 },
+            Page = new IndexPageRequest { Index = 0, Size = 2 },
         };
 
         var page = await fixture.Context.Rows.ToDataGridAsync(request, AbortToken);
@@ -220,6 +220,4 @@ public sealed class QueryableBehaviorTests : TestBase
     }
 
     private sealed class TestDataGridRequest : DataGridRequest;
-
-    private sealed class TestIndexPageRequest : IndexPageRequest;
 }

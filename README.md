@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-220 packages &bull; One setup grammar &bull; Swap any provider in one line
+226 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,13 +44,13 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across seven transports.
 
-**You install three packages, not 220.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 226.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
 **The hard parts are already written.** Background jobs claim work atomically with `FOR UPDATE SKIP LOCKED` on PostgreSQL and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. Messaging writes to a transactional outbox inside your EF Core save. Distributed locks use PostgreSQL advisory locks and SQL Server application locks rather than an improvised `SET NX`. Node membership reads liveness from the server clock, not the node's clock. Each of these is a place where a plausible-looking implementation loses messages or runs a job twice.
 
-**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` adds the Jobs module to it, for inspecting runs, failures grouped by cause, and cron schedules, and `Headless.Messaging.Dashboard` adds the Messaging module, for messages of every outbox, failures grouped by cause, and nodes found through Kubernetes or Consul.
+**Dashboards come with it.** `Headless.Dashboard` serves feature modules under one base path, with one sign-in and live updates that reach every node. `Headless.Jobs.Dashboard` adds the Jobs module to it, for inspecting runs, failures grouped by cause, and cron schedules, and `Headless.Messaging.Dashboard` adds the Messaging module, for messages of every outbox, failures grouped by cause, and nodes found through Kubernetes or Consul. `Headless.Cluster.Dashboard` adds the Cluster module, for node liveness, metadata that differs across nodes, and the host's health checks with probes on demand, and `Headless.Leases.Dashboard` adds the Leases module, for fenced leases in every state and the distributed locks held right now, read-only.
 
 **AI coding agents get first-class docs.** [`docs/llms/`](docs/llms/) is a per-domain documentation set written for agents to fetch on demand. See [using Headless with AI agents](#using-headless-with-ai-agents).
 
@@ -160,7 +160,7 @@ services.AddHeadless<Feature>(setup => setup.Use<Provider>(options => { ... }));
 | Resumable uploads (TUS) | `AddHeadlessTus` | `UseAzure`, `UseS3`, `UseStore` (any other `ITusStore`) |
 | Email | `AddHeadlessEmails` | `UseAwsSes`, `UseAzure`, `UseMailkit`, `UseDevelopment`, `UseNoop` |
 | SMS | `AddHeadlessSms` | `UseTwilio`, `UseAwsSns`, `UseInfobip`, `UseCequens`, `UseConnekio`, `UseVictoryLink`, `UseVodafone`, `UseDevelopment` |
-| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseNoop` |
+| Push notifications | `AddHeadlessPushNotifications` | `UseFirebase`, `UseApns`, `UseDevelopment`, `UseNoop` |
 | Distributed locks | `AddHeadlessDistributedLocks` | `UseInMemory`, `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Node membership | `AddHeadlessCoordination` | `UseRedis`, `UsePostgreSql`, `UseSqlServer` |
 | Sequences | `AddHeadlessSequences` | `UsePostgreSql`, `UseSqlServer` |
@@ -255,7 +255,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 220 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 226 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -541,7 +541,7 @@ Database-backed permission system. Define permissions as code, store assignments
 
 ### Push Notifications
 
-Firebase Cloud Messaging and Apple Push Notification service behind a clean abstraction, with a no-op dev provider for local testing.
+Firebase Cloud Messaging and Apple Push Notification service behind a clean abstraction, with a dev provider that captures notifications instead of sending them.
 
 | Package | Description |
 |---------|-------------|
@@ -573,6 +573,7 @@ Exact attempt quotas per phone number, email address, IP address, or card, share
 | Package | Description |
 |---------|-------------|
 | [Headless.RateLimiting](src/Headless.RateLimiting/README.md) | Fixed-window attempt limiter over `ICache` with pseudonymised subject keys |
+| [Headless.RateLimiting.Dashboard](src/Headless.RateLimiting.Dashboard/README.md) | Rate limits module of the Headless dashboard: look up a subject's attempts and reset a lockout |
 
 ### Coordination
 
@@ -587,6 +588,7 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
 | [Headless.Coordination.Sqlite](src/Headless.Coordination.Sqlite/README.md) | SQLite membership for processes on one host |
+| [Headless.Cluster.Dashboard](src/Headless.Cluster.Dashboard/README.md) | Cluster module of the Headless dashboard: node liveness, metadata agreement, and health checks |
 
 ### Sequences
 
@@ -596,6 +598,7 @@ Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fas
 |---------|-------------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
 | [Headless.Sequences](src/Headless.Sequences/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences.Dashboard](src/Headless.Sequences.Dashboard/README.md) | Sequences module of the Headless dashboard: a read-only view of every stored counter and its partitions |
 | [Headless.Sequences.Sql](src/Headless.Sequences.Sql/README.md) | Shared relational counter store for SQL sequences providers |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
@@ -615,6 +618,7 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | SQL Server leases with a `READPAST` sweep |
 | [Headless.Fencing.Sqlite](src/Headless.Fencing.Sqlite/README.md) | SQLite leases; grants commit on their own |
 | [Headless.Fencing.EntityFramework](src/Headless.Fencing.EntityFramework/README.md) | EF Core mapping for a lease on an entity's own row, its descriptor, and database-clock lease queries |
+| [Headless.Leases.Dashboard](src/Headless.Leases.Dashboard/README.md) | Leases module of the Headless dashboard: fenced leases by state and held distributed locks, read-only |
 
 ### Idempotency
 
@@ -625,6 +629,7 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
 | [Headless.Idempotency](src/Headless.Idempotency/README.md) | Registration, admission orchestration, and the retention purge |
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
+| [Headless.Idempotency.Dashboard](src/Headless.Idempotency.Dashboard/README.md) | Idempotency module of the Headless dashboard: the store's settings and a read-only lookup of one key |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
 | [Headless.Idempotency.ResponseReplay](src/Headless.Idempotency.ResponseReplay/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
@@ -735,6 +740,7 @@ Cross-cutting utilities that belong to no single domain.
 | Package | Description |
 |---------|-------------|
 | [Headless.Dashboard](src/Headless.Dashboard/README.md) | Operations dashboard shell for feature modules, and authentication primitives for dashboards a host writes |
+| [Headless.DevInbox.Dashboard](src/Headless.DevInbox.Dashboard/README.md) | The Dev inbox module of the dashboard: emails, SMS, and push notifications a Development host captured |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |

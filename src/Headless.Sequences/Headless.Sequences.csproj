@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Provider-agnostic setup, policy, and tenant key resolution for Headless tenant-scoped sequences, with exactly-one-provider registration.</Description>
     <PackageTags>headless;sequences;numbering;dotnet</PackageTags>
     <RootNamespace>Headless.Sequences</RootNamespace>

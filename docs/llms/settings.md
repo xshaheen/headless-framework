@@ -40,6 +40,7 @@ Define settings in an `ISettingDefinitionProvider`. Read with `ISettingManager.G
 - Write with `SetAsync(name, value, providerName, providerKey)`, or a scoped helper such as `SetForTenantAsync`. To write several values that form one policy (a limit and its window), call the dictionary `SetAsync` or `SetAllGlobalAsync` once, not one `SetGlobalAsync` per value. See [Writing values](#writing-values).
 - Name providers with the `SettingValueProviderNames` constants: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. The default-value constant is `DefaultValue`, not `Default`.
 - To read application-wide policy, use `GetAllGlobalAsync(settingNames, fallback)` or `GetAllAsync(settingNames, providerName, providerKey, fallback)`. The name-only `GetAllAsync(settingNames)` walks the whole chain, so a Tenant or User value shadows the Global one and the caller gets its own value instead of the platform's.
+- Pass `settingNames` to the batch reads as any `IReadOnlyCollection<string>`: an array, a list, or a set. A duplicate name resolves once and appears once in the result. An empty collection throws `ArgumentException`.
 - To hold a Global policy in memory, register `AddSettingsSnapshot<T>(...)` and inject `ISettingsSnapshot<T>`. Do not hand-write a cache, a `SettingChangedMessage` consumer, a poller, and a revision. See [Settings snapshot](#settings-snapshot).
 - For an edit form that must not overwrite another admin's save, read with `GetVersionedAsync(names, providerName, providerKey)` and save with `SetVersionedAsync(values, providerName, providerKey, version)`. Do not compare values yourself and then call `SetAsync`: the check and the write are not atomic. See [Editing a group with optimistic concurrency](#editing-a-group-with-optimistic-concurrency).
 - An `ISettingManager` write commits on its own connection and does not join a unit of work the caller has open. To write inside the unit, call `unit.Settings.SetAsync(...)`. See [Writing settings inside a unit of work](#writing-settings-inside-a-unit-of-work).
@@ -72,7 +73,14 @@ The built-in providers, from lowest to highest priority:
 | `Tenant` | the stored value for the current tenant, or the tenant id you pass | yes |
 | `User` | the stored value for the current user, or the user id you pass | yes |
 
-`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A custom provider registered with `services.AddSettingValueProvider<T>()` is added after `User`, so it has the highest priority.
+`GetAsync` walks the chain from the highest priority down and returns the first non-null value. A read that names a provider starts at that provider and falls back to every provider below it.
+
+Place a custom provider with one of two calls. Both work whether they run before or after `AddHeadlessSettings`:
+
+- `services.AddSettingValueProvider<T>()` adds `T` above `User`, so it has the highest priority.
+- `services.AddSettingValueProviderBelow<T, THigher>()` adds `T` directly below `THigher`. A read at `THigher` falls back to `T`, and a read at `T` falls back to the providers below it. For example, `AddSettingValueProviderBelow<AccountSettingValueProvider, UserSettingValueProvider>()` gives `User`, `Account`, `Tenant`, `Global`, `Configuration`, `DefaultValue`.
+
+Do not insert into `SettingManagementProvidersOptions.ValueProviders` from `PostConfigure` by hand. `AddSettingValueProviderBelow` does that, moves a provider already in the chain, and throws `InvalidOperationException` when the settings options are first resolved if `THigher` is not in the chain.
 
 The Tenant level always resolves from the ambient tenant. A read or write for a named user from host scope (no current tenant) therefore resolves the user's fallback against the host's chain, not the user's tenant. To see what a user sees, read inside the user's tenant (`currentTenant.Change(tenantId)`).
 
@@ -265,7 +273,7 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 - **Reads.** `GetAsync` returns the value, and waits for (or starts) the first load when it has not finished. A failed first load throws to that caller, and the next call tries again. `TryGetCurrent(out value)` is the synchronous read for code that cannot await, such as a rate-limiter partition factory. It returns `false` until the first load completes and never throws, so the caller picks a safe built-in default before then.
 - **Bad values later.** A `Bind` exception after the first load is logged with the setting names, never their values. The snapshot keeps its last good value and revision.
 - **Listeners.** `OnChange((value, revision) => ...)` runs after `TryGetCurrent` and `Revision` show the change. A listener exception is logged and does not stop the other listeners. Dispose the returned handle to unregister.
-- **Change announcements.** With messaging, the framework adds the every-instance consumer `headless.settings.snapshot`. It reloads every snapshot that tracks an announced name at `Global` scope, in every process including the writer. It reloads every loaded snapshot each time its subscription is established. When a reload does not yet see the announced value, it re-reads a few times over the next few seconds, which closes the cache-order window in [Reacting to a change](#reacting-to-a-change).
+- **Change announcements.** With messaging, the framework adds the every-instance consumer `headless.settings.snapshot`. It reloads every snapshot that tracks an announced name at `Global` scope, in every process including the writer. It reloads every loaded snapshot each time its subscription is established. Each announced name whose value stayed the same keeps the snapshot rereading for a few seconds, even when another announced name already changed. See [Reacting to a change](#reacting-to-a-change).
 - **Transport.** That consumer needs every-instance delivery. A host on a transport without it (AWS SNS/SQS, or Azure Service Bus without `AutoProvision`) fails at startup once it registers a snapshot. Run such a host's snapshots without messaging.
 - **Backstop.** Each process re-reads every snapshot on its backstop interval: one minute by default, at most 30 days (`SettingsSnapshotBuilder<T>.MaxBackstop`), jittered by ±10%. It is the only refresh without messaging, and it catches lost announcements and configuration changes. The re-read goes through the value cache, so a write that bypasses the cache shows only after `ValueCacheExpiration`.
 - **Several replicas.** Convergence across processes needs a shared (Redis) or hybrid cache. With a process-local cache (`UseInMemory`), another replica reads its cached value until it expires, through announcement, re-read, and backstop alike.
@@ -286,7 +294,7 @@ To change how values are protected, replace `ISettingEncryptionService`. Its `En
 
 ### Definition Seeding
 
-`AddHeadlessSettings` registers an `ISeeder` named `SettingDefinitions`. When `SaveStaticSettingsToDatabase` is `true` (the default), it saves the static definitions to the database under a distributed lock. Re-seeding unchanged definitions writes nothing.
+`AddHeadlessSettings` registers an `ISeeder` named `SettingDefinitions`. When `SaveStaticSettingsToDatabase` is `true` (the default), it saves the static definitions to the database under a distributed lock. Re-seeding unchanged definitions leaves the database untouched and repairs a missed cache stamp update after a committed save.
 
 - **Retries.** A failure is retried up to 10 times with jittered exponential back-off capped at 30 seconds, on the system clock even when the host registers a `FakeTimeProvider`. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. Any other failure fails the seed run after the last retry.
 - **When it runs.** The host start does not seed. In production, run `seed` (or `deploy`) in the deployment. In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
@@ -306,7 +314,7 @@ A host that never seeds still serves its static definitions from memory. But def
 
 ### Custom value providers
 
-Implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write), and register it with `services.AddSettingValueProvider<T>()`. Registration is idempotent by type, and the last registered provider has the highest priority. `ISettingManager` writes through `ISettingValueProvider.SetAllAsync`. Its default calls `SetAsync` or `ClearAsync` once per entry, so override it when your source can apply a batch atomically.
+Implement `ISettingValueReadProvider` (read-only) or `ISettingValueProvider` (read-write), and register it with `services.AddSettingValueProvider<T>()` (highest priority) or `services.AddSettingValueProviderBelow<T, THigher>()` (directly below `THigher`), as [Resolution order](#resolution-order) describes. `AddSettingValueProvider<T>()` is idempotent by type, and among several such calls the last one has the highest priority. `ISettingManager` writes through `ISettingValueProvider.SetAllAsync`. Its default calls `SetAsync` or `ClearAsync` once per entry, so override it when your source can apply a batch atomically.
 
 ## Choosing a Provider
 
@@ -515,6 +523,9 @@ Then add an EF Core migration for the settings tables and apply it as you apply 
 
 - Register a singleton `IDbContextFactory<TContext>`: `AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`. All four register a singleton factory by default.
 - `modelBuilder.ConfigureHeadlessSettings(this)` reads `SettingsStorageOptions` from the context's service provider and picks the naming style from the database provider: snake_case on Npgsql, PascalCase elsewhere. When you already hold the options, call `ConfigureHeadlessSettings(options, HeadlessStorageNaming.ForProvider(Database.ProviderName))` (namespace `Headless.Hosting`).
+- On SQL Server, `ConfigureHeadlessSettings(this)` sets `SettingValueRecord.ProviderKey` to `Latin1_General_100_BIN2` so keys that differ in case or accent identify separate scopes. If you pass `SettingsStorageOptions` directly or map the entity yourself, set the column collation with `UseCollation("Latin1_General_100_BIN2")`.
+- Startup throws `InvalidOperationException` if the SQL Server model gives `SettingValueRecord.ProviderKey` a different or unspecified collation. The validator also accepts a model default of `Latin1_General_100_BIN2` when the column inherits it. The check reads EF metadata, so apply the migration to bring the database into line with the model.
+- For an existing EF-managed SQL Server database, generate and apply a collation migration. In both migration directions, drop the index filtered by `ProviderKey IS NULL` before altering the column. Recreate the index afterward. EF Core only rebuilds indexes that list `ProviderKey` as a key or included column.
 - `SettingsStorageOptions` defaults: `Schema = "headless"`, shared by every Headless feature (see [Shared connection and schema](sql.md#shared-connection-and-schema-for-storage-features)). Table names default by convention. See [Column lengths](#column-lengths).
 - Identifier names are validated against cross-provider rules.
 

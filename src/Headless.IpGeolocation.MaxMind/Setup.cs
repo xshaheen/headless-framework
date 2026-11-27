@@ -15,6 +15,12 @@ namespace Headless.IpGeolocation;
 [PublicAPI]
 public static class SetupMaxMind
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the MaxMind database files, which <c>resources provision -k</c>
+    /// selects and a provisioner that needs the files on disk selects in its <c>DependsOn</c>.
+    /// </summary>
+    public const string DatabasesResourceKind = "MaxMind";
+
     extension(HeadlessIpGeolocationSetupBuilder setup)
     {
         /// <summary>Uses MaxMind databases, binding <see cref="MaxMindOptions" /> from <paramref name="configuration" />.</summary>

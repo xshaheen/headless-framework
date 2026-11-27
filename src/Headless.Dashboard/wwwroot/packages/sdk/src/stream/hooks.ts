@@ -32,3 +32,16 @@ export function useStreamStatus(): { status: StreamStatus; staleSince: number | 
 
   return { status, staleSince }
 }
+
+const noopSubscribe = () => () => {}
+const neverPaused = () => false
+
+/** Whether live updates are paused in this tab. */
+export function useStreamPaused(): boolean {
+  const { stream } = useDashboard()
+
+  return useSyncExternalStore(
+    stream.onPauseChange ? (listener) => stream.onPauseChange!(listener) : noopSubscribe,
+    stream.isPaused ? () => stream.isPaused!() : neverPaused,
+  )
+}

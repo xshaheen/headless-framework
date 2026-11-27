@@ -62,15 +62,31 @@ public static class SequencesFixtureExtensions
     /// Builds an independent host (its own service provider and connection pool) with the provider under test,
     /// runs its storage initializer, and returns it.
     /// </summary>
-    public static async ValueTask<SequencesHost> CreateHostAsync(
+    public static ValueTask<SequencesHost> CreateHostAsync(
         this ISequencesFixture fixture,
         Action<HeadlessSequencesSetupBuilder>? configure = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return fixture.CreateHostAsync(configure, configureServices: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds an independent host as the overload without services does, registering
+    /// <paramref name="configureServices" /> before the sequences, such as a fake <see cref="TimeProvider" />.
+    /// </summary>
+    public static async ValueTask<SequencesHost> CreateHostAsync(
+        this ISequencesFixture fixture,
+        Action<HeadlessSequencesSetupBuilder>? configure,
+        Action<IServiceCollection>? configureServices,
         CancellationToken cancellationToken = default
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
         fixture.ConfigureUnitOfWork(services);
+        // Before AddHeadlessSequences, so a replacement such as a fake clock wins over its TryAdd defaults.
+        configureServices?.Invoke(services);
         services.AddHeadlessSequences(setup =>
         {
             fixture.ConfigureProvider(setup);
@@ -197,6 +213,8 @@ public sealed class SequencesHost(ServiceProvider services) : IAsyncDisposable
     public IUnitOfWorkFactory Factory { get; } = services.GetRequiredService<IUnitOfWorkFactory>();
 
     public ICurrentTenant CurrentTenant { get; } = services.GetRequiredService<ICurrentTenant>();
+
+    public ISequenceInspector Inspector { get; } = services.GetRequiredService<ISequenceInspector>();
 
     public ValueTask DisposeAsync()
     {

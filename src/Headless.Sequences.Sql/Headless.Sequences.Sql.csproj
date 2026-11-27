@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>The one relational counter store shared by the Headless PostgreSQL, SQL Server, and SQLite sequences providers, written against the Headless SQL dialect kit.</Description>
     <PackageTags>headless;sequences;numbering;database;dotnet</PackageTags>
     <RootNamespace>Headless.Sequences</RootNamespace>

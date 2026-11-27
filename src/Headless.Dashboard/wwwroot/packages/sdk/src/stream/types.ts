@@ -45,4 +45,8 @@ export interface DashboardStream {
   onStatusChange(listener: () => void): () => void
   /** Asks for the stream to be opened again now, as the `Reconnect` control does. */
   reconnect(): void
+  /** Whether this tab has paused live updates; absent on a stream that does not pause. */
+  isPaused?(): boolean
+  /** Subscribes to pause changes when the stream can pause. */
+  onPauseChange?(listener: () => void): () => void
 }

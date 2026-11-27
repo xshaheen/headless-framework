@@ -21,6 +21,9 @@ public sealed class PermissionGrantStore(
     ILogger<PermissionGrantStore> logger
 ) : IPermissionGrantStore
 {
+    private readonly IPermissionGrantRepository _repository =
+        (repository as IPermissionGrantRepositoryForStore)?.ForStore(cache) ?? repository;
+
     private readonly TimeSpan _cacheExpiration = managementOptions.Value.GrantCacheExpiration;
 
     // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
@@ -200,7 +203,7 @@ public sealed class PermissionGrantStore(
         var definitions = await _GetDbPermissionsDefinitionsAsync([.. allMissedNames], cancellationToken)
             .ConfigureAwait(false);
 
-        var dbPermissionGrants = await repository
+        var dbPermissionGrants = await _repository
             .GetListAsync([.. allMissedNames], providerName, missedByKey.Keys, cancellationToken)
             .ConfigureAwait(false);
 
@@ -251,7 +254,7 @@ public sealed class PermissionGrantStore(
     {
         _EnsureKey(providerName, providerKey);
 
-        var result = await repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        var result = await _repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return result.ConvertAll(x => new PermissionGrant(x.Name, x.IsGranted));
     }
@@ -267,7 +270,7 @@ public sealed class PermissionGrantStore(
 
         var tenantId = _WriteTenantId();
 
-        var permissionGrant = await repository
+        var permissionGrant = await _repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -276,7 +279,7 @@ public sealed class PermissionGrantStore(
             // Replace a denial with a grant; both writes commit together so the explicit state is never lost
             if (!permissionGrant.IsGranted)
             {
-                await repository
+                await _repository
                     .SaveAsync(
                         inserted:
                         [
@@ -294,14 +297,10 @@ public sealed class PermissionGrantStore(
                     )
                     .ConfigureAwait(false);
             }
-            else
-            {
-                return;
-            }
         }
         else
         {
-            await repository
+            await _repository
                 .InsertAsync(
                     new PermissionGrantRecord(
                         guidGenerator.Create(),
@@ -316,7 +315,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        await _SyncCacheAfterWriteAsync([name], providerName, providerKey).ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -339,7 +338,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        await _SyncCacheAfterWriteAsync(distinctNames, providerName, providerKey).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -353,7 +352,7 @@ public sealed class PermissionGrantStore(
 
         var tenantId = _WriteTenantId();
 
-        var permissionGrant = await repository
+        var permissionGrant = await _repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -362,7 +361,7 @@ public sealed class PermissionGrantStore(
             // Replace a grant with an explicit denial; both writes commit together so the explicit state is never lost
             if (permissionGrant.IsGranted)
             {
-                await repository
+                await _repository
                     .SaveAsync(
                         inserted:
                         [
@@ -380,15 +379,11 @@ public sealed class PermissionGrantStore(
                     )
                     .ConfigureAwait(false);
             }
-            else
-            {
-                return; // Already denied
-            }
         }
         else
         {
             // Insert explicit denial
-            await repository
+            await _repository
                 .InsertAsync(
                     new PermissionGrantRecord(
                         guidGenerator.Create(),
@@ -403,7 +398,7 @@ public sealed class PermissionGrantStore(
                 .ConfigureAwait(false);
         }
 
-        await _SyncCacheAsync([name], providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        await _SyncCacheAfterWriteAsync([name], providerName, providerKey).ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -426,7 +421,7 @@ public sealed class PermissionGrantStore(
             )
             .ConfigureAwait(false);
 
-        await _SyncCacheAsync(distinctNames, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        await _SyncCacheAfterWriteAsync(distinctNames, providerName, providerKey).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<string>> DeleteAsync(
@@ -437,18 +432,18 @@ public sealed class PermissionGrantStore(
     {
         _EnsureKey(providerName, providerKey);
 
-        var grants = await repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
+        var grants = await _repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         if (grants.Count == 0)
         {
             return [];
         }
 
-        await repository.DeleteManyAsync(grants, cancellationToken).ConfigureAwait(false);
+        await _repository.DeleteManyAsync(grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
 
-        await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        await _SyncCacheAfterWriteAsync(names, providerName, providerKey).ConfigureAwait(false);
 
         return names;
     }
@@ -463,7 +458,7 @@ public sealed class PermissionGrantStore(
         var distinctNames = _EnsureBatch(names, providerName, providerKey);
 
         // Not through the cache: the grants and the version must come from one read.
-        var records = await repository
+        var records = await _repository
             .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -499,7 +494,7 @@ public sealed class PermissionGrantStore(
         var names = _EnsureBatch([.. grants.Keys], providerName, providerKey);
         var tenantId = _WriteTenantId();
 
-        var existing = await repository
+        var existing = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -531,20 +526,11 @@ public sealed class PermissionGrantStore(
             }
         }
 
-        var committedVersion = await repository
+        var committedVersion = await _repository
             .SaveIfVersionAsync(names, providerName, providerKey, expectedVersion, inserted, deleted, cancellationToken)
             .ConfigureAwait(false);
 
-        try
-        {
-            await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
-        }
-#pragma warning disable CA1031 // The write committed; cache maintenance must not report a rejected save.
-        catch (Exception exception)
-#pragma warning restore CA1031
-        {
-            logger.LogFailedToInvalidateGrantCache(exception, names.Count);
-        }
+        await _SyncCacheAfterWriteAsync(names, providerName, providerKey).ConfigureAwait(false);
 
         return committedVersion;
 
@@ -619,7 +605,7 @@ public sealed class PermissionGrantStore(
         Argument.IsNotNull(unitOfWork);
         _EnsureKey(providerName, providerKey);
 
-        var grants = await repository
+        var grants = await _repository
             .GetListEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -628,7 +614,7 @@ public sealed class PermissionGrantStore(
             return [];
         }
 
-        await repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
+        await _repository.DeleteManyEnlistedAsync(unitOfWork, grants, cancellationToken).ConfigureAwait(false);
 
         var names = grants.ConvertAll(x => x.Name);
         _SyncCacheAfterCommit(unitOfWork, names, providerName, providerKey);
@@ -686,10 +672,10 @@ public sealed class PermissionGrantStore(
     )
     {
         var existGrantRecords = unitOfWork is null
-            ? await repository
+            ? await _repository
                 .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false)
-            : await repository
+            : await _repository
                 .GetListEnlistedAsync(unitOfWork, distinctNames, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -708,10 +694,12 @@ public sealed class PermissionGrantStore(
 
         if (unitOfWork is not null && flippedRecords.Count > 0)
         {
-            await repository
+            await _repository
                 .DeleteManyEnlistedAsync(unitOfWork, flippedRecords, cancellationToken)
                 .ConfigureAwait(false);
-            await repository.InsertManyEnlistedAsync(unitOfWork, replacements, cancellationToken).ConfigureAwait(false);
+            await _repository
+                .InsertManyEnlistedAsync(unitOfWork, replacements, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var newRecords = distinctNames
@@ -732,13 +720,13 @@ public sealed class PermissionGrantStore(
             // could drop an explicit grant or denial when the second one fails.
             if (flippedRecords.Count > 0)
             {
-                await repository
+                await _repository
                     .SaveAsync([.. replacements, .. newRecords], flippedRecords, cancellationToken)
                     .ConfigureAwait(false);
             }
             else if (newRecords.Length > 0)
             {
-                await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
+                await _repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
             }
 
             return;
@@ -746,7 +734,7 @@ public sealed class PermissionGrantStore(
 
         if (newRecords.Length > 0)
         {
-            await repository.InsertManyEnlistedAsync(unitOfWork, newRecords, cancellationToken).ConfigureAwait(false);
+            await _repository.InsertManyEnlistedAsync(unitOfWork, newRecords, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -765,13 +753,31 @@ public sealed class PermissionGrantStore(
     {
         return PermissionGrantCacheInvalidation.SyncAsync(
             cache,
-            repository,
+            _repository,
             names,
             providerName,
             providerKey,
             _cacheExpiration,
             cancellationToken
         );
+    }
+
+    private async Task _SyncCacheAfterWriteAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey
+    )
+    {
+        try
+        {
+            await _SyncCacheAsync(names, providerName, providerKey, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The repository already holds the requested status. A cache fault cannot reverse it.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            logger.LogFailedToInvalidateGrantCache(exception, names.Count);
+        }
     }
 
     /// <summary>Runs <see cref="_SyncCacheAsync" /> once the unit commits.</summary>
@@ -785,7 +791,7 @@ public sealed class PermissionGrantStore(
         PermissionGrantCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            repository,
+            _repository,
             currentTenant,
             names,
             providerName,
@@ -890,7 +896,7 @@ public sealed class PermissionGrantStore(
         logger.LogGettingNotCachedGrantedPermissions(providerName, providerKey);
 
         var definitions = await _GetDbPermissionsDefinitionsAsync(names, cancellationToken).ConfigureAwait(false);
-        var dbPermissionGrants = await repository
+        var dbPermissionGrants = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -982,7 +988,7 @@ public sealed class PermissionGrantStore(
 
         logger.LogGettingAllGrantedPermissions(providerName, providerKey);
 
-        var allPermissionGrants = await repository
+        var allPermissionGrants = await _repository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
         var grantsLookup = allPermissionGrants.ToDictionary(g => g.Name, g => g.IsGranted, StringComparer.Ordinal);

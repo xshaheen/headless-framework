@@ -218,6 +218,8 @@ public sealed class CoordinationSetupBuilderTests
 
     private sealed class FakeCoordinationProviderOptionsExtension : ICoordinationProviderOptionsExtension
     {
+        public string ProviderName => "Fake";
+
         public void AddServices(IServiceCollection services)
         {
             services.AddCoordinationCore<FakeMembershipStore>();

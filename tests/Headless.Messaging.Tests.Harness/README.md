@@ -229,7 +229,6 @@ Create `tests/Headless.Messaging.<Provider>.Tests.Integration/`:
 ```xml
 <Project Sdk="Headless.NET.Sdk.Test">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
   </PropertyGroup>

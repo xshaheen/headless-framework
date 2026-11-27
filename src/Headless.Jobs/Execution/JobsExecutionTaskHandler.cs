@@ -137,13 +137,6 @@ internal sealed class JobsExecutionTaskHandler
                 return;
             }
 
-            // Persisted chains may carry more than the two children the typed builder authors (and the deeper
-            // hydration now reaches nodes the old two-level cap never surfaced as executing parents), so the sibling
-            // buffers are lists rather than the old fixed 5/6-slot arrays that overflowed past that count.
-            var tasksToRunNow = new List<Task>(context.TimeJobChildren.Count + 1);
-            var childrenToRunAfter = new List<JobExecutionState>(context.TimeJobChildren.Count);
-            var childrenAlongside = new List<(JobExecutionState Child, Task<bool> Started)>();
-
             // The children that run alongside the parent wait until the parent commits to invoking its handler: a root
             // can still be handed back before that (a drain, a lost lease, unknown membership, an unregistered function
             // or contract version), and a child that ran meanwhile would run again under the next owner. Only a root
@@ -152,55 +145,42 @@ internal sealed class JobsExecutionTaskHandler
                 ? null
                 : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Add parent task
-            tasksToRunNow.Add(
-                _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild, parentStart)
-            );
-
-            // Process children - separate InProgress from others
-            foreach (var child in context.TimeJobChildren)
+            var tasks = new List<Task>(context.TimeJobChildren.Count + 1);
+            var parent = _RunContextFunctionAsync(context, isDue, runNow, cancellationToken, isChild, parentStart);
+            tasks.Add(parent);
+            try
             {
-                if (child.RunCondition == RunCondition.InProgress)
+                foreach (var child in context.TimeJobChildren)
                 {
-                    var started = _RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken);
-                    childrenAlongside.Add((child, started));
-                    tasksToRunNow.Add(started);
-                }
-                else
-                {
-                    childrenToRunAfter.Add(child);
-                }
-            }
-
-            // Wait for concurrent tasks (parent + InProgress children)
-            await Task.WhenAll(tasksToRunNow).ConfigureAwait(false);
-
-            // Process deferred children ONLY when the parent reached a genuine terminal status. A parent that lost
-            // its lease (or hit host shutdown, or was fenced out of completion) returns from _RunContextFunctionAsync
-            // WITHOUT a terminal status — the row is left InProgress for the stalled-reclaim sweep. Evaluating children
-            // against that non-terminal status would wrongly Skip every OnSuccess/OnFailure child while the parent is
-            // still due to run elsewhere; leaving them unprocessed lets reclaim re-run the whole subtree correctly.
-            if (_ParentReachedTerminalStatus(context))
-            {
-                var childrenToSkip = new List<JobExecutionState>(childrenToRunAfter.Count);
-                var childrenToRunAfterTask = new List<Task>(childrenToRunAfter.Count);
-
-                // A parent that ended terminal without invoking its handler (the crash-recovery exhaustion gate) was
-                // never InProgress, so the children held for it never met their condition: they are skipped with their
-                // subtree rather than left claimed under a finished root that no reclaim re-runs.
-                foreach (var (child, started) in childrenAlongside)
-                {
-                    if (!await started.ConfigureAwait(false))
+                    if (child.RunCondition == RunCondition.InProgress)
                     {
-                        _SkipChild(child, context, childrenToSkip);
+                        tasks.Add(_RunAlongsideParentAsync(child, parentStart?.Task, isDue, runNow, cancellationToken));
                     }
                 }
 
-                foreach (var child in childrenToRunAfter)
+                await parent.ConfigureAwait(false);
+
+                // A fenced or nonterminal parent leaves its children for recovery. Once the parent's terminal write
+                // lands, it no longer renews waiting children's leases. Evaluate them while alongside work continues.
+                if (!_ParentReachedTerminalStatus(context))
                 {
+                    return;
+                }
+
+                var childrenToSkip = new List<JobExecutionState>(context.TimeJobChildren.Count);
+                var alongsideMayRun = parentStart is null || await parentStart.Task.ConfigureAwait(false);
+                foreach (var child in context.TimeJobChildren)
+                {
+                    // A root that settled without invoking its handler never released its alongside children.
+                    // Include them in the skip so their subtrees are settled under the current claim.
+                    if (child.RunCondition == RunCondition.InProgress && alongsideMayRun)
+                    {
+                        continue;
+                    }
+
                     if (_ShouldRunChild(child, context.Status))
                     {
-                        childrenToRunAfterTask.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
+                        tasks.Add(_SafeRecursiveExecution(child, isDue, runNow, cancellationToken));
                     }
                     else
                     {
@@ -227,12 +207,10 @@ internal sealed class JobsExecutionTaskHandler
                         );
                     }
                 }
-
-                // Wait for deferred tasks
-                if (childrenToRunAfterTask.Count > 0)
-                {
-                    await Task.WhenAll(childrenToRunAfterTask).ConfigureAwait(false);
-                }
+            }
+            finally
+            {
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             }
         }
 
@@ -299,10 +277,8 @@ internal sealed class JobsExecutionTaskHandler
         _GatherDescendantsToSkip(child, childrenToSkip);
     }
 
-    // Starts a child that runs while its parent runs, once the parent has committed to invoking its handler, and
-    // returns whether it started. A parent that never gets that far leaves the child unstarted, still Idle under the
-    // root's claim.
-    private async Task<bool> _RunAlongsideParentAsync(
+    // A root that never commits to invoking its handler leaves its alongside children idle under the claim.
+    private async Task _RunAlongsideParentAsync(
         JobExecutionState child,
         Task<bool>? parentStart,
         bool isDue,
@@ -310,13 +286,10 @@ internal sealed class JobsExecutionTaskHandler
         CancellationToken cancellationToken
     )
     {
-        if (parentStart is not null && !await parentStart.ConfigureAwait(false))
+        if (parentStart is null || await parentStart.ConfigureAwait(false))
         {
-            return false;
+            await _SafeRecursiveExecution(child, isDue, runNow, cancellationToken).ConfigureAwait(false);
         }
-
-        await _SafeRecursiveExecution(child, isDue, runNow, cancellationToken).ConfigureAwait(false);
-        return true;
     }
 
     // parentStart, when given, learns whether the children running alongside this run may start: true once the run
@@ -865,12 +838,14 @@ internal sealed class JobsExecutionTaskHandler
                             // disposes (a unit of work that flushes an aggregate or an audit row) still joins the job.
                             // The shared scope lets Messaging, domain events, and audit rows written by the job join
                             // its correlation. A run with no stored correlation is its own root, as it is for the jobs
-                            // it schedules.
+                            // it schedules. The scheduler's trace id rides along because the run's own span starts a
+                            // new trace, so its log entries can still be found by the request that scheduled it.
                             using var causalScope = JobCausalContext.Enter(jobFunctionContext);
                             var runId = jobFunctionContext.Id.ToString("D");
                             using var sharedCausalScope = CausalScope.Begin(
                                 jobFunctionContext.CorrelationId ?? runId,
-                                runId
+                                runId,
+                                JobTraceParent.GetTraceId(context.TraceParent)
                             );
                             await using (var scope = _serviceProvider.CreateAsyncScope())
                             {
@@ -1388,20 +1363,6 @@ internal sealed class JobsExecutionTaskHandler
         }
     }
 
-    /// <summary>
-    /// Hands back, uncharged, a row claimed for an immediate run that the pool did not admit: the pool accepts no
-    /// work (the host is stopping, or processing has not started), the caller stopped waiting for capacity, or a
-    /// long-running admission was refused at the backlog cap or dropped while parked. The row is Idle and due again,
-    /// so the next poll runs it.
-    /// </summary>
-    public async Task ReleaseUndispatchedAsync(JobExecutionState context)
-    {
-        if (await _TryShutdownWriteAsync(context, () => _ReleaseInProgressAsync(context)).ConfigureAwait(false))
-        {
-            _logger.LogJobReleasedUndispatched(context.JobId, context.FunctionName);
-        }
-    }
-
     private async Task _ReleaseForDrainAsync(JobExecutionState context)
     {
         if (await _TryShutdownWriteAsync(context, () => _ReleaseInProgressAsync(context)).ConfigureAwait(false))
@@ -1730,42 +1691,79 @@ internal sealed class JobsExecutionTaskHandler
     }
 
     /// <summary>
-    /// One renewal attempt: <see langword="true"/> while the lease is still held; <see langword="false"/> when it was
-    /// lost OR the renewal could not be confirmed within the cadence (#463: a hung / slow / unreachable store, or an
-    /// error, must not silently let the lease lapse — treated as a loss so the caller cancels and OnNodeDeath governs).
+    /// Attempts one renewal, reporting lease loss if the store refuses it or cannot confirm it within the cadence.
     /// </summary>
     private async Task<LeaseRenewal> _TryRenewLeaseAsync(JobExecutionState context, CancellationToken renewalLoopToken)
     {
-        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline. The
-        // bound is an I/O timeout, so it runs on the system clock; only the renewal cadence follows the registered
-        // clock, and a host clock that never advances must not turn a hung store into a lease nobody renews.
-        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, TimeProvider.System);
-        using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken, timeoutCts.Token);
+        // CancelAfter uses the system clock. Only the cadence follows the application clock. Keep the wait token
+        // separate so a store that ignores cancellation or blocks in a cancellation callback cannot hold up the loop.
+        renewalLoopToken.ThrowIfCancellationRequested();
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken);
+        waitCts.CancelAfter(_leaseRenewalInterval);
+        CancellationTokenSource? renewalCts = null;
+        Task<int>? renewalTask = null;
+        var waitCancelled = false;
 
         try
         {
-            return await _internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false) > 0
+#pragma warning disable CA2000 // The finally block disposes this source or transfers it to the detached cleanup.
+            renewalCts = new CancellationTokenSource();
+#pragma warning restore CA2000
+            renewalTask = _internalJobsManager.RenewLeaseAsync(context, renewalCts.Token);
+            return await renewalTask.WaitAsync(waitCts.Token).ConfigureAwait(false) > 0
                 ? default
                 : new(JobsLeaseLossReason.RenewalUnmatched, Error: null);
         }
-        catch (OperationCanceledException) when (renewalLoopToken.IsCancellationRequested)
-        {
-            // Normal stop (job completed) raced the renewal — propagate so the loop's outer catch treats it as a
-            // clean stop rather than a lease loss.
-            throw;
-        }
         catch (OperationCanceledException)
         {
-            // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
+            waitCancelled = waitCts.IsCancellationRequested;
+            if (renewalLoopToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
             return new(JobsLeaseLossReason.RenewalTimedOut, Error: null);
         }
         catch (Exception exception)
         {
-            // Renewal write failed (DB unreachable / transient error). The two preceding catches already consume every
-            // OperationCanceledException, so only non-OCE exceptions reach here. We can no longer vouch for the lease —
-            // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). The
-            // caller logs it with the exception, so a DB-error renewal loss is distinguishable from a programming bug.
             return new(JobsLeaseLossReason.RenewalFailed, exception);
+        }
+        finally
+        {
+            if (waitCancelled && renewalTask is not null && renewalCts is not null)
+            {
+#pragma warning disable CA2025 // The detached cleanup owns the CTS until the provider and cancellation complete.
+                _ = _CancelAndObserveRenewalAsync(renewalTask, renewalCts, context.JobId, context.FunctionName);
+#pragma warning restore CA2025
+                renewalCts = null;
+            }
+
+            renewalCts?.Dispose();
+        }
+    }
+
+    private async Task _CancelAndObserveRenewalAsync(
+        Task renewalTask,
+        CancellationTokenSource renewalCts,
+        Guid jobId,
+        string functionName
+    )
+    {
+        try
+        {
+            await Task.WhenAll(renewalTask, renewalCts.CancelAsync()).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The store honored cancellation after the caller stopped waiting.
+        }
+        catch (Exception exception)
+        {
+            _logger.LogAbandonedLeaseRenewalFailed(exception, jobId, functionName);
+        }
+        finally
+        {
+            renewalCts.Dispose();
         }
     }
 
@@ -1987,6 +1985,18 @@ internal static partial class JobsExecutionTaskHandlerLog
     );
 
     [LoggerMessage(
+        EventId = 3132,
+        Level = LogLevel.Debug,
+        Message = "An abandoned lease renewal for job {JobId} ({Function}) failed after the caller stopped waiting."
+    )]
+    internal static partial void LogAbandonedLeaseRenewalFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
         EventId = 3101,
         Level = LogLevel.Information,
         Message = "Job {JobId} ({Function}) was cancelled on lease loss; row left InProgress for the stalled-reclaim "
@@ -2142,14 +2152,6 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "unstarted for another node to run, with its retry budget unchanged."
     )]
     internal static partial void LogJobReleasedForDrain(this ILogger logger, Guid jobId, string function);
-
-    [LoggerMessage(
-        EventId = 3126,
-        Level = LogLevel.Information,
-        Message = "Job {JobId} ({Function}) was claimed for an immediate run that the pool did not admit; it "
-            + "was handed back unstarted for the next poll to run, with its retry budget unchanged."
-    )]
-    internal static partial void LogJobReleasedUndispatched(this ILogger logger, Guid jobId, string function);
 
     [LoggerMessage(
         EventId = 3119,

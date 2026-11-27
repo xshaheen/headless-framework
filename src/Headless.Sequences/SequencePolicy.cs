@@ -78,4 +78,31 @@ public sealed record SequencePolicy
     /// </summary>
     /// <remarks>The date comes from the registered <see cref="TimeProvider" />, converted into this zone.</remarks>
     public TimeZoneInfo TimeZone { get; init; } = TimeZoneInfo.Utc;
+
+    /// <summary>
+    /// Returns the counter partition a document number taken at <paramref name="instant" /> goes to, such as
+    /// <c>2026</c>, <c>2026-10</c>, <c>2026-10-08</c>, or <c>FY2026</c>, decided in <see cref="TimeZone" />.
+    /// </summary>
+    /// <param name="instant">The instant the number would be taken at.</param>
+    /// <returns>The partition, or <see langword="null" /> when <see cref="Reset" /> is <see cref="SequenceReset.Never" />.</returns>
+    public string? PartitionAt(DateTimeOffset instant)
+    {
+        return SequenceNumberFormat.Partition(this, SequenceNumberFormat.IssuedOn(this, instant));
+    }
+
+    /// <summary>
+    /// Returns the first instant after <paramref name="instant" /> that belongs to the next reset period: local
+    /// midnight in <see cref="TimeZone" /> of the next day, the first of the next month, January 1, or the first day
+    /// of the next fiscal year.
+    /// </summary>
+    /// <remarks>
+    /// When a daylight-saving jump skips that local midnight, the reset is the first instant of the new local date.
+    /// When the clock falls back over it, the reset is the earlier of the two instants.
+    /// </remarks>
+    /// <param name="instant">The instant to look forward from.</param>
+    /// <returns>The reset instant in UTC, or <see langword="null" /> when <see cref="Reset" /> is <see cref="SequenceReset.Never" />.</returns>
+    public DateTimeOffset? NextResetAt(DateTimeOffset instant)
+    {
+        return SequenceNumberFormat.NextResetAt(this, instant);
+    }
 }

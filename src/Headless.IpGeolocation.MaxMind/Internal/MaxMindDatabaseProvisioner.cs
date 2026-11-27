@@ -19,7 +19,7 @@ internal sealed class MaxMindDatabaseProvisioner(
 {
     private readonly MaxMindOptions _options = options.Value;
 
-    public string Kind => "MaxMind";
+    public string Kind => SetupMaxMind.DatabasesResourceKind;
 
     public string Name => "databases";
 
@@ -85,7 +85,7 @@ internal sealed class MaxMindDatabaseProvisioner(
         }
 
         var fix = _options.HasCredentials
-            ? "Run 'resources provision -k MaxMind' to download them."
+            ? $"Run 'resources provision -k {SetupMaxMind.DatabasesResourceKind}' to download them."
             : "Place each one in the database directory as <EditionId>.mmdb, or set AccountId and LicenseKey to download them.";
 
         throw new ResourceProvisioningException($"MaxMind databases {string.Join("; ", problems)}. {fix}");

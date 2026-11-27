@@ -61,6 +61,7 @@ public sealed class IdempotencySetupTests : TestBase
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IIdempotentOperations>().Should().NotBeNull();
+        provider.GetRequiredService<IIdempotencyInspector>().Should().NotBeNull();
         provider.GetRequiredService<IUnitOfWorkIdempotency>().Should().NotBeNull();
 
         // Records are keyed by the current tenant, so it must follow ICurrentTenant.Change rather than stay on the

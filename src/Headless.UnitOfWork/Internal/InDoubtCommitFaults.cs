@@ -29,6 +29,10 @@ internal static class InDoubtCommitFaults
     private const int _SqlClientTimeoutNumber = -2;
     private const byte _SqlClientConnectionClosingSeverity = 20;
 
+    internal static UnitOfWorkInDoubtException? Classify(Exception exception, bool cancelledBeforeCommit) =>
+        exception as UnitOfWorkInDoubtException
+        ?? (IsInDoubt(exception, cancelledBeforeCommit) ? new UnitOfWorkInDoubtException(exception) : null);
+
     /// <summary>Returns whether a fault raised by the commit leaves the transaction's outcome unknown.</summary>
     /// <param name="exception">The fault the resource's commit raised.</param>
     /// <param name="cancelledBeforeCommit">Whether the caller's token was already cancelled when the commit began.</param>

@@ -61,3 +61,6 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
         return sb.ToString();
     }
 }
+
+/// <summary>Keeps the provider's normalizer available by store name when decorators hide the underlying storage.</summary>
+internal sealed record BlobNamingNormalizerRegistration(IBlobNamingNormalizer Normalizer);

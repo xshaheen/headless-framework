@@ -162,12 +162,6 @@
         "resolved": "1.0.17",
         "contentHash": "Pwz0MD7CAM/G/fvJjM3ceOfI+S0IgjanHcK7evwyrW9qAWUG8fgiEXYfSX1/s3h2JUNDOw6ik0G8zp+RT61Y1g=="
       },
-      "Polly": {
-        "type": "Direct",
-        "requested": "[7.2.4, )",
-        "resolved": "7.2.4",
-        "contentHash": "bw00Ck5sh6ekduDE3mnCo1ohzuad946uslCDEENu3091+6UKnBuKLo4e+yaNcCzXxOZCXWY2gV4a35+K1d4LDA=="
-      },
       "ReflectionAnalyzers": {
         "type": "Direct",
         "requested": "[0.3.1, )",
@@ -1338,7 +1332,9 @@
       "headless.sms.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sms": "[1.0.0, )"
         }
       },
@@ -1349,8 +1345,7 @@
           "Headless.Http.Resilience": "[1.0.0, )",
           "Headless.Sms": "[1.0.0, )",
           "Infobip.Api.Client": "[5.0.0, )",
-          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )",
-          "Polly": "[7.2.4, )"
+          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )"
         }
       },
       "headless.sms.tests.harness": {
@@ -1804,6 +1799,15 @@
         "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
         "dependencies": {
           "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
+      },
+      "Polly": {
+        "type": "CentralTransitive",
+        "requested": "[8.9.1, )",
+        "resolved": "8.9.1",
+        "contentHash": "2a+6qssytViSYiLuvUb7KeFXRcJQyTf0dWLpvtZLNBohF28oXKVExeKdU2aXXVZlVO0swuEtkhhuCK3gFaJmrw==",
+        "dependencies": {
+          "Polly.Core": "8.9.1"
         }
       },
       "Polly.Core": {

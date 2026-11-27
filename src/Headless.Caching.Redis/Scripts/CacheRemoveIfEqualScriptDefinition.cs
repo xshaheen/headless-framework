@@ -81,7 +81,8 @@ internal sealed class CacheRemoveIfEqualScriptDefinition : RedisScriptDefinition
 
               if expectedIsNull == 1 then
                 if currentIsNull then
-                  return redis.call('del', @key)
+                  redis.call('del', @key, @generationKey)
+                  return 1
                 end
 
                 return 0
@@ -92,7 +93,8 @@ internal sealed class CacheRemoveIfEqualScriptDefinition : RedisScriptDefinition
               end
 
               if string.sub(currentVal, valueStart + 1) == @expected then
-                return redis.call('del', @key)
+                redis.call('del', @key, @generationKey)
+                return 1
               end
 
               return 0
@@ -100,14 +102,16 @@ internal sealed class CacheRemoveIfEqualScriptDefinition : RedisScriptDefinition
 
             if expectedIsNull == 1 then
               if currentVal == @nullValue then
-                return redis.call('del', @key)
+                redis.call('del', @key, @generationKey)
+                return 1
               end
 
               return 0
             end
 
             if currentVal == @expected then
-              return redis.call('del', @key)
+              redis.call('del', @key, @generationKey)
+              return 1
             end
 
             return 0

@@ -49,6 +49,21 @@ before=$(git rev-parse HEAD)
 add_path src/Headless.Jobs.Dashboard/wwwroot/src/module.ts
 assert_checks 'dashboard' pull_request "$before" HEAD true true false
 before=$(git rev-parse HEAD)
+add_path src/Headless.Cluster.Dashboard/wwwroot/src/module.ts
+assert_checks 'cluster dashboard' pull_request "$before" HEAD true true false
+before=$(git rev-parse HEAD)
+add_path src/Headless.DevInbox.Dashboard/wwwroot/src/module.ts
+assert_checks 'dev inbox dashboard' pull_request "$before" HEAD true true false
+before=$(git rev-parse HEAD)
+add_path src/Headless.Idempotency.Dashboard/wwwroot/src/module.ts
+assert_checks 'idempotency dashboard' pull_request "$before" HEAD true true false
+before=$(git rev-parse HEAD)
+add_path src/Headless.Leases.Dashboard/wwwroot/src/module.ts
+assert_checks 'leases dashboard' pull_request "$before" HEAD true true false
+before=$(git rev-parse HEAD)
+add_path src/Headless.Sequences.Dashboard/wwwroot/src/module.ts
+assert_checks 'sequences dashboard' pull_request "$before" HEAD true true false
+before=$(git rev-parse HEAD)
 add_path demo/Headless.Tus.Demo/frontend/src/App.tsx
 assert_checks 'Tus frontend' pull_request "$before" HEAD false false true
 before=$(git rev-parse HEAD)

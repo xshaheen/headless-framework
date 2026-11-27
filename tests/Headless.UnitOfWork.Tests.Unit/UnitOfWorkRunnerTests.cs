@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -16,6 +18,34 @@ namespace Tests;
 public sealed class UnitOfWorkRunnerTests : TestBase
 {
     private sealed class TransientFaultException() : Exception("Simulated transient failure.");
+
+    [Fact]
+    public async Task should_refuse_to_join_a_finished_observed_ado_transaction()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(AbortToken);
+        var driver = new DbConnectionUnitOfWorkDriver<SqliteConnection>();
+        var factory = new UnitOfWorkFactory();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var unit = driver.Enlist(factory, connection, transaction);
+        var blockRuns = 0;
+
+        await transaction.CommitAsync(AbortToken);
+
+        var act = async () =>
+            await driver.RunAsync(
+                factory,
+                connection,
+                (_, _) => Task.FromResult(++blockRuns),
+                IsolationLevel.Unspecified,
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*transaction already completed*");
+        blockRuns.Should().Be(0);
+        await unit.CompleteAsync(AbortToken);
+        unit.State.Should().Be(UnitOfWorkState.Completed);
+    }
 
     [Fact]
     public async Task should_roll_back_a_faulted_attempt_before_replaying_it_on_a_fresh_unit()

@@ -54,14 +54,16 @@ public sealed class SettingManager(
     /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="settingNames"/> is empty.</exception>
     public async Task<Dictionary<string, SettingValue>> GetAllAsync(
-        HashSet<string> settingNames,
+        IReadOnlyCollection<string> settingNames,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(settingNames);
 
+        // Matching against an ordinal set keeps the definition filter linear and folds duplicate names.
+        var requestedNames = settingNames.ToHashSet(StringComparer.Ordinal);
         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+        var settingDefinitions = allSettingDefinitions.Where(x => requestedNames.Contains(x.Name)).ToList();
         var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         // Accumulate the resolved value and its attributing provider per setting first, then build the
@@ -167,7 +169,7 @@ public sealed class SettingManager(
     /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     public async Task<IReadOnlyList<SettingValue>> GetAllAsync(
-        HashSet<string> settingNames,
+        IReadOnlyCollection<string> settingNames,
         string providerName,
         string? providerKey = null,
         bool fallback = true,
@@ -177,11 +179,12 @@ public sealed class SettingManager(
         Argument.IsNotNullOrEmpty(settingNames);
         Argument.IsNotNull(providerName);
 
+        var requestedNames = settingNames.ToHashSet(StringComparer.Ordinal);
         var allDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
         // Narrowing to the requested names before the provider walk is the whole point: the caller pays
         // for the settings it asked for rather than for every setting the application happens to define.
-        var settingDefinitions = allDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+        var settingDefinitions = allDefinitions.Where(x => requestedNames.Contains(x.Name)).ToList();
 
         return await _GetAllFromProviderAsync(
                 settingDefinitions,
@@ -680,9 +683,9 @@ public sealed class SettingManager(
                         .SetAllVersionedAsync(writes, providerKey, expectedVersion, cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (DBConcurrencyException)
+                catch (DBConcurrencyException exception)
                 {
-                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName));
+                    throw new ConflictException(errorsDescriptor.VersionMismatch(providerName), exception);
                 }
             }
             else if (unitOfWork is null)

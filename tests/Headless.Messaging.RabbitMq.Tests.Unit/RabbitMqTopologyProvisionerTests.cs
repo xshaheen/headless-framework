@@ -12,6 +12,30 @@ namespace Tests;
 public sealed class RabbitMqTopologyProvisionerTests : TestBase
 {
     [Fact]
+    public void should_report_the_public_kind_constant()
+    {
+        // given
+        var provisioner = new RabbitMqTopologyProvisioner(
+            Substitute.For<IConnectionChannelPool>(),
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "test_user",
+                    Password = "test_pass",
+                }
+            )
+        );
+
+        // when
+        var kind = provisioner.Kind;
+
+        // then
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        kind.Should().Be(SetupMessagingRabbitMq.TopologyResourceKind).And.Be("RabbitMQ");
+    }
+
+    [Fact]
     public void should_own_only_the_queues_this_host_consumes()
     {
         // given — the host consumes "orders" and only publishes "invoices"

@@ -838,9 +838,9 @@ def write_module_results(directory: Path, modules: list[TestModule]) -> None:
 
 
 def reuse_modules(directory: Path, root: Path, needs_coverage: bool) -> int:
-    """Skip each selected module whose key matches a module that passed in an earlier integration bundle.
+    """Skip each selected module whose key matches a module that passed in an earlier bundle of the same gate.
 
-    Copies the earlier TRX and coverage into this bundle, records reused.json, and rewrites the integration and
+    Copies the earlier TRX and coverage into this bundle, records reused.json, and rewrites the unit, integration, and
     integration-unit lists and filters to the modules left to run. Only a pass is reused, even from a bundle that failed
     overall: a failure can be a flaky test, and running it again is how the author finds out.
     """
@@ -873,7 +873,7 @@ def reuse_modules(directory: Path, root: Path, needs_coverage: bool) -> int:
     if not reused:
         return 0
     (directory / REUSED_MODULES).write_text(json.dumps(reused, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    for listing in ("integration", "integration-unit"):
+    for listing in ("unit", "integration", "integration-unit"):
         txt = directory / f"{listing}.txt"
         if not txt.is_file():
             continue
@@ -1093,7 +1093,7 @@ def main() -> int:
     reuse.add_argument("--dir", required=True, type=Path)
     reuse.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     reuse.add_argument("--key", required=True)
-    reuse_mods = commands.add_parser("reuse-modules", help="skip each module whose module key matches an earlier pass; rewrite the integration lists to the rest")
+    reuse_mods = commands.add_parser("reuse-modules", help="skip each module whose module key matches an earlier pass; rewrite the unit and integration lists to the rest")
     reuse_mods.add_argument("--dir", required=True, type=Path)
     reuse_mods.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     reuse_mods.add_argument("--coverage", choices=("true", "false"), default="false", help="true: reuse only modules whose earlier run kept coverage")

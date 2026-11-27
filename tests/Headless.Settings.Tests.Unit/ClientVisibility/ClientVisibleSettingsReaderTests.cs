@@ -29,9 +29,9 @@ public sealed class ClientVisibleSettingsReaderTests : TestBase
         var hidden = new SettingDefinition("Smtp.Password");
         _definitionManager.GetAllAsync(AbortToken).Returns([visible, hidden]);
         _settingManager
-            .GetAllAsync(Arg.Any<HashSet<string>>(), AbortToken)
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken)
             .Returns(call =>
-                call.Arg<HashSet<string>>()
+                call.Arg<IReadOnlyCollection<string>>()
                     .ToDictionary(name => name, name => new SettingValue(name, "ar"), StringComparer.Ordinal)
             );
 
@@ -47,7 +47,9 @@ public sealed class ClientVisibleSettingsReaderTests : TestBase
         await _settingManager
             .Received(1)
             .GetAllAsync(
-                Arg.Is<HashSet<string>>(names => names.SetEquals(new[] { "Localization.DefaultLanguage" })),
+                Arg.Is<IReadOnlyCollection<string>>(names =>
+                    names.ToHashSet(StringComparer.Ordinal).SetEquals(new[] { "Localization.DefaultLanguage" })
+                ),
                 AbortToken
             );
     }
@@ -63,7 +65,9 @@ public sealed class ClientVisibleSettingsReaderTests : TestBase
 
         // then
         values.Should().BeEmpty();
-        await _settingManager.DidNotReceive().GetAllAsync(Arg.Any<HashSet<string>>(), Arg.Any<CancellationToken>());
+        await _settingManager
+            .DidNotReceive()
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -81,7 +85,7 @@ public sealed class ClientVisibleSettingsReaderTests : TestBase
         ClaimsPrincipal? principalDuringRead = null;
         string? tenantDuringRead = null;
         _settingManager
-            .GetAllAsync(Arg.Any<HashSet<string>>(), AbortToken)
+            .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), AbortToken)
             .Returns(_ =>
             {
                 principalDuringRead = _principalAccessor.Principal;

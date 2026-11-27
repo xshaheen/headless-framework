@@ -98,6 +98,24 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_validate_required_ownership_after_domain_handlers(bool synchronous)
+    {
+        await using var harness = await Harness.CreateAsync(guardWrites: true);
+        var db = harness.CreateContext<TenantDbContext>();
+        await db.Database.EnsureCreatedAsync(AbortToken);
+        using var _ = harness.ChangeTenant("tenant-1");
+        var row = new TenantRow { Id = Guid.CreateVersion7() };
+        db.Rows.Add(row);
+        row.RecalculateMetadata();
+
+        var save = () => synchronous ? Task.FromResult(db.SaveChanges()) : db.SaveChangesAsync(AbortToken);
+
+        await save.Should().ThrowAsync<MissingTenantContextException>();
+    }
+
 #pragma warning disable EF1001 // Internal EF Core API: the attached handlers are only visible on the state manager.
     private static int _TrackingHandlerCount(DbContext db)
     {
@@ -125,6 +143,8 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
             await harness._connection.OpenAsync(AbortToken);
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddHeadlessDomainEventDispatcher();
+            services.AddScoped<IDomainEventHandler<MetadataRecalculated>, MetadataRecalculatedHandler>();
 
             if (pooled)
             {
@@ -173,9 +193,27 @@ public sealed class TrackerHandlerAttachmentTests : TestBase
         }
     }
 
-    public sealed class TenantRow : Entity<Guid>, IMultiTenant
+    private sealed record MetadataRecalculated(Guid Id);
+
+    private sealed class MetadataRecalculatedHandler(TenantDbContext db) : IDomainEventHandler<MetadataRecalculated>
+    {
+        public ValueTask HandleAsync(
+            EventContext<MetadataRecalculated> context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var row = db.Rows.Local.Single(entity => entity.Id == context.Payload.Id);
+            db.Entry(row).Property(entity => entity.TenantId).CurrentValue = null;
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public sealed class TenantRow : AggregateRoot<Guid>, IMultiTenant
     {
         public string? TenantId { get; }
+
+        public void RecalculateMetadata() => AddDomainEvent(new MetadataRecalculated(Id));
     }
 
     public sealed class PlainRow : Entity<Guid>;

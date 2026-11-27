@@ -3,7 +3,7 @@
 namespace Headless.Jobs;
 
 /// <summary>
-/// Internal contract for submitting acquired job contexts to the Jobs thread pool for execution.
+/// Internal contract for submitting leased <c>Queued</c> job contexts to the worker that admits and executes them.
 /// </summary>
 internal interface IJobsDispatcher
 {

@@ -34,6 +34,9 @@ internal sealed class InMemoryLeaseStore(
     TimeProvider timeProvider
 ) : ILeaseStore
 {
+    // The inspector's order: tenant, kind, then resource, each ordinal, as the relational key compares.
+    private static readonly Comparer<LeaseKey> _KeyOrder = Comparer<LeaseKey>.Create(_CompareKeys);
+
     private InMemoryRowTable<LeaseKey, InMemoryLease> Table => storage.Table;
 
     #region Owned units and enlistment
@@ -412,15 +415,7 @@ internal sealed class InMemoryLeaseStore(
             return ValueTask.FromResult<LeaseSnapshot?>(null);
         }
 
-        var snapshot = new LeaseSnapshot(
-            key.ToLease(row.Generation),
-            _Classify(row, row.Generation, timeProvider.GetUtcNow()),
-            row.ExpiresAt,
-            row.Holder,
-            row.TakeoverCount
-        );
-
-        return ValueTask.FromResult<LeaseSnapshot?>(snapshot);
+        return ValueTask.FromResult<LeaseSnapshot?>(_Snapshot(key, row, timeProvider.GetUtcNow()));
     }
 
     public ValueTask<LeaseSnapshot?> GetCurrentAsync(
@@ -432,6 +427,143 @@ internal sealed class InMemoryLeaseStore(
     {
         // The store has no database, so the caller's connection has nothing to read; the answer is the committed row's.
         return GetCurrentAsync(key, cancellationToken);
+    }
+
+    #endregion
+
+    #region Inspection
+
+    public ValueTask<IReadOnlyList<LeaseSnapshot>> ListAsync(
+        LeaseListFilter filter,
+        LeaseKey? after,
+        int limit,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(filter);
+        Argument.IsPositive(limit);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // One clock read judges every row, as one relational statement does.
+        var now = timeProvider.GetUtcNow();
+        IReadOnlyList<LeaseSnapshot> page =
+        [
+            .. Table
+                .Rows.Where(pair =>
+                    _Matches(pair.Key, pair.Value, filter, now)
+                    && (after is not { } cursor || _CompareKeys(pair.Key, cursor) > 0)
+                )
+                .OrderBy(static pair => pair.Key, _KeyOrder)
+                .Take(limit)
+                .Select(pair => _Snapshot(pair.Key, pair.Value, now)),
+        ];
+
+        return ValueTask.FromResult(page);
+    }
+
+    public ValueTask<FencedLeaseCounts> CountAsync(
+        LeaseListFilter filter,
+        int cap,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(filter);
+        Argument.IsPositive(cap);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = timeProvider.GetUtcNow();
+        long live = 0,
+            expired = 0,
+            ended = 0;
+
+        foreach (var (key, row) in Table.Rows)
+        {
+            if (!_Matches(key, row, filter, now))
+            {
+                continue;
+            }
+
+            switch (_StateOf(row, now))
+            {
+                case FencedLeaseStateFilter.Live:
+                    live++;
+                    break;
+                case FencedLeaseStateFilter.Expired:
+                    expired++;
+                    break;
+                default:
+                    ended++;
+                    break;
+            }
+        }
+
+        return ValueTask.FromResult(
+            new FencedLeaseCounts(LeaseCount.Of(live, cap), LeaseCount.Of(expired, cap), LeaseCount.Of(ended, cap))
+        );
+    }
+
+    public ValueTask<IReadOnlyList<string>> ListKindsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<string> kinds =
+        [
+            .. Table.Rows.Keys.Select(static key => key.Kind).Distinct().Order(StringComparer.Ordinal),
+        ];
+
+        return ValueTask.FromResult(kinds);
+    }
+
+    private static bool _Matches(LeaseKey key, InMemoryLease row, LeaseListFilter filter, DateTimeOffset now)
+    {
+        return (filter.TenantId is null || string.Equals(key.TenantId, filter.TenantId, StringComparison.Ordinal))
+            && (filter.Kind is null || string.Equals(key.Kind, filter.Kind, StringComparison.Ordinal))
+            && (
+                filter.ResourcePrefix is null
+                || key.Resource.StartsWith(filter.ResourcePrefix, StringComparison.Ordinal)
+            )
+            && (filter.State == FencedLeaseStateFilter.All || _StateOf(row, now) == filter.State);
+    }
+
+    private static FencedLeaseStateFilter _StateOf(InMemoryLease row, DateTimeOffset now)
+    {
+        if (row.State != InMemoryLeaseState.Active)
+        {
+            return FencedLeaseStateFilter.Ended;
+        }
+
+        return row.ExpiresAt > now ? FencedLeaseStateFilter.Live : FencedLeaseStateFilter.Expired;
+    }
+
+    private static int _CompareKeys(LeaseKey left, LeaseKey right)
+    {
+        var byTenant = string.CompareOrdinal(left.TenantId, right.TenantId);
+
+        if (byTenant != 0)
+        {
+            return byTenant;
+        }
+
+        var byKind = string.CompareOrdinal(left.Kind, right.Kind);
+
+        return byKind != 0 ? byKind : string.CompareOrdinal(left.Resource, right.Resource);
+    }
+
+    private static LeaseSnapshot _Snapshot(LeaseKey key, InMemoryLease row, DateTimeOffset now)
+    {
+        // The progress bytes stay in the store: an operator view gets their size and contract only.
+        return new LeaseSnapshot
+        {
+            Lease = key.ToLease(row.Generation),
+            Status = _Classify(row, row.Generation, now),
+            ExpiresAt = row.ExpiresAt,
+            Holder = row.Holder,
+            TakeoverCount = row.TakeoverCount,
+            GrantedAt = row.GrantedAt,
+            EndedAt = row.EndedAt,
+            ProgressSizeBytes = row.Progress?.Payload.Length,
+            ProgressContract = row.Progress?.Contract,
+        };
     }
 
     #endregion

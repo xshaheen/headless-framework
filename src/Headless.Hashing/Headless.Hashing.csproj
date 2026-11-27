@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Verify-capable secret hashing (PBKDF2-SHA256) and its registration for Headless Framework applications.</Description>
     <PackageTags>headless;hashing;password-hashing;pbkdf2;dotnet</PackageTags>
     <RootNamespace>Headless.Hashing</RootNamespace>

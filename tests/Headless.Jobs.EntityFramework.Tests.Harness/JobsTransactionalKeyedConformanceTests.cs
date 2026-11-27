@@ -230,7 +230,17 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                         },
                         cancellationToken: AbortToken
                     );
-                await operation.Should().ThrowAsync<InjectedFailureException>();
+                if (afterCommit)
+                {
+                    var failure = await operation.Should().ThrowAsync<UnitOfWorkInDoubtException>();
+                    failure.Which.InnerException.Should().BeSameAs(fault.Failure);
+                }
+                else
+                {
+                    var failure = await operation.Should().ThrowAsync<InjectedFailureException>();
+                    failure.Which.Should().BeSameAs(fault.Failure);
+                }
+
                 fault.Enabled = false;
                 calls.Should().Be(1);
                 (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(afterCommit ? 1 : 0);
@@ -465,6 +475,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
 
     private sealed class CommitFailureInterceptor(bool afterCommit) : DbTransactionInterceptor
     {
+        public InjectedFailureException Failure { get; } = new();
         public bool Enabled { get; set; }
 
         public override ValueTask<InterceptionResult> TransactionCommittingAsync(
@@ -476,7 +487,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
         {
             if (Enabled && !afterCommit)
             {
-                throw new InjectedFailureException();
+                throw Failure;
             }
 
             return ValueTask.FromResult(result);
@@ -486,7 +497,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             DbTransaction transaction,
             TransactionEndEventData eventData,
             CancellationToken cancellationToken = default
-        ) => Enabled && afterCommit ? throw new InjectedFailureException() : Task.CompletedTask;
+        ) => Enabled && afterCommit ? throw Failure : Task.CompletedTask;
     }
 
     private sealed class SavepointFailureInterceptor : DbTransactionInterceptor

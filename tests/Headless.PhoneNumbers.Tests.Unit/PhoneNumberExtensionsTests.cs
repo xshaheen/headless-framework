@@ -195,6 +195,57 @@ public sealed class PhoneNumberExtensionsTests
         result.Should().Be(expectedNormalized);
     }
 
+    [Theory]
+    [InlineData("+201200000100")]
+    [InlineData("+201012345670")]
+    public void should_keep_the_trailing_zero_when_normalize_international_number(string internationalNumber)
+    {
+        // when
+        var result = PhoneNumber.NormalizeInternationalNumber(internationalNumber);
+
+        // then: one digit fewer is a different subscriber
+        result.Should().Be(internationalNumber);
+    }
+
+    [Theory]
+    [InlineData(20, "1200000100", "+201200000100")]
+    [InlineData(20, "1012345670", "+201012345670")]
+    public void should_keep_the_trailing_zero_when_normalize(int countryCode, string number, string expected)
+    {
+        // when
+        var fromInstance = new PhoneNumber(countryCode, number).Normalize();
+        var fromParts = PhoneNumber.Normalize(countryCode, number);
+
+        // then
+        fromInstance.Should().Be(expected);
+        fromParts.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("+20 01200000100", "+201200000100")]
+    [InlineData("+2001012345670", "+201012345670")]
+    public void should_drop_only_the_national_trunk_zero_when_normalize_international_number(
+        string internationalNumber,
+        string expected
+    )
+    {
+        // when
+        var result = PhoneNumber.NormalizeInternationalNumber(internationalNumber);
+
+        // then: Egypt's trunk prefix goes, every digit of the significant number stays
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_drop_only_the_national_trunk_zero_when_normalize_from_parts()
+    {
+        // when
+        var result = PhoneNumber.Normalize(20, "01200000100");
+
+        // then
+        result.Should().Be("+201200000100");
+    }
+
     [Fact]
     public void should_convert_to_utils_phone_number()
     {

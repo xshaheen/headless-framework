@@ -375,7 +375,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
     // Side effects for a single time-job enqueue: immediate dispatch (when due) or scheduler restart, then notify.
     // Runs in-band on the direct path and deferred via OnCommit on the coordinated path. On the coordinated path the
-    // row is already committed when this runs, so AcquireImmediateTimeJobsAsync (its own connection) observes it.
+    // row is already committed when this runs, so the immediate claim on its own connection observes it.
     private async Task _RunTimeJobSideEffectsAsync(
         TimeJobDue written,
         DateTime? nodeUtcNow,
@@ -385,10 +385,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         // Only try to dispatch immediately if dispatcher is enabled (background services running)
         if (_dispatcher.IsEnabled && _IsDueNow(written, nodeUtcNow))
         {
-            // Acquire and mark InProgress in one provider call
-            var acquired = await persistenceProvider
-                .AcquireImmediateTimeJobsAsync([written.Id], cancellationToken)
-                .ConfigureAwait(false);
+            var acquired = await _QueueImmediateTimeJobsAsync([written.Id], cancellationToken).ConfigureAwait(false);
 
             if (acquired.Length > 0)
             {
@@ -398,8 +395,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
             else
             {
-                // A due row left unacquired (a cluster-limited job, or one another node took) is the scheduler's to
-                // claim, so wake it now rather than at its next planned poll.
+                // The ordinary scheduler claims due rows the fast path leaves alone, including on custom stores.
                 _jobsHostScheduler.Restart();
             }
         }
@@ -410,6 +406,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         await notificationHubSender.AddTimeJobNotifyAsync(written.Id).ConfigureAwait(false);
     }
+
+    private Task<TimeJobEntity[]> _QueueImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken) =>
+        persistenceProvider is IJobImmediateAdmission<TCronJob> admission
+            ? admission.QueueImmediateTimeJobsAsync(ids, cancellationToken)
+            : Task.FromResult(Array.Empty<TimeJobEntity>());
 
     // A root without a due time runs after `delay` (now when zero), and the store resolves it inside the write. An
     // absolute time (the caller's or a middleware's) is kept as given.
@@ -1237,8 +1238,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         // Only try to dispatch immediately if dispatcher is enabled (background services running)
         if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
         {
-            var acquired = await persistenceProvider
-                .AcquireImmediateTimeJobsAsync([.. immediateTickers], cancellationToken)
+            var acquired = await _QueueImmediateTimeJobsAsync([.. immediateTickers], cancellationToken)
                 .ConfigureAwait(false);
 
             if (acquired.Length > 0)

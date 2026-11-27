@@ -234,6 +234,27 @@ public interface IIdempotencyRecordStore
     );
 
     /// <summary>
+    /// Reads <paramref name="key" />'s metadata with the same lock-free read <see cref="PeekAsync" /> takes, and returns
+    /// the result and recovery state only as sizes and contracts, never their bytes. A relational store measures the
+    /// sizes in SQL, so the bytes never leave the database. A store that keeps the whole record in one value (the
+    /// cache provider) reads and deserializes that value, payload included, and discards the bytes before it returns.
+    /// </summary>
+    /// <param name="key">The record key.</param>
+    /// <param name="cancellationToken">Token used to cancel the store call.</param>
+    /// <returns>
+    /// The record's snapshot, judged against the store clock read with the record; <see langword="null" /> when the
+    /// record does not exist, or its <c>retention_until</c> is at or before that clock and no live lease holds it. A
+    /// record whose live attempt outlasts its retention is still returned, as <see cref="IdempotencyPeekStatus.Pending" />.
+    /// </returns>
+    ValueTask<IdempotencyRecordSnapshot?> InspectAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Gets what the store says about itself: its provider, where its records live, and whether it purges.</summary>
+    IdempotencyStoreInfo Info { get; }
+
+    /// <summary>
     /// Deletes, on the provider's own connection and committed before returning, at most <paramref name="limit" />
     /// records whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the database clock and
     /// whose lease, if any, is no longer live. A record another transaction holds is skipped for a later purge rather

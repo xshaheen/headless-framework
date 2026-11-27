@@ -78,6 +78,44 @@ public sealed class RedisRecoveryRetentionTests(RedisMessagingFixture fixture) :
     }
 
     [Fact]
+    public async Task should_deliver_new_entries_when_a_full_pending_batch_cannot_be_acknowledged()
+    {
+        var (destination, stream) = _NewQueue();
+        var database = (await fixture.GetAdminConnectionAsync()).GetDatabase();
+        await database.StreamCreateConsumerGroupAsync(stream, destination, StreamPosition.NewMessages);
+        var rejectedId = await database.StreamAddAsync(stream, _Message(destination).AsStreamEntries());
+        await database.StreamReadGroupAsync(
+            stream,
+            destination,
+            $"{destination}:{Environment.MachineName}:0",
+            StreamPosition.NewMessages
+        );
+        var fresh = _Message(destination);
+        await database.StreamAddAsync(stream, fresh.AsStreamEntries());
+
+        await using var session = await fixture.CreateSessionAsync(
+            MessageLane.Queue,
+            destination,
+            destination,
+            AbortToken,
+            configure: options =>
+            {
+                options.StreamEntriesCount = 1;
+                options.PendingClaimMinIdleTime = TimeSpan.FromHours(1);
+                options.CustomHeadersBuilder = (entry, _) =>
+                    entry.Id == rejectedId ? throw new InvalidOperationException("Header lookup failed.") : [];
+            }
+        );
+
+        await session.StartAsync(cancellationToken: AbortToken);
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+
+        delivery.Message.Id.Should().Be(fresh.Id);
+        (await database.StreamPendingAsync(stream, destination)).PendingMessageCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_leave_a_rejected_entry_pending_in_place_and_deliver_it_again()
     {
         // given

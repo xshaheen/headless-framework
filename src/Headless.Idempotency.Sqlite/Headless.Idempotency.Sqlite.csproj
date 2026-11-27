@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>SQLite provider for Headless durable idempotency: an idempotency record table whose rows carry their own lease and generation, with database-clock leases and retention and a bounded retention purge.</Description>
     <PackageTags>headless;idempotency;idempotency-key;sqlite;dotnet</PackageTags>
     <RootNamespace>Headless.Idempotency.Sqlite</RootNamespace>

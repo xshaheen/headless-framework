@@ -14,6 +14,23 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
     private const string _Schema = "settings_sql_raw";
 
     [Fact]
+    public async Task should_keep_ordinally_distinct_scope_keys()
+    {
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var first = new SettingValueRecord(Guid.NewGuid(), "Sample", "first", "Tenant", "org-a");
+        var second = new SettingValueRecord(Guid.NewGuid(), "Sample", "second", "Tenant", "Org-A");
+
+        await repository.InsertAsync(first, AbortToken);
+        await repository.InsertAsync(second, AbortToken);
+
+        ((await repository.FindAsync("Sample", "Tenant", "org-a", AbortToken))?.Id).Should().Be(first.Id);
+        ((await repository.FindAsync("Sample", "Tenant", "Org-A", AbortToken))?.Id).Should().Be(second.Id);
+    }
+
+    [Fact]
     public async Task should_create_missing_indexes_when_tables_already_exist()
     {
         // given

@@ -1,10 +1,11 @@
 <Project Sdk="Headless.NET.Sdk.Test">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
+    <!-- A real failed SaveChanges logs its DbUpdateException as a template value; SQLite in memory needs no server. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <!-- Ships the [LoggerMessage] generator that emits classified parameters; package analyzers do not flow transitively. -->
     <PackageReference Include="Microsoft.Extensions.Telemetry.Abstractions" />

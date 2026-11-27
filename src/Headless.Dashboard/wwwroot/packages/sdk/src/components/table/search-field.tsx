@@ -38,6 +38,8 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
   const [text, setText] = useState(defaultValue)
   const sent = useRef(defaultValue.trim())
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const onSearchRef = useRef(onSearch)
+  onSearchRef.current = onSearch
 
   function cancel() {
     clearTimeout(timer.current)
@@ -50,7 +52,7 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
 
     if (next !== sent.current) {
       sent.current = next
-      onSearch(next)
+      onSearchRef.current(next)
     }
   }
 
@@ -62,6 +64,17 @@ export function SearchField({ label, onSearch, mode = 'debounce', delay = defaul
       timer.current = setTimeout(() => send(value), delay)
     }
   }
+
+  // Sync with external URL changes (Clear filters, Back) without remounting the field or dropping keyboard focus.
+  useEffect(() => {
+    const normalized = defaultValue.trim()
+
+    if (normalized !== sent.current) {
+      cancel()
+      sent.current = normalized
+      setText(defaultValue)
+    }
+  }, [defaultValue])
 
   useEffect(() => cancel, [])
 

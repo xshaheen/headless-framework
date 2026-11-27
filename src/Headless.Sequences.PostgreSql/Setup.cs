@@ -163,6 +163,11 @@ public static class SetupSequencesPostgreSql
                 // INSERT … ON CONFLICT DO UPDATE is one statement, so it commits on its own as rendered.
                 autocommitIncrement: static upsert => upsert
             ));
+            services.TryAddSingleton<ISequenceCounterReader>(sp => new RelationalSequenceCounterReader(
+                PostgreSqlDialect.Instance,
+                sp.GetRequiredService<IOptions<PostgreSqlSequencesOptions>>().Value,
+                sp.GetRequiredService<TimeProvider>()
+            ));
         }
     }
 }

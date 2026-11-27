@@ -38,6 +38,7 @@ Headless.Captcha.Abstractions
 Headless.Captcha.ReCaptcha
 Headless.Captcha.Turnstile
 Headless.Checks
+Headless.Cluster.Dashboard
 Headless.Context
 Headless.Context.Abstractions
 Headless.Coordination
@@ -50,6 +51,7 @@ Headless.Coordination.Sqlite
 Headless.Couchbase
 Headless.Dashboard
 Headless.DataProtection.Blobs
+Headless.DevInbox.Dashboard
 Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions
 Headless.DistributedLocks.Database
@@ -101,6 +103,7 @@ Headless.Http.Resilience
 Headless.Idempotency
 Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
+Headless.Idempotency.Dashboard
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
 Headless.Idempotency.ResponseReplay
@@ -120,6 +123,7 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.Leases.Dashboard
 Headless.Logging
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore
@@ -170,6 +174,7 @@ Headless.PushNotifications.Apns
 Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
 Headless.RateLimiting
+Headless.RateLimiting.Dashboard
 Headless.Redis
 Headless.Reliability.Abstractions
 Headless.Search
@@ -177,6 +182,7 @@ Headless.Search.PostgreSql
 Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
+Headless.Sequences.Dashboard
 Headless.Sequences.PostgreSql
 Headless.Sequences.Sql
 Headless.Sequences.SqlServer

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Headless.Caching;
 using Headless.MultiTenancy;
@@ -1007,6 +1008,7 @@ public sealed partial class TenantCatalogServiceTests : TestBase
         // given — a cache hit on the id axis always returns a base-shape clone
         var cached = new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
         cached.ExtraProperties["region"] = "eu";
+        cached.ExtraProperties["routing"] = new List<string> { "eu" };
         _infoCache
             .GetAsync(Arg.Any<string>(), AbortToken)
             .Returns(new CacheValue<TenantInfoCacheItem>(new TenantInfoCacheItem(cached), hasValue: true));
@@ -1014,11 +1016,52 @@ public sealed partial class TenantCatalogServiceTests : TestBase
         // when
         var first = await _sut.FindByIdAsync("ten_1", AbortToken);
         first!.ExtraProperties["region"] = "mutated";
+        var routing = first.ExtraProperties["routing"].Should().BeOfType<JsonElement>().Which;
+        routing[0].GetString().Should().Be("eu");
+        first.ExtraProperties["routing"] = new List<string> { "mutated" };
         var second = await _sut.FindByIdAsync("ten_1", AbortToken);
 
         // then
         second.Should().NotBeSameAs(first);
         second!.ExtraProperties["region"].Should().Be("eu");
+        routing = second.ExtraProperties["routing"].Should().BeOfType<JsonElement>().Which;
+        routing[0].GetString().Should().Be("eu");
+    }
+
+    [Fact]
+    public async Task should_keep_the_custom_store_result_when_its_metadata_cannot_be_cached()
+    {
+        var tenant = new TenantInfo("ten_1", "acme", "Acme", isEnabled: true);
+        tenant.ExtraProperties["unsupported"] = typeof(TenantCatalogServiceTests);
+        _store.FindByIdAsync(tenant.Id, AbortToken).Returns(tenant);
+
+        var resolved = await _sut.FindByIdAsync(tenant.Id, AbortToken);
+
+        resolved.Should().BeSameAs(tenant);
+        await _infoCache
+            .DidNotReceive()
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<TenantInfoCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_reload_from_the_store_when_cached_metadata_cannot_be_copied()
+    {
+        var cached = new TenantInfo("ten_1", "acme", "Old", isEnabled: true);
+        cached.ExtraProperties["unsupported"] = typeof(TenantCatalogServiceTests);
+        _infoCache
+            .GetAsync(TenantInfoCacheItem.CalculateCacheKey(cached.Id), AbortToken)
+            .Returns(new CacheValue<TenantInfoCacheItem>(new TenantInfoCacheItem(cached), hasValue: true));
+        var tenant = new TenantInfo(cached.Id, "acme", "Current", isEnabled: true);
+        _store.FindByIdAsync(tenant.Id, AbortToken).Returns(tenant);
+
+        var resolved = await _sut.FindByIdAsync(tenant.Id, AbortToken);
+
+        resolved.Should().BeSameAs(tenant);
     }
 
     #endregion

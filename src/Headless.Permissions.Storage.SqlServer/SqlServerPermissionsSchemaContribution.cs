@@ -6,12 +6,12 @@ using Headless.Sql.SqlServer;
 namespace Headless.Permissions.SqlServer;
 
 /// <summary>
-/// The Permissions feature's schema contribution for SQL Server: the grant, definition, and group tables and their
-/// indexes, as one idempotent step the Headless schema runner applies.
+/// The Permissions feature's schema contribution for SQL Server: grant, definition, and group tables, indexes, and ordinal tenant IDs.
 /// </summary>
 internal static class SqlServerPermissionsSchemaContribution
 {
     public const string StepVersion = "1";
+    private const string _OrdinalScopeStepVersion = "2";
 
     private static readonly RelationalPermissionsTables _Defaults = new(
         SqlServerDialect.Instance,
@@ -98,6 +98,18 @@ internal static class SqlServerPermissionsSchemaContribution
             """
         );
 
+        // A tenant identifier is ordinal in the catalog and in cache keys, independent of the database collation.
+        var ordinalScopeSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            DROP INDEX IF EXISTS [IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable};
+            DROP INDEX IF EXISTS [IX_{grantsName}_Name_ProviderName_ProviderKey_NoTenant] ON {grantsTable};
+            ALTER TABLE {grantsTable} ALTER COLUMN [TenantId] nvarchar({lengths.PermissionGrantsTenantIdMaxLength}) COLLATE Latin1_General_100_BIN2 NULL;
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{grantsName}_Name_ProviderName_ProviderKey_NoTenant] ON {grantsTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NULL;
+            """
+        );
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Permissions",
@@ -111,6 +123,7 @@ internal static class SqlServerPermissionsSchemaContribution
             steps:
             [
                 new SchemaStep(StepVersion, "Create the grant, definition, and group tables and their indexes.", sql),
+                new SchemaStep(_OrdinalScopeStepVersion, "Compare grant tenant IDs ordinally.", ordinalScopeSql),
             ],
             hostStateTables: [definitionsName, groupsName],
             objects:

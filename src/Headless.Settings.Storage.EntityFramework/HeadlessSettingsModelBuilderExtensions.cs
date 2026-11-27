@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.EntityFramework.Internal;
 using Headless.Hosting;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -17,7 +18,8 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// <summary>
         /// Applies the Headless settings entity configurations, resolving <see cref="SettingsStorageOptions"/>
         /// from the <paramref name="context"/>'s service provider and the naming style from its database provider
-        /// (snake_case on PostgreSQL, PascalCase elsewhere). Call from <c>OnModelCreating</c> with
+        /// (snake_case on PostgreSQL, PascalCase elsewhere). On SQL Server, maps provider keys with a binary
+        /// collation so keys that differ in case or accent identify separate scopes. Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.ConfigureHeadlessSettings(this)</c> to avoid injecting the options into the context.
         /// </summary>
         /// <param name="context">
@@ -34,9 +36,16 @@ public static class HeadlessSettingsModelBuilderExtensions
             Argument.IsNotNull(context);
 
             var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
-            var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
+            var provider = context.Database.ProviderName;
+            var style = HeadlessStorageNaming.ForProvider(provider);
 
-            return modelBuilder.ConfigureHeadlessSettings(options, style);
+            modelBuilder.ConfigureHeadlessSettings(options, style);
+            SqlServerScopeCollation.Configure(
+                modelBuilder.Entity<SettingValueRecord>().Property(x => x.ProviderKey),
+                provider
+            );
+
+            return modelBuilder;
         }
 
         /// <summary>
@@ -51,6 +60,8 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
         /// </param>
         /// <returns>The same <see cref="ModelBuilder"/> instance to allow chaining.</returns>
+        /// <remarks>On SQL Server, explicitly map <see cref="SettingValueRecord.ProviderKey"/> with the
+        /// <c>Latin1_General_100_BIN2</c> collation when using this overload.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="options"/> is <see langword="null"/>.
         /// </exception>

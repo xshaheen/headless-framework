@@ -1,0 +1,42 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>The Leases module of the Headless dashboard: the fenced leases the fencing store holds and the distributed locks the lock provider reports, read-only.</Description>
+    <PackageTags>headless;fencing;leases;distributed-locks;dashboard;dotnet</PackageTags>
+    <RootNamespace>Headless.Leases</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Leases.Dashboard.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Fencing\Headless.Fencing.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+  <!--
+    The front end is the Leases dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/leases, which embeds as Headless.Leases.wwwroot.dist.modules.leases.* (LeasesAssets), then
+    holds the module to its size budgets and writes .build-complete last, so a build whose budget step failed is not up
+    to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
+</Project>

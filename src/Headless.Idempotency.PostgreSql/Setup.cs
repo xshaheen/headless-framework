@@ -121,6 +121,7 @@ public static class SetupIdempotencyPostgreSql
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
         static services => services.AddUnitOfWork(),
-        PostgreSqlIdempotencySchemaContribution.Create
+        PostgreSqlIdempotencySchemaContribution.Create,
+        "octet_length"
     );
 }

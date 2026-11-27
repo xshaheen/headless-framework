@@ -23,7 +23,8 @@ public sealed class MaxMindDatabaseProvisionerTests : MaxMindTestBase
         await resource.ProvisionAsync(AbortToken);
 
         // then
-        resource.Kind.Should().Be("MaxMind");
+        // The value is what an operator passes to 'resources provision -k', so the constant must not change it.
+        resource.Kind.Should().Be(SetupMaxMind.DatabasesResourceKind).And.Be("MaxMind");
         resource.Name.Should().Be("databases");
         Handler.Downloads.Should().Be(2);
         File.Exists(_PathOf(TestDatabases.CityEdition)).Should().BeTrue();
@@ -161,5 +162,5 @@ public sealed class MaxMindDatabaseProvisionerTests : MaxMindTestBase
     private static IResourceProvisioner _Resource(IServiceProvider provider) =>
         provider
             .GetServices<IResourceProvisioner>()
-            .Single(r => string.Equals(r.Kind, "MaxMind", StringComparison.Ordinal));
+            .Single(r => string.Equals(r.Kind, SetupMaxMind.DatabasesResourceKind, StringComparison.Ordinal));
 }

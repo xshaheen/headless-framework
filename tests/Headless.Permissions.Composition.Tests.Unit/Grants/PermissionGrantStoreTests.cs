@@ -1027,6 +1027,58 @@ public sealed class PermissionGrantStoreTests : TestBase
     }
 
     [Fact]
+    public async Task should_repair_the_cached_grant_when_a_committed_revoke_is_retried()
+    {
+        const string name = "Users.Delete";
+        var key = PermissionGrantCacheItem.CalculateCacheKey(name, _ProviderName, _ProviderKey);
+        _rows[name] = new PermissionGrantRecord(Guid.NewGuid(), name, _ProviderName, _ProviderKey, true);
+        _repository.FindAsync(name, _ProviderName, _ProviderKey, AbortToken).Returns(_ => _rows[name]);
+        var cached = new PermissionGrantCacheItem(isGranted: true);
+        var fail = true;
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), CancellationToken.None)
+            .Returns(_ =>
+            {
+                if (fail)
+                {
+                    fail = false;
+                    throw new IOException("cache unavailable after commit");
+                }
+
+                return ValueTask.FromResult<IDictionary<string, CacheValue<PermissionGrantCacheItem>>>(
+                    new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
+                    {
+                        [key] = new(cached, hasValue: true),
+                    }
+                );
+            });
+        _cache
+            .TryReplaceIfEqualAsync(
+                key,
+                Arg.Any<PermissionGrantCacheItem>(),
+                Arg.Any<PermissionGrantCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                CancellationToken.None
+            )
+            .Returns(call =>
+            {
+                cached = call.ArgAt<PermissionGrantCacheItem>(2);
+                return true;
+            });
+        _cache.GetAsync(key, AbortToken).Returns(_ => new CacheValue<PermissionGrantCacheItem>(cached, hasValue: true));
+
+        await _sut.RevokeAsync(name, _ProviderName, _ProviderKey, AbortToken);
+        _rows[name].IsGranted.Should().BeFalse();
+        cached.IsGranted.Should().BeTrue();
+
+        await _sut.RevokeAsync(name, _ProviderName, _ProviderKey, AbortToken);
+
+        (await _sut.IsGrantedAsync(name, _ProviderName, _ProviderKey, AbortToken))
+            .Should()
+            .Be(PermissionGrantStatus.Prohibited);
+    }
+
+    [Fact]
     public async Task should_update_cache_on_revoke()
     {
         // given
@@ -1143,7 +1195,51 @@ public sealed class PermissionGrantStoreTests : TestBase
 
     #endregion GetAllGrantsAsync
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_return_success_when_cache_refresh_fails_after_a_batch_write(bool isGranted)
+    {
+        string[] names = ["Users.Create", "Users.Update"];
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        _FailCacheRefresh();
+        Func<IReadOnlyCollection<string>, string, string, CancellationToken, Task> write = isGranted
+            ? _sut.GrantAsync
+            : _sut.RevokeAsync;
+
+        await write(names, _ProviderName, _ProviderKey, AbortToken);
+
+        _rows.Keys.Should().BeEquivalentTo(names);
+        _rows.Values.Should().OnlyContain(row => row.IsGranted == isGranted);
+    }
+
+    [Fact]
+    public async Task should_return_deleted_names_when_cache_refresh_fails_after_the_delete()
+    {
+        const string name = "Users.Create";
+        var grant = new PermissionGrantRecord(Guid.NewGuid(), name, _ProviderName, _ProviderKey, true);
+        _rows.Add(name, grant);
+        _repository.GetListAsync(_ProviderName, _ProviderKey, AbortToken).Returns([grant]);
+        _FailCacheRefresh();
+
+        var deleted = await _sut.DeleteAsync(_ProviderName, _ProviderKey, AbortToken);
+
+        deleted.Should().Equal(name);
+        _rows.Should().BeEmpty();
+    }
+
     #region Helpers
+
+    private void _FailCacheRefresh()
+    {
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), CancellationToken.None)
+            .Returns(
+                ValueTask.FromException<IDictionary<string, CacheValue<PermissionGrantCacheItem>>>(
+                    new IOException("The committed grants could not be read from the cache.")
+                )
+            );
+    }
 
     private static PermissionDefinition _CreatePermission(string name, bool isEnabled = true)
     {

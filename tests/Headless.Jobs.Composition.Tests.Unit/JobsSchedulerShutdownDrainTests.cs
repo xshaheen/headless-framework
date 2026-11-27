@@ -117,6 +117,9 @@ public sealed class JobsSchedulerShutdownDrainTests : TestBase
                 }
             );
 
+        manager
+            .SetTickersInProgress(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState[]>()));
         JobStatus? persistedStatus = null;
         manager
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())

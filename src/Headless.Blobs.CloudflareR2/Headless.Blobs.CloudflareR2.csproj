@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Cloudflare R2 integration for Headless blob storage.</Description>
     <PackageTags>headless;blobs;cloudflare-r2;dotnet</PackageTags>
   </PropertyGroup>

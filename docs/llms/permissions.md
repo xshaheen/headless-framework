@@ -102,6 +102,7 @@ Each provider returns one state per permission:
 The grant store caches each grant status in the registered `ICache`, keyed by the current tenant id. A check for tenant A never returns a cached result for tenant B.
 
 - **Writes update the cache.** `IPermissionManager.SetAsync` writes the new status into the cache, and `DeleteAsync` marks the deleted names undefined. A `unit.Permissions` write updates the cache only after its unit commits, under the tenant that made the write. A rolled-back unit leaves the cache as it was. A cache fault after a commit is logged, not thrown.
+- **Retrying a single write.** Granting or revoking one permission refreshes the cached status even when the database already holds the requested decision.
 - **Races resolve to the last commit.** A check that read the rows before a concurrent write never overwrites the newer status. Two writes to one grant leave the last committed status cached. Each write costs one extra repository read to guarantee this.
 - **Bypassing writes go stale.** A direct EF `IPermissionGrantRepository` write updates the cache too. Raw SQL, a direct `DbContext` write, or a direct PostgreSQL or SQL Server repository call does not, and the old status stays cached for `PermissionManagementOptions.GrantCacheExpiration` (default 5 hours).
 - **Force a reload.** A long-lived consumer that must see such a write sooner, such as a streaming connection that checks a credential per event, calls `IPermissionGrantStore.RefreshAsync(providerName, providerKey)`. It reloads every grant of that user or role and replaces the cached statuses.
@@ -242,6 +243,7 @@ The dynamic store reads definitions from the database. It is off by default (`Is
 
 - **Run it on every release.** The host start does not seed. Run `dotnet app.dll seed` (or `deploy`) in the deployment. In development, call `services.AddDeployStepsOnStartup(o => o.Resources = ResourceStartupAction.None)`. `HeadlessTestServer` seeds by default. See [Database Seeders](utilities.md#database-seeders).
 - **Retries.** A failed save retries up to 10 times with jittered exponential back-off capped at 30 seconds. Cancellation, `ArgumentException`, and `NotSupportedException` fail at once. The back-off waits real time, even under a `FakeTimeProvider`. A failed seed fails the `seed` verb, or the host start under `AddDeployStepsOnStartup`.
+- **Cache refresh.** If the definition rows committed before the common cache stamp could be updated, the next seed attempt updates the stamp so warm peers can reload.
 - **Extra properties.** `ExtraProperties` are stored as JSON. Keys keep their case, and values read back as `string`, `bool`, `long`, `decimal`, or `JsonElement`. Read them with `GetProperty<T>(name)`. Re-seeding unchanged definitions writes nothing.
 - **Deleting definitions.** List removed names in `PermissionManagementProvidersOptions.DeletedPermissions` or `DeletedPermissionGroups` (`services.Configure<PermissionManagementProvidersOptions>(...)`). The next seed removes them.
 
@@ -617,6 +619,9 @@ Create the tables with an EF migration. The provider writes no DDL.
 - `setup.UseEntityFramework<TContext>()` registers the EF storage provider.
 - `modelBuilder.ConfigureHeadlessPermissions(DbContext context)` maps the entities. It reads `PermissionsStorageOptions` from the context's service provider and picks snake_case on Npgsql, PascalCase on every other provider.
 - `modelBuilder.ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` maps them from options you hold. Pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database.
+- On SQL Server, `ConfigureHeadlessPermissions(this)` sets `PermissionGrantRecord.TenantId` to `Latin1_General_100_BIN2` so IDs that differ in case or accent identify separate tenants. If you pass `PermissionsStorageOptions` directly or map the entity yourself, set the column collation with `UseCollation("Latin1_General_100_BIN2")`.
+- Startup throws `InvalidOperationException` if the SQL Server model gives `PermissionGrantRecord.TenantId` a different or unspecified collation. The validator also accepts a model default of `Latin1_General_100_BIN2` when the column inherits it. The check reads EF metadata, so apply the migration to bring the database into line with the model.
+- For an existing EF-managed SQL Server database, generate and apply a collation migration. In both migration directions, drop the index filtered by `TenantId IS NULL` before altering the column. Recreate the index afterward. EF Core only rebuilds indexes that list `TenantId` as a key or included column.
 
 ### Design and runtime behavior
 

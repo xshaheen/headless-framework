@@ -1,6 +1,6 @@
 ---
 domain: Sequences
-packages: Sequences.Abstractions, Sequences, Sequences.Sql, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
+packages: Sequences.Abstractions, Sequences, Sequences.Dashboard, Sequences.Sql, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
 ---
 
 # Sequences
@@ -75,7 +75,10 @@ SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); //
 - The tenant is read from `ICurrentTenant` on every call. There is no tenant argument; host code numbering on behalf of a tenant switches with `ICurrentTenant.Change(...)`. With no tenant (`Id` is `null`), calls use the host counter. An empty or whitespace tenant id is refused, so it can never fall into the host counter.
 - Names and partitions compare ordinally and case-sensitively: `"INV"` and `"inv"` are two counters. A name may be at most 128 characters, a partition at most 64, and a tenant id at most 128 (`SequenceFieldLimits`). Longer values, a blank name, a whitespace-only partition, and any key part that starts or ends with whitespace throw `ArgumentException` before any SQL runs, so `"acme"` and `"acme "` never share a counter on SQL Server. A key part with a NUL character or an unpaired UTF-16 surrogate throws the same way, because not every provider stores them faithfully. A `null` or empty partition means no partition.
 - Create the table at deploy time with `resources provision` (see [Resource provisioning](utilities.md#resource-provisioning)). A host start only verifies it and fails when it is missing. A call against a missing table fails, and on PostgreSQL that failure aborts the caller's unit.
-- There is no reset, set, peek, or delete API. Start a new period with a new partition.
+- There is no reset, set, or delete API. Start a new period with a new partition.
+- Read a counter's value through `ISequenceInspector`. Never call `NextAsync`, `NextNumberAsync`, or `ReserveAsync` to peek at a counter: each takes a number, and on a gap-free counter that number becomes a real gap. See [Inspecting counters](#inspecting-counters).
+- Put every `ISequenceInspector` call behind operator authorization. Inspection ignores `ICurrentTenant` and reads every tenant's counters unless the query sets `TenantId`.
+- To give operators a counter screen without writing one, add `dashboard.AddSequences()` from `Headless.Sequences.Dashboard`; see [Headless.Sequences.Dashboard](#headlesssequencesdashboard).
 - On SQL Server, the first call on a new counter takes a key-range lock on the gap in the primary key that holds the new key. In gap-free mode that lock is held until the unit commits, so first use of any other new counter whose key sorts into the same gap waits, for any tenant and from either mode. Two units that each first-use several new counters can deadlock on those ranges. Keep a unit that takes a counter's first number short. PostgreSQL locks only the conflicting key.
 
 ## Core Concepts
@@ -93,11 +96,11 @@ The stored key is (tenant id, name, partition). The host tenant and "no partitio
 | Policy member | Default | Effect |
 | --- | --- | --- |
 | `Format` | `null` (the bare value) | Template. `{seq}` is the value and `{seq:D6}` pads it to six digits (widths 1 to 19). `{yyyy}`, `{yy}`, `{MM}`, `{dd}` are the issue date. `{fy}` is the year the fiscal year starts in. `{{` and `}}` write a brace. An unknown token fails options validation at startup, and so does a template that would print one number twice: it must hold exactly one `{seq}`, and the tokens of its reset period (`Year`: `{yyyy}` or `{yy}`; `Month`: also `{MM}`; `Day`: also `{dd}`; `FiscalYear`: `{fy}`). |
-| `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. |
+| `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. Only `NextNumberAsync` picks the period: `NextAsync` and `ReserveAsync` store the partition you pass, or none, under any policy. |
 | `FiscalYearStartMonth` | 1 | The month (1 to 12) the fiscal year starts in, for `Reset = FiscalYear` and `{fy}`. With 7, 8 October 2026 is in `FY2026` and 8 March 2027 too. |
 | `TimeZone` | UTC | The zone the issue date and period are decided in, so a daily counter starts again at the business's local midnight. |
 
-The date comes from the registered `TimeProvider`, converted into the policy's zone. In the gap-free mode, a retry whose first attempt rolled back takes the same number again. A retry that replays a stored response through `Headless.Idempotency.ResponseReplay` returns the number the first attempt committed. Voiding a document is the application's record: the number stays used.
+The date comes from the registered `TimeProvider`, converted into the policy's zone. To show which period a number taken now goes to, or when a counter rolls over, call `policy.PartitionAt(instant)` and `policy.NextResetAt(instant)`. They apply the same calendar, fiscal-year, and time-zone rules as numbering, and both return `null` for `Reset = Never`. `NextResetAt` returns a UTC instant: the local midnight that starts the next period. When a daylight-saving jump skips that midnight, it returns the first instant of the new local date, and when the clock falls back over midnight, the earlier of the two instants. In the gap-free mode, a retry whose first attempt rolled back takes the same number again. A retry that replays a stored response through `Headless.Idempotency.ResponseReplay` returns the number the first attempt committed. Voiding a document is the application's record: the number stays used.
 
 ### Reported counters
 
@@ -142,6 +145,57 @@ setup.Policy("ticket", new SequencePolicy { BlockSize = 50 });
 ### Overflow
 
 When an allocation would advance a stored counter past `long.MaxValue`, SQLite throws `OverflowException` and preserves the stored value. PostgreSQL and SQL Server report their native arithmetic errors (`22003` and 8115).
+
+### Inspecting counters
+
+Inject `ISequenceInspector` to show counters to an operator, for example in a dashboard; the unified dashboard's Sequences module already does (see [Headless.Sequences.Dashboard](#headlesssequencesdashboard)). Every call is one read-only statement with no transaction: it never takes, reserves, or changes a number, and does not wait on a gap-free unit's row lock (see the engine notes below for the exceptions).
+
+```csharp
+SequenceCounterPage page = await inspector.ListCountersAsync(
+    new SequenceCounterQuery { TenantId = "acme", Mode = SequenceMode.GapFree, CurrentPartitionsOnly = true, Limit = 50 },
+    ct);
+
+foreach (SequenceCounter counter in page.Items)
+{
+    // counter.Key (tenant, name, partition), counter.Value, counter.UpdatedAt, counter.Policy,
+    // counter.IsCurrentPartition, counter.LastNumber ("REC-2026-000042"), counter.NextResetAt
+}
+
+// Pass page.Next as After for the next page; it is null on the last page.
+SequencePartitionPage periods = await inspector.ListPartitionsAsync(new SequencePartitionQuery { TenantId = "acme", Name = "invoice" }, ct);
+SequenceCounterSummary summary = await inspector.GetSummaryAsync(new SequenceSummaryQuery { TenantId = "acme" }, ct);
+```
+
+| Call | Returns |
+| --- | --- |
+| `ListCountersAsync(SequenceCounterQuery)` | One page of counters in key order (tenant id, name, partition), in the database's binary key order. That order can differ from .NET ordinal order for characters outside the Basic Multilingual Plane. `Next` is the key to pass as `After`. |
+| `ListPartitionsAsync(SequencePartitionQuery)` | One page of one name's partitions in one tenant, newest partition first. `Next` is the partition to pass as `Before`. |
+| `GetSummaryAsync(SequenceSummaryQuery)` | `Total`, `Fast`, `GapFree`, and `Reported` counts, and `NextResetAt`, the earliest next reset of the registered policies and the default policy. |
+
+Filters, all optional and combined:
+
+- `TenantId`: an exact tenant id, or `""` for the host scope. `null` reads every tenant.
+- `Name`: an exact counter name.
+- `Search`: text the name or the tenant id contains, matched literally (`%` and `_` match themselves), ignoring case for ASCII letters only. A non-ASCII letter matches only as typed. At most 128 characters.
+- `Mode`: the mode of the policy each name resolves to now (its registered policy, else the default policy). Modes are never stored, so changing a name's policy moves its counters to the new mode.
+- `CurrentPartitionsOnly`: for a resetting policy, only the partition it chooses now. A policy with `Reset = Never` keeps every partition, so reported counters partitioned by device stay visible. A partition the caller chose under a resetting policy (a device id on a monthly name) is never the policy's period, so it is not current and this filter drops it.
+
+What each counter shows:
+
+- `IsCurrentPartition` is `false` for a closed period, whose `Value` is the period's final value. It is always `true` under a policy that never resets.
+- `LastNumber` is `Value` formatted with the policy's `Format`, or `null` for a reported policy or one with no format. Its date is `UpdatedAt` in the policy's zone when that date is inside the partition's period, otherwise the period's first day. Under a policy that never resets, the date is `UpdatedAt` and can differ from the date the number was printed with.
+- `Value` of a fast policy with `BlockSize` above 1 is the end of the last reserved block, not the last number a host handed out.
+- `UpdatedAt` comes from the database clock.
+
+Limits and engine differences:
+
+- `Limit` is 1 to 200 (default 50); outside that range the call throws `ArgumentOutOfRangeException`. An invalid tenant id, name, partition, or search term throws `ArgumentException` before any SQL runs.
+- `GetSummaryAsync` stops counting at 10,000 counters. Past that, `Capped` is `true` and the counts cover the first 10,000 in key order.
+- On PostgreSQL and SQLite, a counter an open gap-free unit is writing shows its last committed value. SQL Server skips that counter (`READPAST`), so a page or a count can miss it until the unit ends. `READPAST` skips row locks only, so on SQL Server an inspection still waits behind a page or table lock an open unit holds.
+- On SQLite with the default rollback journal, an inspection waits while a writer commits, and a long read delays that commit. Set `PRAGMA journal_mode=WAL` on the database so reads and commits never wait on each other.
+- There is no write, reset, or edit member. Inspection reads only.
+
+**Verify:** after `NextAsync("receipt")` in tenant `acme`, `ListCountersAsync(new SequenceCounterQuery { TenantId = "acme", Name = "receipt" })` returns one counter with `Value` 1, and a second read leaves the value unchanged. In a test, assert the counter's value before and after inspection.
 
 ## Choosing a Provider
 
@@ -208,7 +262,48 @@ A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or re
 - `AddHeadlessSequences` requires exactly one `Use…` provider call and throws when there are none or several, or when it is called twice.
 - It registers `ISequenceGenerator` and the gap-free unit-of-work feature as singletons, and `TimeProvider.System` unless the host registered a `TimeProvider`. It also registers the async-local `CurrentTenant` as the `ICurrentTenant` fallback, so `ICurrentTenant.Change(...)` works with no other tenancy registration. A real tenancy registration wins.
 - A gap-free call checks the arguments, the name's mode, the unit's state, and the unit's database and transaction before it writes. A refused call runs no statement and leaves the unit retryable.
-- `ISequenceStore` is the provider seam. Applications do not call it.
+- It registers `ISequenceInspector` as a singleton. Inspection reads through `ISequenceCounterReader`, which each provider registers, and never resolves `ICurrentTenant` or a numbering service.
+- `ISequenceStore` is the numbering provider seam, and `ISequenceCounterReader` the inspection one. Applications call neither.
+
+---
+
+## Headless.Sequences.Dashboard
+
+The Sequences module of the unified dashboard: a read-only view of every stored counter across host and tenant scopes, with its value, last formatted number, partition, policy, and next reset, and the partitions of its name. Use it instead of writing the operator screen [Inspecting counters](#inspecting-counters) describes.
+
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards/sequences-module.md](dashboards/sequences-module.md) lists the endpoints, their query parameters, the counter id, and the `400`, `404`, and `503` answers.
+
+### Setup
+
+```bash
+dotnet add package Headless.Sequences.Dashboard
+```
+
+```csharp
+using Headless.Dashboard;
+using Headless.Sequences;
+
+builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(connectionString));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => host.ViewPolicy = "ops.view")
+    .AddSequences());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+**Verify:** start the host. Without `AddHeadlessSequences(...)` it fails to start naming that call. With it, the Platform tab shows Sequences with the number of stored counters, and a signed-in viewer's `GET /headless/api/sequences/counters` answers `200` with them.
+
+### Runtime behavior
+
+- Every read goes through `ISequenceInspector`, so opening the screen never takes a number. The module has no command and no route that changes a counter.
+- The screen shows every tenant's counters. Give its view policy only to operators who may see every tenant's numbering.
+- The list filters by mode, by scope (every tenant, the host scope, or one exact tenant id), by current partition, and by text in the name or tenant id. The filters live in the URL, and `?open=<id>` opens one counter.
+- A counter whose name has no registered policy reads Default policy, because its mode comes from `SequencesOptions.DefaultPolicy`.
+- A failing counter store answers `503` with `The sequence store is unavailable.` and the screen shows the error, never a zero count.
+- The engine notes under [Inspecting counters](#inspecting-counters) apply: SQL Server skips a counter an open gap-free unit is writing, and SQLite needs WAL mode so reads never wait on a commit.
 
 ---
 
@@ -229,6 +324,7 @@ Each relational provider package references it, so applications install the prov
 ### Design and runtime behavior
 
 - Each call is one upsert that creates the counter row on first use and adds the step on every later use, returning the value it wrote.
+- Each inspection call is one `SELECT` on its own connection with no transaction, over a table reference that never waits on a locked row, and retries a transient fault.
 - `RelationalSequencesOptions` is the options base every relational provider's options derive from (`PostgreSqlSequencesOptions`, `SqlServerSequencesOptions`, `SqliteSequencesOptions`): `ConnectionString`, `CommandTimeout` (positive, at most 1 hour; default 30 seconds), `Schema`, and `TableName`.
 
 ---
@@ -305,7 +401,7 @@ Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnit
 ### Design and runtime behavior
 
 - Each call is one batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK)`, then an `INSERT` in the same transaction when the key is new. A caller transaction running `SET XACT_ABORT ON` is safe: the batch never relies on catching a duplicate key.
-- Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
+- Key columns use a binary (`_BIN2`) collation, so names compare ordinally, as on PostgreSQL. Inspection folds A-Z on both sides of a search (`TRANSLATE`, which needs SQL Server 2017 or later), so it still ignores ASCII case, and it reads with `READPAST`, so it skips a counter an open unit is writing. The clustered primary key is exactly `(TenantId, Name, Partition)`, and it is what makes the range lock above serialize first use.
 - The fast path opens its own connection and sends the increment as one command that opens and commits its own READ COMMITTED transaction under `SET XACT_ABORT ON`, so a call costs one round trip and concurrent callers of one counter wait only for that command. Both settings stay on the fast path's own pooled connection, which the pool resets before reuse. It retries a transient fault (a deadlock, 1205, a snapshot update conflict, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) on a fresh connection up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them. A retried fault may come after the server committed the command; that value was never returned, so the retry leaves a gap, never a duplicate.
 - The gap-free path runs the plain batch on the unit's own connection and transaction with no retry, and leaves the session's `XACT_ABORT` setting as the caller set it. With `XACT_ABORT ON`, a timeout or cancellation rolls back the caller's transaction.
 - The table and its clustered key are a step `resources provision` applies through the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts). It is recorded in `headless_schema_history` as `Sequences/1` (`Sequences:<table>/1` for a configured table name).

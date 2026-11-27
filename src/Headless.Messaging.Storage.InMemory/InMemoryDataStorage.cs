@@ -1696,59 +1696,28 @@ internal sealed partial class InMemoryDataStorage(
         // earlier-scheduled row be starved indefinitely once the batch limit is reached. StorageId is
         // only a deterministic tie-break — it is not byte-comparable with uuid/uniqueidentifier
         // ordering, which matters to nothing, since no guarantee rests on rows sharing a NextRetryAt.
-        // Rows with no NextRetryAt sort last and are rejected below without consuming a slot. Reading
-        // the sort key outside the row lock is safe: eligibility is re-validated under it before leasing.
+        // Snapshot and sort only plausible candidates. A row that becomes due while scanning can be picked up on the
+        // next poll, and eligibility is rechecked under its lock before granting a lease.
         var claimed = new List<MediumMessage>();
         var ordered = source
-            .Values.OrderBy(candidate => candidate.NextRetryAt ?? DateTimeOffset.MaxValue)
-            .ThenBy(candidate => candidate.StorageId);
+            .Select(static entry => (Row: entry.Value, DueAt: entry.Value.NextRetryAt))
+            .Where(candidate => isEligible(candidate.Row, candidate.DueAt))
+            .OrderBy(static candidate => candidate.DueAt)
+            .ThenBy(static candidate => candidate.Row.StorageId);
 
-        foreach (var candidate in ordered)
+        foreach (var (candidate, _) in ordered)
         {
             if (claimed.Count >= retryBatchSize)
             {
                 break;
             }
 
-            if (!string.Equals(candidate.Version, version, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            // Skipped before the batch limit, as the relational providers filter inside their candidate query, so
-            // rows of consumers this host does not run neither consume a batch slot nor get leased.
-            if (consumerIdentities?.Contains(candidate.ConsumerIdentity, StringComparer.Ordinal) == false)
-            {
-                continue;
-            }
-
             lock (candidate)
             {
-                if (!_IsSupportedLane(candidate.Lane))
-                {
-                    continue;
-                }
-
-                if (orphaned.HasValue && candidate.IsInboxOrphaned != orphaned.Value)
-                {
-                    continue;
-                }
-
-                if (candidate.Lane != lane)
-                {
-                    continue;
-                }
-
-                if (candidate.NextRetryAt is null || candidate.NextRetryAt > now)
-                {
-                    continue;
-                }
-
-                // Terminal-row exclusion is already enforced by the NextRetryAt > now check
-                // above (terminal Succeeded/Failed rows have NextRetryAt IS NULL and so are
-                // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
-                // block was unreachable and has been removed.
-                if (!_TryGrantLease(candidate, now, leaseDuration, holder))
+                if (
+                    !isEligible(candidate, candidate.NextRetryAt)
+                    || !_TryGrantLease(candidate, now, leaseDuration, holder)
+                )
                 {
                     continue;
                 }
@@ -1770,6 +1739,14 @@ internal sealed partial class InMemoryDataStorage(
         }
 
         return claimed;
+
+        bool isEligible(MemoryMessage candidate, DateTimeOffset? dueAt) =>
+            dueAt is { } due
+            && due <= now
+            && candidate.Lane == lane
+            && (!orphaned.HasValue || candidate.IsInboxOrphaned == orphaned.Value)
+            && string.Equals(candidate.Version, version, StringComparison.Ordinal)
+            && consumerIdentities?.Contains(candidate.ConsumerIdentity, StringComparer.Ordinal) != false;
     }
 
     private static bool _IsSupportedLane(MessageLane lane)

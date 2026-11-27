@@ -403,9 +403,10 @@ public sealed class DynamicFeatureDefinitionStore(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
-
-            await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        // An earlier attempt may have committed the rows before failing to publish the stamp.
+        await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
 
         await distributedCache
             .UpsertAsync(

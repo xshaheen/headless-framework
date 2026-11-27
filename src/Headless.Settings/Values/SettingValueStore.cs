@@ -20,6 +20,9 @@ public sealed class SettingValueStore(
     ILogger<SettingValueStore> logger
 ) : ISettingValueStore
 {
+    private readonly ISettingValueRecordRepository _repository =
+        (valueRepository as ISettingValueRepositoryForStore)?.ForStore(cache) ?? valueRepository;
+
     private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
 
     // Concurrent misses for one provider key share one load: the first caller reads the repository and fills the
@@ -84,7 +87,7 @@ public sealed class SettingValueStore(
     {
         _EnsureKey(providerName, providerKey);
 
-        var settings = await valueRepository
+        var settings = await _repository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -129,31 +132,23 @@ public sealed class SettingValueStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
-        var settingValue = await valueRepository
+        var settingValue = await _repository
             .FindAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
         if (settingValue is null)
         {
             settingValue = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await valueRepository.InsertAsync(settingValue, cancellationToken).ConfigureAwait(false);
+            await _repository.InsertAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             settingValue.Value = value;
-            await valueRepository.UpdateAsync(settingValue, cancellationToken).ConfigureAwait(false);
+            await _repository.UpdateAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
 
         await SettingValueCacheInvalidation
-            .SyncAsync(
-                cache,
-                valueRepository,
-                [name],
-                providerName,
-                providerKey,
-                _cacheExpiration,
-                CancellationToken.None
-            )
+            .SyncAsync(cache, _repository, [name], providerName, providerKey, _cacheExpiration, CancellationToken.None)
             .ConfigureAwait(false);
     }
 
@@ -179,7 +174,7 @@ public sealed class SettingValueStore(
 
         for (var attempt = 1; ; attempt++)
         {
-            var existingRecords = await valueRepository
+            var existingRecords = await _repository
                 .GetListAsync(names, providerName, providerKey, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -188,7 +183,7 @@ public sealed class SettingValueStore(
 
             try
             {
-                await valueRepository
+                await _repository
                     .SaveAsync(changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -197,7 +192,7 @@ public sealed class SettingValueStore(
                 // A concurrent writer that inserted or deleted one of these rows between the read and the save fails
                 // the whole batch (a unique-key violation, or an update that found no row). Only that collision is
                 // worth planning again; a failure against an unchanged scope is the caller's to see.
-                var currentRecords = await valueRepository
+                var currentRecords = await _repository
                     .GetListAsync(names, providerName, providerKey, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -212,7 +207,7 @@ public sealed class SettingValueStore(
             await SettingValueCacheInvalidation
                 .SyncAsync(
                     cache,
-                    valueRepository,
+                    _repository,
                     names,
                     providerName,
                     providerKey,
@@ -285,7 +280,7 @@ public sealed class SettingValueStore(
     {
         _EnsureKey(providerName, providerKey, name);
 
-        var settings = await valueRepository
+        var settings = await _repository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -294,19 +289,39 @@ public sealed class SettingValueStore(
             return;
         }
 
-        await valueRepository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
+        await _repository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
 
-        await SettingValueCacheInvalidation
-            .SyncAsync(
-                cache,
-                valueRepository,
-                [name],
-                providerName,
-                providerKey,
-                _cacheExpiration,
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
+        // A delete using a null provider key can remove rows from multiple cache scopes.
+        var requestedScope = (ProviderName: providerName, ProviderKey: providerKey);
+        var scopes = settings
+            .Select(record => (record.ProviderName, record.ProviderKey))
+            .Where(scope => scope != requestedScope)
+            .Distinct()
+            .Append(requestedScope);
+
+        foreach (var scope in scopes)
+        {
+            try
+            {
+                await SettingValueCacheInvalidation
+                    .SyncAsync(
+                        cache,
+                        _repository,
+                        [name],
+                        scope.ProviderName,
+                        scope.ProviderKey,
+                        _cacheExpiration,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // A fault in one additional scope must leave the other scopes a chance to refresh.
+            catch (Exception exception) when (scope != requestedScope)
+#pragma warning restore CA1031
+            {
+                logger.LogFailedToInvalidateSettingCache(exception, 1);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -323,7 +338,7 @@ public sealed class SettingValueStore(
 
         // Not through the cache: the values and the version must come from one read, or a stale cached value could be
         // edited and saved under a current version.
-        var records = await valueRepository
+        var records = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -359,7 +374,7 @@ public sealed class SettingValueStore(
 
         var names = values.Keys.ToHashSet(StringComparer.Ordinal);
 
-        var existingRecords = await valueRepository
+        var existingRecords = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -368,7 +383,7 @@ public sealed class SettingValueStore(
 
         var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
 
-        var committedVersion = await valueRepository
+        var committedVersion = await _repository
             .SaveIfVersionAsync(
                 names,
                 providerName,
@@ -386,7 +401,7 @@ public sealed class SettingValueStore(
             await SettingValueCacheInvalidation
                 .SyncAsync(
                     cache,
-                    valueRepository,
+                    _repository,
                     names,
                     providerName,
                     providerKey,
@@ -427,7 +442,7 @@ public sealed class SettingValueStore(
 
         // Not through the cache: the unit may already have written this value, and the cache only learns of it after
         // the commit.
-        var records = await valueRepository
+        var records = await _repository
             .GetListEnlistedAsync(unitOfWork, [name], providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -456,7 +471,7 @@ public sealed class SettingValueStore(
 
         // One attempt, unlike SetAllAsync: a failed statement aborts the unit's transaction, so only the unit's owner
         // can decide whether to run the whole unit again.
-        var existingRecords = await valueRepository
+        var existingRecords = await _repository
             .GetListEnlistedAsync(
                 unitOfWork,
                 values.Keys.ToHashSet(StringComparer.Ordinal),
@@ -468,14 +483,14 @@ public sealed class SettingValueStore(
 
         var changes = _PlanChanges(values, existingRecords, providerName, providerKey);
 
-        await valueRepository
+        await _repository
             .SaveEnlistedAsync(unitOfWork, changes.Inserted, changes.Updated, changes.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
         SettingValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            valueRepository,
+            _repository,
             [.. values.Keys],
             providerName,
             providerKey,
@@ -495,7 +510,7 @@ public sealed class SettingValueStore(
         Argument.IsNotNull(unitOfWork);
         _EnsureKey(providerName, providerKey);
 
-        var records = await valueRepository
+        var records = await _repository
             .GetListEnlistedAsync(unitOfWork, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
@@ -504,12 +519,12 @@ public sealed class SettingValueStore(
             return [];
         }
 
-        await valueRepository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
+        await _repository.SaveEnlistedAsync(unitOfWork, [], [], records, cancellationToken).ConfigureAwait(false);
 
         SettingValueCacheInvalidation.SyncAfterCommit(
             unitOfWork,
             cache,
-            valueRepository,
+            _repository,
             records.ConvertAll(x => x.Name),
             providerName,
             providerKey,
@@ -710,7 +725,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await valueRepository
+        var dbValues = await _repository
             .GetListAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
@@ -724,7 +739,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await valueRepository
+        var dbValues = await _repository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);

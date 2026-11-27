@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless;
 using Headless.Caching;
 using Headless.Hosting;
 using Headless.Settings;
@@ -12,6 +13,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Storage;
 
@@ -34,6 +37,18 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
 
     public EfSettingValueRecordRepositoryUnitOfWorkTests()
     {
+        _cache
+            .GetAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CacheValue<SettingValueCacheItem>>(StringComparer.Ordinal));
+        _cache
+            .TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<SettingValueCacheItem>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+
         var connectionString = $"Data Source={_databasePath};Pooling=False";
         _unitConnection = new SqliteConnection(connectionString);
 
@@ -83,6 +98,43 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
     }
 
     [Fact]
+    public async Task should_refresh_the_cache_once_after_a_store_batch_commits()
+    {
+        const string name = "App.Theme";
+        await using var owner = await _CreateOwnerAsync();
+        await Repository.InsertAsync(_Value(name), AbortToken);
+        _cache.ClearReceivedCalls();
+        var store = new SettingValueStore(
+            Repository,
+            Substitute.For<ISettingDefinitionManager>(),
+            Substitute.For<IGuidGenerator>(),
+            _cache,
+            Options.Create(new SettingManagementOptions()),
+            NullLogger<SettingValueStore>.Instance
+        );
+        await using var unit = await Factory.BeginAsync(owner, AbortToken);
+
+        await store.SetAllEnlistedAsync(
+            unit,
+            new Dictionary<string, string?>(StringComparer.Ordinal) { [name] = "light" },
+            "Tenant",
+            "t1",
+            AbortToken
+        );
+        _cache.ReceivedCalls().Should().BeEmpty();
+        await unit.CompleteAsync(AbortToken);
+
+        await _cache
+            .Received(1)
+            .TryInsertAsync(
+                SettingValueCacheItem.CalculateCacheKey(name, "Tenant", "t1"),
+                Arg.Is<SettingValueCacheItem>(item => item.Value == "light"),
+                Arg.Any<TimeSpan?>(),
+                CancellationToken.None
+            );
+    }
+
+    [Fact]
     public async Task should_commit_inserts_updates_and_deletes_and_clear_the_cache_after_each_commit()
     {
         // given
@@ -120,11 +172,7 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         var key = SettingValueCacheItem.CalculateCacheKey("App.Theme", "Tenant", "t1");
         await _cache
             .Received(3)
-            .UpsertAllAsync(
-                Arg.Is<IDictionary<string, SettingValueCacheItem>>(items => items.Keys.Single() == key),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<CancellationToken>()
-            );
+            .TryInsertAsync(key, Arg.Any<SettingValueCacheItem>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -155,13 +203,14 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         var written = new List<string?>();
         _cache
             .When(x =>
-                x.UpsertAllAsync(
-                    Arg.Any<IDictionary<string, SettingValueCacheItem>>(),
+                x.TryInsertAsync(
+                    key,
+                    Arg.Any<SettingValueCacheItem>(),
                     Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )
             )
-            .Do(call => written.Add(call.Arg<IDictionary<string, SettingValueCacheItem>>()[key].Value));
+            .Do(call => written.Add(call.Arg<SettingValueCacheItem>().Value));
 
         // when the row is inserted, updated, saved in a batch, and deleted outside a unit
         await Repository.InsertAsync(value, AbortToken);
@@ -216,8 +265,9 @@ public sealed class EfSettingValueRecordRepositoryUnitOfWorkTests : TestBase
         var stored = _Value("App.Theme");
         _cache
             .When(x =>
-                x.UpsertAllAsync(
-                    Arg.Any<IDictionary<string, SettingValueCacheItem>>(),
+                x.TryInsertAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<SettingValueCacheItem>(),
                     Arg.Any<TimeSpan?>(),
                     Arg.Any<CancellationToken>()
                 )

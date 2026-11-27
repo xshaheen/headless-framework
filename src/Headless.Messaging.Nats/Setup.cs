@@ -154,6 +154,13 @@ public static class SetupMessagingNats
                 );
             });
 
+            // Public, so code outside Headless subscribes to the subjects this host publishes to without rebuilding them.
+            services.AddSingleton(sp => new NatsSubjectResolver(
+                sp.GetRequiredService<IOptions<NatsMessagingOptions>>().Value.HostPrefix,
+                sp.GetRequiredService<NatsExternalSubjects>(),
+                sp.GetService<IMessageMetadataRegistry>()
+            ));
+
             // Built explicitly so the back-off measures real time rather than a registered TimeProvider.
             services.AddSingleton(sp => new NatsStreamProvisioner(
                 sp.GetRequiredService<IOptions<NatsMessagingOptions>>(),

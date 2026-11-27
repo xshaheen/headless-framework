@@ -14,5 +14,7 @@ dotnet add package Headless.MultiTenancy
 
 ## Documentation
 
+The in-memory tenant store and catalog cache snapshot nested `TenantInfo.ExtraProperties` values as detached JSON. Each read gets its own metadata dictionary. If the catalog cannot snapshot custom-store metadata, it returns the store result and skips the metadata cache write.
+
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
 - [Multi-Tenancy guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy.md#headlessmultitenancy)

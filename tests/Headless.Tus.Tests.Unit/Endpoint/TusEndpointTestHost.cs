@@ -23,6 +23,9 @@ namespace Tests.Endpoint;
 /// <summary>What a scenario changes about <see cref="TusEndpointTestHost"/>. Every member has a working default.</summary>
 internal sealed class TusEndpointTestHostSetup
 {
+    /// <summary>Creates the disk store for a scenario that configures tusdotnet's file ID provider.</summary>
+    public Func<string, TusDiskStore> CreateStore { get; init; } = static directory => new TusDiskStore(directory);
+
     /// <summary>
     /// The <c>AddHeadlessTus</c> callback. It receives the disk store the host created and must select a store.
     /// The default selects that store and declares the default endpoint with a 1 MiB limit.
@@ -142,7 +145,7 @@ internal sealed class TusEndpointTestHost : IAsyncDisposable
 
         try
         {
-            var store = new TusDiskStore(directory.FullName);
+            var store = setup.CreateStore(directory.FullName);
 
             var builder = WebApplication.CreateSlimBuilder();
             builder.Logging.ClearProviders();

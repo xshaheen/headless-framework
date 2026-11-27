@@ -21,7 +21,7 @@ Package READMEs only route to these guides; they are not API reference.
 - Register each feature through its `AddHeadless*` setup builder and pick providers there. Do not register the feature's services a second way around the builder.
 - Register the relational database once with `AddPostgreSqlSql` or `AddSqlServerSql`, then call each storage feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Every feature then shares the connection and creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the overrides.
 - Create tables, broker topology, and seed data as deploy steps, not at startup: run `resources provision` and `seed`, or `deploy` for both. The host only verifies those resources when it starts. Run `check` before you route traffic to a new build. [Utilities](utilities.md#resource-provisioning) owns the verbs.
-- When environments share one Redis, give each host a `Headless:Prefix`. Every key-value feature puts it in front of its names. Relational storage and blob containers separate environments by database, schema, or bucket instead. [Utilities](utilities.md#isolation-prefix) owns the contract.
+- When environments share one Redis, give each host a `Headless:Prefix`. Every key-value feature puts it in front of its names. Relational storage and blob containers separate environments by database, schema, or bucket instead. [Utilities](utilities.md#isolation-prefix) owns the contract and how to [prefix your own names](utilities.md#prefix-your-own-names) with `HeadlessPrefixOptions.Apply`.
 - Expect a readiness health check, tagged `ready` and `headless`, from each provider package with an external dependency. It stays off the liveness endpoint. Remove one with `RemoveHealthChecks`. [Utilities](utilities.md#health-checks) owns the list.
 - Use in-memory and `*.Dev` providers only for tests, development, or work you accept losing. They do not replace durable providers in production.
 - Pass cancellation tokens end to end.
@@ -43,7 +43,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
 | Define and evaluate runtime permissions; integrate with ASP.NET Core authorization | [Permissions](permissions.md) |
-| Serve the operations dashboard shell, write a dashboard module, or add the Jobs or Messaging module, or protect a dashboard a host writes | [Dashboards](dashboards.md) |
+| Serve the operations dashboard shell, write a dashboard module, add built-in modules (Jobs, Messaging, Cluster, Leases, Rate limits, Idempotency, Sequences, Dev inbox), or protect a dashboard a host writes | [Dashboards](dashboards.md) |
 | Verify reCAPTCHA or Turnstile tokens | [CAPTCHA](captcha.md) |
 
 ### Data, state, and transactions
@@ -74,7 +74,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Define a failure policy: immediate and delayed retries, backoff, and exceptions that end a failure at once | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
-| Track node identity, liveness, and membership | [Coordination](coordination.md) |
+| Track node identity, liveness, and membership, or show a node's membership history and cluster settings | [Coordination](coordination.md) |
 | Dispatch in-process requests and notifications | [Mediator](mediator.md) |
 
 ### Integration services
@@ -103,7 +103,7 @@ Package READMEs only route to these guides; they are not API reference.
 | Configure host logging: console format, enrichment on every entry, levels, a startup crash logger | [Logging](logging.md#headlesslogging) |
 | Keep secrets and personal data out of logs (data classification, redactors) | [Logging](logging.md) |
 | Keep credential paths out of HTTP logging and spans, classify HTTP logging fields | [Logging](logging.md#headlessloggingredactionaspnetcore) |
-| Use hosting helpers, validators, health checks, the host manifest (`describe` command), the pre-start health check (`check` command), background warm-up behind readiness, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
+| Use hosting helpers, validators, health checks, the on-demand health check monitor and its probe history, the host manifest (`describe` command), the pre-start health check (`check` command), background warm-up behind readiness, source-generated primitives, Redis scripts, geospatial helpers, sitemaps, or slugs | [Utilities](utilities.md) |
 | Write unit/integration tests or use Testcontainers and the messaging harness | [Testing](testing.md) |
 
 ## Choosing a coordination primitive

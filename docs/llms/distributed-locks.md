@@ -333,7 +333,7 @@ Defines the public distributed-lock contracts.
 - `DistributedLockException` and its subtypes `LockAcquisitionTimeoutException`, `LockHandleLostException`, `LockCleanupFailedException`, and `DistributedLockDeadlockException`. None derives from `TimeoutException`.
 - `LockKey.For<T>(id)` builds `"{typeof(T).Name}:{id}"` from an entity type and a `string`, `Guid` (`"D"` format), or `long` id (an `int` widens; invariant culture). It returns a plain `string` for `IDistributedLock`, the composites, and `unit.TransactionLocks`. Two same-named types in different namespaces share names, which only adds contention. Renaming the type changes the name, so during a rolling deployment old and new nodes do not exclude each other on that entity.
 - `unit.TransactionLocks` (`UnitOfWorkTransactionLocks`) and its feature contract `IUnitOfWorkTransactionLocks`, implemented by the PostgreSQL and SQL Server providers. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
-- Inspection: `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, and `GetExpirationAsync(resource)`. A `LeaseId` may be `null` when the backend sees the lock but not the holder, and list and count results are limited to what the backend can enumerate.
+- Inspection: `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, and `GetExpirationAsync(resource)`. A `LeaseId` may be `null` when the backend sees the lock but not the holder, and list and count results are limited to what the backend can enumerate. The dashboard's Leases module shows these reads to operators; see [Headless.Leases.Dashboard](fencing.md#headlessleasesdashboard).
 
 ### Design constraints
 

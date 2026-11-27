@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Composition package for Headless messaging: outbox runtime, retries, delayed dispatch, consumer orchestration, and provider setup hooks.</Description>
     <PackageTags>headless;messaging;dotnet</PackageTags>
     <RootNamespace>Headless.Messaging</RootNamespace>

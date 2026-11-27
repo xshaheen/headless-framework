@@ -6,13 +6,13 @@ using Headless.Sql.SqlServer;
 namespace Headless.Settings.SqlServer;
 
 /// <summary>
-/// The Settings feature's schema contribution for SQL Server: the definition and value tables and their unique indexes,
-/// as two idempotent steps the Headless schema runner applies.
+/// The Settings feature's schema contribution for SQL Server: definition and value tables, indexes, and ordinal scope keys.
 /// </summary>
 internal static class SqlServerSettingsSchemaContribution
 {
     public const string TablesStepVersion = "1";
     public const string IndexesStepVersion = "2";
+    private const string _OrdinalScopeStepVersion = "3";
 
     private static readonly RelationalSettingsTables _Defaults = new(
         SqlServerDialect.Instance,
@@ -79,6 +79,20 @@ internal static class SqlServerSettingsSchemaContribution
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
             """;
 
+        // A tenant identifier is ordinal in the catalog and in cache keys, independent of the database collation.
+        var ordinalScopeSql = string.Create(
+            CultureInfo.InvariantCulture,
+            $"""
+            DROP INDEX IF EXISTS [IX_{valuesName}_ProviderName_ProviderKey] ON {valuesTable};
+            DROP INDEX IF EXISTS [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable};
+            DROP INDEX IF EXISTS [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable};
+            ALTER TABLE {valuesTable} ALTER COLUMN [ProviderKey] nvarchar({lengths.SettingValuesProviderKeyMaxLength}) COLLATE Latin1_General_100_BIN2 NULL;
+            CREATE NONCLUSTERED INDEX [IX_{valuesName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [ProviderKey] IS NOT NULL;
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{valuesName}_Name_ProviderName_NullProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC) WHERE [ProviderKey] IS NULL;
+            """
+        );
+
         return new SchemaContribution(
             feature: SchemaContribution.FeatureId(
                 "Settings",
@@ -95,6 +109,11 @@ internal static class SqlServerSettingsSchemaContribution
                     IndexesStepVersion,
                     "Create the setting definition and value unique indexes.",
                     indexesSql
+                ),
+                new SchemaStep(
+                    _OrdinalScopeStepVersion,
+                    "Compare setting value scope keys ordinally.",
+                    ordinalScopeSql
                 ),
             ],
             hostStateTables: [definitionsName],

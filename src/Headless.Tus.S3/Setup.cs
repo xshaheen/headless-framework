@@ -18,6 +18,12 @@ namespace Headless.Tus;
 [PublicAPI]
 public static class SetupTusS3
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the tus upload bucket, which <c>resources provision -k</c> selects and
+    /// a provisioner that needs the bucket selects in its <c>DependsOn</c>.
+    /// </summary>
+    public const string BucketResourceKind = "S3Bucket";
+
     extension(HeadlessTusSetupBuilder setup)
     {
         /// <summary>

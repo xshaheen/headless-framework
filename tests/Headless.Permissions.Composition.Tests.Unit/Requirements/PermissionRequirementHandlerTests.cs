@@ -2,7 +2,9 @@
 
 using System.Security.Claims;
 using Headless.Context;
+using Headless.MultiTenancy;
 using Headless.Permissions;
+using Headless.Permissions.Resources;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +86,64 @@ public sealed class PermissionRequirementHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_ignore_a_grant_or_denial_from_a_provider_the_permission_excludes()
+    {
+        var restricted = new PermissionDefinition(_Read);
+        restricted.Providers.Add(PermissionGrantProviderNames.Role);
+        var unrestricted = new PermissionDefinition(_Export);
+        var definitions = Substitute.For<IPermissionDefinitionManager>();
+        definitions.FindAsync(_Read, Arg.Any<CancellationToken>()).Returns(restricted);
+        definitions.FindAsync(_Export, Arg.Any<CancellationToken>()).Returns(unrestricted);
+        var role = Substitute.For<IPermissionGrantProvider>();
+        role.Name.Returns(PermissionGrantProviderNames.Role);
+        var user = Substitute.For<IPermissionGrantProvider>();
+        user.Name.Returns(PermissionGrantProviderNames.User);
+        var providers = Substitute.For<IPermissionGrantProviderManager>();
+        providers.ValueProviders.Returns([role, user]);
+        var manager = new PermissionManager(
+            definitions,
+            providers,
+            Substitute.For<IPermissionGrantStore>(),
+            Substitute.For<IPermissionErrorsDescriptor>(),
+            Substitute.For<IHostIdentityAccessor>(),
+            Substitute.For<ICurrentTenant>()
+        );
+        var policy = new AuthorizationPolicyBuilder()
+            .AddRequirements(new PermissionRequirement(_Read), new PermissionRequirement(_Export))
+            .Build();
+
+        role.CheckAsync(
+                Arg.Any<IReadOnlyCollection<PermissionDefinition>>(),
+                Arg.Any<ICurrentUser>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new MultiplePermissionGrantStatusResult([_Read, _Export], ["role"], PermissionGrantStatus.Undefined),
+                new MultiplePermissionGrantStatusResult([_Read, _Export], ["role"], PermissionGrantStatus.Granted)
+            );
+        user.CheckAsync(
+                Arg.Any<IReadOnlyCollection<PermissionDefinition>>(),
+                Arg.Any<ICurrentUser>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new MultiplePermissionGrantStatusResult([_Read, _Export], ["user"], PermissionGrantStatus.Granted),
+                new MultiplePermissionGrantStatusResult([_Read], ["user"], PermissionGrantStatus.Prohibited)
+            );
+
+        (await _AuthorizeAsync(policy, manager)).Succeeded.Should().BeFalse();
+        (await _AuthorizeAsync(policy, manager)).Succeeded.Should().BeTrue();
+        await user.Received(2)
+            .CheckAsync(
+                Arg.Is<IReadOnlyCollection<PermissionDefinition>>(permissions =>
+                    permissions.Count == 1 && permissions.Contains(unrestricted)
+                ),
+                Arg.Any<ICurrentUser>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_read_nothing_when_the_policy_has_no_permission_requirement()
     {
         // given
@@ -113,12 +173,15 @@ public sealed class PermissionRequirementHandlerTests : TestBase
             );
     }
 
-    private async Task<AuthorizationResult> _AuthorizeAsync(AuthorizationPolicy policy)
+    private async Task<AuthorizationResult> _AuthorizeAsync(
+        AuthorizationPolicy policy,
+        IPermissionManager? manager = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAuthorizationCore();
-        services.AddSingleton(_permissionManager);
+        services.AddSingleton(manager ?? _permissionManager);
         services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
 
         await using var provider = services.BuildServiceProvider();

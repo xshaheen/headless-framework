@@ -112,6 +112,10 @@ Jobs start with execution-context flow suppressed, so a job never inherits `Acti
 
 The column holds one version-00 W3C `traceparent` (55 characters), whatever propagator the host configures. `tracestate` is not kept.
 
+Every log entry written during a run's attempt (job middleware and the handler) carries `CausationTraceId`: the trace id of the stored `TraceParent`, which for a job scheduled from a request is the request's trace id. A requeue replaces `TraceParent` (see the table above), so after a requeue `CausationTraceId` holds the requeue request's trace id, not the original scheduler's. The run's own `TraceId` is its new root trace, so query `TraceId = <request trace id> OR CausationTraceId = <request trace id>` to find the request and the job lines together. A run with no stored context, such as a generated cron occurrence, gets no field. `AddHeadlessLogging()` adds the field; the value is on `CausalScope.CausationTraceId` for a host that builds its own logging. The attempt's entries also carry the job's tenant as `TenantId`, from the same profile's tenant enrichment ([multi-tenancy observability](../multi-tenancy/observability.md#observability)).
+
+**Verify:** schedule a job from inside a request, run it, and find its entry by the request's trace id in `CausationTraceId`.
+
 ### Spans
 
 | Span | Kind | When | Tags |

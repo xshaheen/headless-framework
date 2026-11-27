@@ -81,10 +81,18 @@ internal sealed class OutboxIntegrationEventDispatcher(IntegrationEventPublishIn
         }
     }
 
-    // Single contained sync-over-async: the outbox only exposes an async publish, and the EF sync save path
-    // calls this. No synchronization context is present on the EF save path, so blocking here cannot deadlock.
     public void Dispatch(IUnitOfWork unitOfWork, IReadOnlyList<EventContext<object>> integrationEvents)
     {
+        // Publish middleware can capture the caller's continuation target. Start publishing away from it before
+        // blocking this thread, so the outbox write can finish inside the save's transaction.
+        if (SynchronizationContext.Current is not null || TaskScheduler.Current != TaskScheduler.Default)
+        {
+            Task.Run(() => DispatchAsync(unitOfWork, integrationEvents, CancellationToken.None))
+                .GetAwaiter()
+                .GetResult();
+            return;
+        }
+
         DispatchAsync(unitOfWork, integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
     }
 

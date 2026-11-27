@@ -46,6 +46,9 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
+    // Promotion and same-value restamps keep the birth timestamp resolution of the original frame.
+    internal long TagTimestampResolutionTicks { get; init; }
+
     /// <summary>
     /// Gets the optional UTC timestamp until which a fail-safe throttle holds back the factory for this entry. The
     /// coordinator sets it only on the fail-safe throttle restamp, to the restamp's logical expiration; any other
@@ -76,6 +79,9 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// remote re-reads. Defaults to <see langword="false"/> (a value-producing write).
     /// </summary>
     public bool IsRestamp { get; init; }
+
+    // The coordinator holds a publication window while this write can still land.
+    internal bool IsFactoryWrite { get; init; }
 
     /// <summary>
     /// Gets whether the L1 (memory) tier write must be skipped for this entry. Hybrid-relevant only: single-tier

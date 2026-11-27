@@ -1,6 +1,6 @@
 ---
 domain: Coordination
-packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
+packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite, Cluster.Dashboard
 ---
 
 # Coordination
@@ -19,6 +19,7 @@ The store is the clock. PostgreSQL uses `clock_timestamp()`, SQL Server uses `SY
 
 - Depend on `Headless.Coordination.Abstractions` from application code. Register exactly one provider through `AddHeadlessCoordination(setup => setup.Use...)`.
 - Treat `NodeLeft` as an optimization trigger. Also reconcile periodically: recover rows whose owner identity is not in `GetLiveNodesAsync()`.
+- Read `IMembershipEventLog.GetEntries()` for display and diagnostics only. It is not a recovery path: entries are evicted and lost on restart, so recovery reconciles from `GetLivenessSnapshotAsync()`.
 - Make recovery updates idempotent, and guard them by owner identity plus a non-terminal state.
 - Do not use Coordination as Raft, Paxos, RedLock, leader election, or a generic ownership ledger.
 - Choose stable node ids. Kubernetes StatefulSet ordinal names are the strongest default. A Deployment pod name plus namespace is stable for the pod lifetime. Generated ids are for local development only: every process start leaves one permanent generation entry, so generated ids grow the store without bound.
@@ -66,7 +67,7 @@ Jobs publishes `headless.jobs.cron-rules-digest` and `headless.jobs.fingerprint-
 
 ### Events And Reconcile
 
-Events are best-effort local observations derived from snapshots: `NodeJoined`, `NodeSuspected`, `NodeRecovered`, and `NodeLeft`, read through `IMembershipEventSource.WatchAsync(...)`. A missed event must not block recovery. Reconcile periodically against live identities and recover stale owner rows yourself, or implement `IDeadOwnerReclaimer` and let [Headless.Coordination](#headlesscoordination) drive it.
+Events are best-effort local observations derived from snapshots: `NodeJoined`, `NodeSuspected`, `NodeRecovered`, and `NodeLeft`, read through `IMembershipEventSource.WatchAsync(...)`. The same events, with the snapshot state behind each, stay readable for a while in the [membership event log](#membership-event-log). A missed event must not block recovery. Reconcile periodically against live identities and recover stale owner rows yourself, or implement `IDeadOwnerReclaimer` and let [Headless.Coordination](#headlesscoordination) drive it.
 
 ### Safety Ceiling
 
@@ -140,7 +141,11 @@ None.
 
 ### API and behavior
 
-- Registers `INodeMembership`, `IMembershipEventSource`, `INodeIdProvider`, `IHostIdentityAccessor` (from `Headless.Context`), `TimeProvider.System`, and a heartbeat hosted service.
+- Registers `INodeMembership`, `IMembershipEventSource`, `IMembershipEventLog`, `CoordinationClusterSummary`, `INodeIdProvider`, `IHostIdentityAccessor` (from `Headless.Context`), `TimeProvider.System`, and a heartbeat hosted service.
+- Inspection types for operators and dashboards ship here, not in `Headless.Coordination.Abstractions`, because only a host that registers coordination has them:
+  - `IMembershipEventLog.GetEntries()` and `MembershipEventLogEntry`: the last events this process published. See [Membership event log](#membership-event-log).
+  - `NodeMetadataAgreement.Compare(snapshots, key)`, returning `NodeMetadataAgreementResult` and `NodeMetadataValueGroup`. See [Metadata agreement](#metadata-agreement).
+  - `CoordinationClusterSummary`: the settings a node runs under. See [Cluster summary](#cluster-summary).
 - **Start.** The heartbeat starts before any hosted service's `StartAsync`. The node registers once: Jobs registers it at its startup gate, and on hosts without Jobs the heartbeat service registers it. `RegisterAsync` writes the descriptor and an initial liveness entry together, so the node reads `Alive`, with its role and metadata visible, before the first heartbeat. A transient store failure during registration is retried, up to 5 attempts with a back-off from 200 ms doubling to at most 5 seconds; the last failure then fails startup, or under `StopMembershipOnly` is logged and the node stays unregistered. A registration the store refuses (`MembershipRegistrationRejectedException`) fails startup without a retry.
 - **Stop order.** The heartbeat keeps beating through every hosted service's `StopAsync`. Then it awaits every `INodeDrainParticipant`, bounded by the host stop token, and only then stops beating and leaves. Registration order and `HostOptions.ServicesStopConcurrently` do not change this. If the stop token cuts the wait short, it logs once and leaves anyway. A participant that throws is logged and does not block the leave or the other participants. The leave has its own 5-second budget, so it still reaches the store after a cut-short wait. A node that left reads as dead to peers, which reclaim its rows.
 - **Self-fence.** On a host that runs the heartbeat, the node fences itself at its last accepted beat (or its registration) plus `DeadThreshold` minus `SelfFenceMargin`, even when no beat runs. It stops before any peer can classify it `Dead` and reclaim its work. From that instant `Identity` reads `null`, so stamp sites stop handing out an owner, and a beat the store accepts after the deadline does not bring the identity back. A store call that keeps failing or hangs fences the node at the deadline. A snapshot-read failure does not fence a node whose heartbeats still succeed. `LeaveAsync` still writes the departure for a node past its deadline, so peers see `NodeLeft` instead of waiting out `DeadThreshold`.
@@ -238,6 +243,65 @@ services.AddHeadlessCoordination(setup =>
 
 `AddHeadlessCoordination` registers the heartbeat service unless `DisableMembershipHeartbeat()` is called, whichever store backs it.
 
+### Membership event log
+
+`IMembershipEventLog` resolves on every host where `AddHeadlessCoordination` ran. `GetEntries()` returns a copy of the last 256 membership events this process published, oldest first. It reads memory only, so a dashboard can call it on every refresh.
+
+Each `MembershipEventLogEntry` carries:
+
+| Member | Meaning |
+| --- | --- |
+| `Sequence` | Unique per process, starting at 1, one higher per event. |
+| `Event` | The `NodeMembershipEvent` that `WatchAsync` subscribers received. |
+| `ObservedAt` | When this node published the event, from the registered `TimeProvider`. This is local observation time. A node ages into `Suspected` or `Dead` on the store clock, up to one heartbeat interval before this node sees it. |
+| `State`, `LastHeartbeatAt` | The snapshot the event came from. `LastHeartbeatAt` is a store-clock instant, so compare it only with other store-clock instants. Both are `null` for a node that disappeared from the snapshot and for `LocalMembershipLost`. |
+| `IsFirstObservation` | `true` for events from the first time this process saw an incarnation. At its first beat a process publishes `NodeJoined`, `NodeSuspected`, or `NodeLeft` for every node already in the store, all stamped with that beat's time. Show them as the starting state, not as activity at `ObservedAt`. |
+
+Observed behavior:
+
+- The log is this node's view, not the cluster's. Another node sees the same changes at other times, and a node that started later lacks the earlier ones. To show a cluster history, read each node's log.
+- `NodeLeft` means the node left gracefully or died. The log does not tell the two apart.
+- Without the hosted heartbeat (`DisableMembershipHeartbeat()`), the log records no snapshot events. A host that calls `HeartbeatAsync` itself still records `LocalMembershipLost` when the store rejects a beat.
+- Poll with a cursor. An entry with a `Sequence` above your cursor is new. A gap between your cursor and the oldest returned `Sequence` means entries were evicted. Sequences restart at 1 when the process restarts, so reset the cursor when the newest `Sequence` is below it or the node's `Identity` changed.
+
+**Verify:** after the first heartbeat, `GetEntries()` holds a `NodeJoined` entry for the local identity with `IsFirstObservation` set to `true`.
+
+### Metadata agreement
+
+`NodeMetadataAgreement.Compare(snapshots, key)` tells you whether the live nodes agree on one [metadata](#node-metadata) value. Pass the result of `GetLivenessSnapshotAsync()`. The method is pure and does no I/O.
+
+```csharp
+var snapshots = await membership.GetLivenessSnapshotAsync(cancellationToken);
+var agreement = NodeMetadataAgreement.Compare(snapshots, "myapp.build");
+
+if (!agreement.IsUnanimous)
+{
+    // agreement.Groups[0] holds the most common value; a Value of null lists nodes without the key.
+}
+```
+
+- Only `Alive` and `Suspected` incarnations count. `Dead` ones are ignored.
+- Values compare ordinally, so `V1` and `v1` are different values. A node without the key lands in a group whose `Value` is `null`, apart from a node whose value is the empty string.
+- `Groups` comes largest first, then by ordinal value, with the `null` group last. Each group's `Nodes` is ordered by node id, then incarnation. The order does not depend on the input order.
+- `IsUnanimous` is `true` only when one group exists and its `Value` is not `null`. With no alive or suspected incarnation, `Groups` is empty and `IsUnanimous` is `false`.
+- The snapshot holds each node's current incarnation only, so a restarted node counts under its new incarnation. Earlier incarnations appear only as entries in the local event log.
+
+**Verify:** `Compare` over a snapshot of nodes that all registered the same value returns `IsUnanimous` set to `true` and one group.
+
+### Cluster summary
+
+`CoordinationClusterSummary` resolves on every host where `AddHeadlessCoordination` ran. It is built from the bound `CoordinationOptions` on first resolve and calls no store.
+
+| Member | Value |
+| --- | --- |
+| `ClusterName`, `Role` | From `CoordinationOptions`. |
+| `ProviderName` | `PostgreSql`, `SqlServer`, `Sqlite`, or `Redis`, or the name a custom store's extension reports. |
+| `HeartbeatInterval`, `SuspicionThreshold`, `DeadThreshold`, `DeadRetentionWindow` | From `CoordinationOptions`. |
+| `SelfFenceMargin` | The margin the fence applies: the configured value, or the derived default when the option is `null`. |
+| `MembershipHeartbeatEnabled` | `false` after `DisableMembershipHeartbeat()`. Such a host records no snapshot events in its log. |
+
+**Verify:** resolve `CoordinationClusterSummary` from the host's services and assert `ProviderName` and `ClusterName`.
+
 ### For store authors
 
 To back membership with another store, implement `IMembershipStore` and register it the way the shipped providers do: an `ICoordinationProviderOptionsExtension` whose `AddServices` calls `services.AddCoordinationCore<TStore>()`, handed to `AddHeadlessCoordination` through `RegisterExtension`. `AddCoordinationCore<TStore>()` registers the core services over your store and no heartbeat, so the setup builder's `Configure(...)`, its one-provider check, and `DisableMembershipHeartbeat()` apply to your store as they do to a shipped one. Applications never call the store; the membership service does.
@@ -245,6 +309,8 @@ To back membership with another store, implement `IMembershipStore` and register
 ```csharp
 public sealed class MyCoordinationExtension : ICoordinationProviderOptionsExtension
 {
+    public string ProviderName => "MyStore"; // reported by CoordinationClusterSummary.ProviderName
+
     public void AddServices(IServiceCollection services)
     {
         services.AddCoordinationCore<MyMembershipStore>();
@@ -260,7 +326,7 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
-A store package wraps the `RegisterExtension` call in its own `Use{Store}` extension on `HeadlessCoordinationSetupBuilder`, as `UseRedis` does.
+The extension's `ProviderName` is required: return a stable name for your store. A store package wraps the `RegisterExtension` call in its own `Use{Store}` extension on `HeadlessCoordinationSetupBuilder`, as `UseRedis` does.
 
 Every member decides with the store's own clock, never the application clock, and must be safe to call concurrently.
 
@@ -521,3 +587,48 @@ Set the schema with `setup.ConfigureStorage(storage => storage.Schema = "…")` 
 ### Runtime behavior
 
 `resources provision` creates the tables, and a host start only verifies them.
+
+---
+
+## Headless.Cluster.Dashboard
+
+### API and behavior
+
+- The dashboard's Cluster module: the incarnations of the liveness snapshot with their state, role, last heartbeat, and metadata agreement, this node's membership event log, and the serving host's health checks with their last 30 results.
+- It reads `INodeMembership`, `IMembershipEventLog`, `CoordinationClusterSummary`, `NodeMetadataAgreement`, and `IHealthCheckMonitor`. It stores nothing.
+- The routes, commands, and views are in the [Cluster module](dashboards/cluster-module.md) topic.
+
+### Install
+
+```bash
+dotnet add package Headless.Cluster.Dashboard
+```
+
+### Setup and use
+
+Add the module inside `AddHeadlessDashboard`. Register Coordination with a provider for the Cluster view, and the host's health checks before `AddCluster()` for the Health view; either half alone works.
+
+```csharp
+using Headless.Cluster;
+
+builder.Services.AddHeadlessCoordination(coordination => coordination.UsePostgreSql(connectionString));
+builder.Services.AddHealthChecks();
+builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithHostAuthentication().AddCluster());
+```
+
+**Verify:** `{base}/cluster` lists this node; a host with neither Coordination nor health checks fails to start naming `AddHeadlessCoordination`.
+
+### Configuration
+
+| `ClusterDashboardOptions` member | Default | Description |
+| --- | --- | --- |
+| `ViewPolicy`, `OperatePolicy` | the shell's | The host policies for reading the module and for its probe commands. |
+| `ChangePageSize` | 200 | The most node changes one live read returns, 1 to 1000. |
+
+### Runtime behavior
+
+- Coordination counts as registered when `CoordinationClusterSummary` resolves, so Messaging's default do-nothing membership does not turn the Cluster view on.
+- No check runs in the background. Checks run only when an operator presses Probe now or Probe all, and the Health view reads `Not probed yet` before the first probe.
+- The Health view shows the replica that served the request. Serve the dashboard from one replica, or with sticky sessions.
+- The event log is this node's local view, stamped with its clock; it restarts with the process.
+- Live node changes reach every node: each compares the store's snapshot with the cursor, which means the same thing on every node. A heartbeat alone is not a change.

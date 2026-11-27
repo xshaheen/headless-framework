@@ -1,6 +1,5 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>Stripe-style HTTP idempotency middleware for Headless API, backed by the durable Headless.Idempotency store.</Description>
     <PackageTags>headless;api;idempotency;dotnet</PackageTags>
     <RootNamespace>Headless.Idempotency</RootNamespace>

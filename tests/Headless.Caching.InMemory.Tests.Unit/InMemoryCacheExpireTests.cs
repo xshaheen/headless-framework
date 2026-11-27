@@ -181,4 +181,86 @@ public sealed class InMemoryCacheExpireTests : TestBase
         // then — a physically-expired entry reports false
         expired.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_keep_a_replacement_written_while_a_factory_read_reaps_an_expired_entry()
+    {
+        var clock = new CallbackTimeProvider(_timeProvider);
+        using var cache = new InMemoryCache(
+            clock,
+            new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.MaxValue, SizeCalculator = static _ => 1 }
+        );
+        const string key = "entry";
+        await cache.UpsertAsync(key, "original", TimeSpan.FromSeconds(1), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        // The expiry check reads the clock after capturing the original entry.
+        Task<bool>? replacement = null;
+        clock.BeforeNextRead = () =>
+            replacement = cache.UpsertAsync(key, "current", TimeSpan.FromMinutes(1), AbortToken).AsTask();
+
+        var store = (IFactoryCacheStore)cache;
+        var expired = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+
+        expired.Found.Should().BeFalse();
+        replacement.Should().NotBeNull();
+        (await replacement!).Should().BeTrue();
+        (await cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("current");
+        cache.CurrentMemorySize.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("original", true)]
+    [InlineData("replacement", false)]
+    [InlineData(null, false)]
+    public async Task should_delete_an_already_expired_cas_write_only_when_its_snapshot_matches(
+        string? currentValue,
+        bool matchesSnapshot
+    )
+    {
+        using var cache = _CreateCache(new InMemoryCacheOptions { SizeCalculator = static _ => 1 });
+        var store = (IFactoryCacheStore)cache;
+        const string key = "entry";
+        await cache.UpsertAsync(key, "original", TimeSpan.FromMinutes(1), AbortToken);
+        var snapshot = await store.TryGetEntryAsync<string>(key, cancellationToken: AbortToken);
+
+        if (currentValue is null)
+        {
+            await cache.RemoveAsync(key, AbortToken);
+        }
+        else if (!matchesSnapshot)
+        {
+            await cache.UpsertAsync(key, currentValue, TimeSpan.FromMinutes(1), AbortToken);
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var expired = new CacheStoreEntryWrite<string>
+        {
+            Value = "unused",
+            IsNull = false,
+            LogicalExpiresAt = now,
+            PhysicalExpiresAt = now,
+            ExpectedConcurrencyStamp = snapshot.ConcurrencyStamp,
+        };
+
+        (await store.SetEntryAsync(key, in expired, AbortToken)).Should().Be(matchesSnapshot);
+        var remaining = await cache.GetAsync<string>(key, AbortToken);
+        var shouldRemain = currentValue is not null && !matchesSnapshot;
+        remaining.HasValue.Should().Be(shouldRemain);
+        remaining.Value.Should().Be(shouldRemain ? currentValue : null);
+        cache.CurrentMemorySize.Should().Be(shouldRemain ? 1 : 0);
+    }
+
+    private sealed class CallbackTimeProvider(TimeProvider inner) : TimeProvider
+    {
+        public Action? BeforeNextRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var callback = BeforeNextRead;
+            BeforeNextRead = null;
+            callback?.Invoke();
+            return inner.GetUtcNow();
+        }
+    }
 }

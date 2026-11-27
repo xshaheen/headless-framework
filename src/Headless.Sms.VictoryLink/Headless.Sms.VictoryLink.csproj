@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <Description>VictoryLink integration for Headless SMS delivery.</Description>
     <PackageTags>headless;sms;victorylink;dotnet</PackageTags>
   </PropertyGroup>

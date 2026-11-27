@@ -3,9 +3,9 @@
 namespace Headless.UnitOfWork;
 
 /// <summary>
-/// Thrown by <see cref="IUnitOfWork.CompleteAsync" /> (and so by every <c>RunAsync</c>) when the commit request may
-/// have reached the database but the connection failed or timed out before an answer came back: the transaction
-/// may or may not have committed. The driver's fault is the <see cref="Exception.InnerException" />.
+/// Thrown by <see cref="IUnitOfWork.CompleteAsync" /> (and so by every <c>RunAsync</c>) when the commit operation
+/// failed without establishing whether the transaction committed. <see cref="Exception.InnerException" /> carries
+/// the original fault.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,7 +24,7 @@ namespace Headless.UnitOfWork;
 public sealed class UnitOfWorkInDoubtException : InvalidOperationException
 {
     private const string _DefaultMessage =
-        "The unit of work's commit may have reached the database, but the connection failed before the outcome was known, so the transaction may or may not have committed. Check the operation's durable idempotency key before retrying it; the inner exception is the driver's fault.";
+        "The unit of work's commit faulted without a confirmed outcome. Check the operation's durable idempotency key before retrying. The inner exception carries the original fault.";
 
     /// <summary>Initializes the exception with the default message.</summary>
     public UnitOfWorkInDoubtException()
@@ -35,14 +35,14 @@ public sealed class UnitOfWorkInDoubtException : InvalidOperationException
     public UnitOfWorkInDoubtException(string message)
         : base(message) { }
 
-    /// <summary>Initializes the exception with <paramref name="message" /> and the driver's fault.</summary>
+    /// <summary>Initializes the exception with <paramref name="message" /> and the commit operation's fault.</summary>
     /// <param name="message">The message that describes the in-doubt commit.</param>
-    /// <param name="innerException">The driver's fault raised by the commit.</param>
+    /// <param name="innerException">The original fault raised by the commit operation.</param>
     public UnitOfWorkInDoubtException(string message, Exception innerException)
         : base(message, innerException) { }
 
-    /// <summary>Initializes the exception with the default message and the driver's fault.</summary>
-    /// <param name="innerException">The driver's fault raised by the commit.</param>
+    /// <summary>Initializes the exception with the default message and the commit operation's fault.</summary>
+    /// <param name="innerException">The original fault raised by the commit operation.</param>
     public UnitOfWorkInDoubtException(Exception innerException)
         : base(_DefaultMessage, innerException) { }
 }

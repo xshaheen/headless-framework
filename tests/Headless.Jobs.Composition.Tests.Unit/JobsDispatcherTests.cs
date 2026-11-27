@@ -18,7 +18,7 @@ public sealed class JobsDispatcherTests : TestBase
     public async Task dispatched_job_keeps_running_when_the_enqueuers_token_is_cancelled_after_dispatch()
     {
         // The enqueuing caller's token (typically an HTTP request lifetime) governs only pool admission. By
-        // dispatch time the row is already durably InProgress with a lease, so the running job is owned by the
+        // dispatch time the row is already durably Queued with a lease, so the job is owned by the
         // host lifetime: cancelling and disposing the caller's CTS after DispatchAsync returns must neither skip
         // the delegate nor cancel it mid-run — the row would otherwise sit out its whole lease and be resolved
         // by OnNodeDeath as if the node had died.
@@ -36,7 +36,7 @@ public sealed class JobsDispatcherTests : TestBase
         await using var serviceProvider = services.BuildServiceProvider();
         var handler = _Handler(serviceProvider, manager);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = _Dispatcher(taskScheduler, handler, manager);
 
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,7 +78,7 @@ public sealed class JobsDispatcherTests : TestBase
         var handler = _Handler(serviceProvider, manager);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 2, timeProvider: TimeProvider.System);
 
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = _Dispatcher(taskScheduler, handler, manager);
 
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var observed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -109,19 +109,29 @@ public sealed class JobsDispatcherTests : TestBase
         observedCancellation.Should().BeTrue("scheduler shutdown must still reach immediate-dispatch jobs");
     }
 
-    [Fact]
-    public async Task should_hand_back_every_claimed_context_when_the_callers_token_cancels_before_admission()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_hand_back_every_claimed_context_when_the_callers_token_cancels_before_admission(
+        bool releaseFails
+    )
     {
         // An HTTP request enqueues due-now jobs and its client disconnects before the pool admits them. The rows are
-        // already InProgress with a lease, so leaving them would let the stalled reclaim settle them as a node death
-        // (a charged retry, or Failed with no retries) although no handler ever ran.
+        // Queued with a lease. Handing them back lets the scheduler claim them again immediately.
         var manager = _HealthyManager();
+        if (releaseFails)
+        {
+            manager
+                .ReleaseAcquiredResources(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException(new InvalidOperationException("store is down")));
+        }
+
         var services = new ServiceCollection();
         services.AddSingleton(manager);
         await using var serviceProvider = services.BuildServiceProvider();
         var handler = _Handler(serviceProvider, manager);
         await using var taskScheduler = new JobsTaskScheduler(maxConcurrency: 1, timeProvider: TimeProvider.System);
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = _Dispatcher(taskScheduler, handler, manager);
 
         var ran = 0;
         var first = _Job(
@@ -146,8 +156,12 @@ public sealed class JobsDispatcherTests : TestBase
         var dispatch = () => dispatcher.DispatchAsync([first, second], callerCts.Token);
 
         await dispatch.Should().NotThrowAsync("the rows are durably enqueued; only this node will not run them");
-        await manager.Received(1).ReleaseInProgressAsync(first, Arg.Any<CancellationToken>());
-        await manager.Received(1).ReleaseInProgressAsync(second, Arg.Any<CancellationToken>());
+        await manager
+            .Received(1)
+            .ReleaseAcquiredResources(
+                Arg.Is<JobExecutionState[]>(claims => claims.Length == 2 && claims[0] == first && claims[1] == second),
+                CancellationToken.None
+            );
         Volatile.Read(ref ran).Should().Be(0);
     }
 
@@ -164,7 +178,7 @@ public sealed class JobsDispatcherTests : TestBase
             timeProvider: TimeProvider.System,
             maxLongRunningConcurrency: 1
         );
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = _Dispatcher(taskScheduler, handler, manager);
 
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var unblock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -188,9 +202,12 @@ public sealed class JobsDispatcherTests : TestBase
         {
             await dispatcher.DispatchAsync([parkedA, parkedB, rejected], AbortToken);
 
-            await manager.Received(1).ReleaseInProgressAsync(rejected, Arg.Any<CancellationToken>());
-            await manager.DidNotReceive().ReleaseInProgressAsync(parkedA, Arg.Any<CancellationToken>());
-            await manager.DidNotReceive().ReleaseInProgressAsync(parkedB, Arg.Any<CancellationToken>());
+            await manager
+                .Received(1)
+                .ReleaseAcquiredResources(
+                    Arg.Is<JobExecutionState[]>(claims => claims.Single() == rejected),
+                    CancellationToken.None
+                );
         }
         finally
         {
@@ -208,11 +225,11 @@ public sealed class JobsDispatcherTests : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         manager
-            .ReleaseInProgressAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
+            .ReleaseAcquiredResources(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                handedBack.TrySetResult(call.Arg<JobExecutionState>());
-                return Task.FromResult(1);
+                handedBack.TrySetResult(call.Arg<JobExecutionState[]>().Single());
+                return Task.CompletedTask;
             });
         var services = new ServiceCollection();
         services.AddSingleton(manager);
@@ -223,7 +240,7 @@ public sealed class JobsDispatcherTests : TestBase
             timeProvider: TimeProvider.System,
             maxLongRunningConcurrency: 1
         );
-        var dispatcher = new JobsDispatcher(taskScheduler, handler, new JobFunctionConcurrencyGate());
+        var dispatcher = _Dispatcher(taskScheduler, handler, manager);
 
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var unblock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -283,8 +300,24 @@ public sealed class JobsDispatcherTests : TestBase
         manager
             .IsTimeJobCancellationRequestedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<bool?>(false));
+        manager
+            .SetTickersInProgress(Arg.Any<JobExecutionState[]>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<JobExecutionState[]>()));
         return manager;
     }
+
+    private static JobsDispatcher _Dispatcher(
+        JobsTaskScheduler taskScheduler,
+        JobsExecutionTaskHandler taskHandler,
+        IInternalJobManager internalJobsManager
+    ) =>
+        new(
+            taskScheduler,
+            taskHandler,
+            new JobFunctionConcurrencyGate(),
+            internalJobsManager,
+            NullLogger<JobsDispatcher>.Instance
+        );
 
     private static JobsExecutionTaskHandler _Handler(IServiceProvider serviceProvider, IInternalJobManager manager)
     {

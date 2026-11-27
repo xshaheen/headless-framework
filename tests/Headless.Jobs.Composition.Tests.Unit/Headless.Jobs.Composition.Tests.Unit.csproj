@@ -1,6 +1,5 @@
 ﻿<Project Sdk="Headless.NET.Sdk.Test">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
@@ -21,6 +20,7 @@
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.PostgreSql\Headless.Jobs.EntityFramework.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.SqlServer\Headless.Jobs.EntityFramework.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Logging\Headless.Logging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

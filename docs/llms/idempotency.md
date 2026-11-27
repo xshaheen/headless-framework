@@ -1,6 +1,6 @@
 ---
 domain: Idempotency
-packages: Idempotency.Abstractions, Idempotency, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite, Idempotency.ResponseReplay
+packages: Idempotency.Abstractions, Idempotency, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite, Idempotency.ResponseReplay, Idempotency.Dashboard
 ---
 
 # Idempotency
@@ -60,6 +60,8 @@ switch (admission.Disposition)
 - `expectedContract` on `AdmitAsync` is a read guard, not a write guard: a completed record stored under a different contract tag comes back as `Conflict` (`StoredContract` set) rather than a mis-typed replay. Pass the same contract tag to `AdmitAsync` and `CompleteAsync`.
 - `RenewAsync` is one guarded single-row update the store commits on its own connection. Call it from a heartbeat loop without an owned unit. It extends the lease only while the record is pending at the admission's generation with a live lease, and otherwise reports why (`IdempotentLeaseRenewal.Status`). The status describes the caller's own attempt: an attempt whose key a newer attempt took over and then completed or released answers `Stale`, not that newer attempt's `Completed` or `Released` (the cache provider answers `Released` there). It is the one autonomous-only member; there is no `unit.Idempotency.RenewAsync`.
 - The idempotency key, tenant id, and contract pass through `IdempotencyFieldLimits` (`TenantIdMaxLength` 128, `KeyMaxLength` 256, `ContractMaxLength` 256, `FingerprintAlgorithmMaxLength` 32, `FingerprintMaxLength` 64, `RecoveryPointMaxLength` 128, `RecoveryStateMaxLength` 64 KiB) before any SQL runs, and a lease duration must fall within `IdempotentOperationsOptions.MinimumLeaseDuration`/`MaximumLeaseDuration`. Lease durations and retentions are then applied truncated to whole microseconds, the finest resolution every provider stores, so a lease or retention ends at the same instant whichever provider holds the record; a retention under one microsecond is refused.
+- To show an operator one key (a dashboard lookup, a support tool), inject `IIdempotencyInspector` (package `Headless.Idempotency`, registered by `AddHeadlessIdempotency`) and call `InspectAsync(key, ct)`, not `IIdempotentOperations.GetResultAsync`. `InspectAsync` returns the record's metadata and the result's size and contract without its bytes; `GetResultAsync` returns the stored body, which can hold personal data. Neither admits an attempt. No API releases, expires, or deletes a record for an operator: releasing a live attempt could run its operation twice.
+- To give operators that lookup without writing one, add `dashboard.AddIdempotency()` from `Headless.Idempotency.Dashboard`; see [Headless.Idempotency.Dashboard](#headlessidempotencydashboard).
 - The key, tenant id, contract, and recovery point name must be text every provider keeps unchanged, on every provider including in-memory and cache. Surrounding white space, a NUL character, or an unpaired UTF-16 surrogate throws `ArgumentException` before any write.
 
 ## How this differs from locks and fenced leases
@@ -153,6 +155,36 @@ With `Headless.UnitOfWork.Analyzers` referenced, [HF2005](unit-of-work.md#hf2005
 - **Reconciliation.** `IHttpIdempotencyLookup` reads an earlier request's status or replays its stored response from another endpoint, such as `GET /transactions/{key}` that a payment terminal polls after a timeout. It addresses the same record the middleware stored for that method, path, query, key, user, and tenant claim, through `PeekAsync` and `GetResultAsync`.
 - **InFlight.** `Reject` (default): `409 g:idempotency_in_flight`. `WaitAndReplay`: each tick of a doubling backoff calls the cheap `PeekAsync` first and only re-runs the full, row-locking `AdmitAsync` when the peek shows the record no longer `Pending` (completed, released, or gone) or the holder's last-known lease expiry has passed, so a holder that releases (a thrown handler or an uncached response) frees the waiters at their next tick. It polls until `Replay`, `Admitted` (a takeover), or the configured timeout: `409 g:idempotency_in_flight_timeout`. Both 409s carry `Retry-After` until the holder's lease runs out.
 
+## Inspecting a record
+
+`IIdempotencyInspector.InspectAsync(key, ct)` answers "was this operation admitted, is it running, or did it complete?" for one key in the current tenant. It takes no row lock, never admits or changes the record, and never returns the stored result or recovery-state bytes. A record whose retention elapsed while a live attempt still holds its lease is still returned, as `Pending` with `RetentionUntil` before `ObservedAt`, because the store keeps it until that attempt ends; once no live attempt holds it, it returns `null`. Keys cannot be listed. To inspect another tenant's key, change the current tenant around the call (`currentTenant.Change(tenantId)`) inside your own authorization check; there is no cross-tenant overload. The [Idempotency dashboard module](#headlessidempotencydashboard) does this for operators who pass its view policy.
+
+| `IdempotencyRecordSnapshot` field | Meaning |
+| --- | --- |
+| `Key` | The tenant and key. |
+| `Status` | `Pending` (a live lease holds it), `Completed`, or `Released` (released, lease expired, or never admitted). Never `Absent`: an absent record returns `null`. |
+| `Generation` | The last admitted attempt's generation, kept after it completes or releases; `null` before any admission. |
+| `TakeoverCount` | Takeovers from expired attempts since an attempt last completed or released; `null` on the cache provider. |
+| `Fingerprint` | The stored request fingerprint: `Algorithm` and the digest `Hash`. |
+| `LeaseExpiresAt`, `IsLeaseExpired` | The lease end while an attempt holds it, and whether it already passed `ObservedAt` (the attempt stalled). `null` and `false` once completed or released. |
+| `RetentionUntil` | When the record stops replaying. |
+| `ObservedAt` | The store's clock when it read the record. Compare the other instants with it, never with your own clock. |
+| `ResultContract`, `ResultSizeBytes` | The stored result's contract and size; `null` unless completed. |
+| `RecoveryPoint`, `RecoveryContract`, `RecoveryStateSizeBytes` | The last recovery point's name, contract, and state size; `null` when none is kept. |
+
+Both types are sealed records with `required init` properties, so a test builds one with an object initializer (`new IdempotencyRecordSnapshot { Key = ..., Status = ..., ... }`) and later fields arrive without breaking it. No provider stores when a record was admitted or completed, or the HTTP status of a stored response, so the snapshot has no such fields.
+
+| Provider | Clock | Notes |
+| --- | --- | --- |
+| PostgreSQL, SQLite | Database clock, same statement | Sizes are measured in SQL; the body never leaves the database. |
+| SQL Server | `SYSUTCDATETIME()`, same statement | With `READ_COMMITTED_SNAPSHOT` off, the read waits behind an uncommitted writer, as `PeekAsync` does. |
+| InMemory | Registered `TimeProvider` | Reads the committed record. |
+| Caching | Registered `TimeProvider` | Reads the whole cache entry, body included, and drops the body before returning. `TakeoverCount` is `null`. |
+
+`IIdempotencyInspector.Describe()` returns an `IdempotencyStoreDescription` with `Provider`, `Location`, `DefaultRetention`, `DefaultLeaseDuration`, `MinimumLeaseDuration`, `MaximumLeaseDuration`, `PurgeInterval`, and `PurgeBatchSize`. `Location` is the quoted, qualified table name the provider's SQL uses on a relational provider (SQLite folds the schema into the name, `"headless_idempotency_records"`), the key prefix on the cache provider, and `null` in memory. `PurgeInterval` is `null` when the purge is off, and on the cache provider, whose entries expire on their own.
+
+**Verify:** `IIdempotencyInspector` resolves from the container; admit a key, then `InspectAsync` returns `Status` `Pending` with `Generation` equal to the admission's; after `CompleteAsync`, it returns `Completed` with `ResultSizeBytes` equal to the stored result's length, and `GetResultAsync` is never called.
+
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
@@ -213,8 +245,8 @@ Applications reach it through a provider package, as shown in [Orientation](#ori
 ### Design and runtime behavior
 
 - `AddHeadlessIdempotency` requires exactly one `Use…` provider call and nothing else. When the host registered no `ICurrentTenant`, it registers the async-local one, because records are keyed by the current tenant.
-- It registers `IIdempotentOperations` and `IUnitOfWorkIdempotency` as singletons and always adds the retention hosted service. With `PurgeInterval` `null` the service stays idle and re-checks the option every minute, so a configuration reload back to a value resumes purging without a restart.
-- `IIdempotencyRecordStore` is the provider seam. Applications do not call it; see [For store authors](#for-store-authors).
+- It registers `IIdempotentOperations`, `IUnitOfWorkIdempotency`, and `IIdempotencyInspector` as singletons and always adds the retention hosted service. With `PurgeInterval` `null` the service stays idle and re-checks the option every minute, so a configuration reload back to a value resumes purging without a restart.
+- `IIdempotencyInspector` (`InspectAsync`, `Describe`) is the operator read; see [Inspecting a record](#inspecting-a-record). `IIdempotencyRecordStore` is the provider seam. Applications do not call it; see [For store authors](#for-store-authors).
 - On the relational providers, every decision reads the database clock after the record's row lock is held. A repeated completion or release by the same attempt writes nothing. A lease that runs out between the locked read and the write is refused: completion and the recovery point throw `StaleAdmissionException` with `Reason` `Expired`, and a release answers `Expired`. Each statement is bounded by the provider's `CommandTimeout`. Retention is set to the later of the stored value and the database clock plus the retention.
 - On the relational providers, peek and result reads are one statement on their own connection with no transaction, and retry any transient fault up to 3 attempts. Renewal and purge run in their own READ COMMITTED transaction and retry a transient fault raised before the commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection) up to 3 attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`). A fault from the commit is never retried. Enlisted calls never retry.
 - `PostgreSqlIdempotencyOptions` and `SqlServerIdempotencyOptions` both derive from `RelationalIdempotencyOptions`, which carries `ConnectionString` and `CommandTimeout`.
@@ -247,6 +279,8 @@ Rules every store honors:
 | `RenewAsync(key, generation, leaseDuration, ct)` | On the store's own connection, committed before it returns: extend the lease to the store clock plus `leaseDuration` only while the record is pending at that generation with a live lease. Otherwise write nothing and return `IdempotentLeaseRenewal` with the reason. Retry a deadlock in a fresh transaction. |
 | `PeekAsync(key, ct)` | Read the status on the store's own connection without the record lock. Return `Absent` when no record exists or its retention has passed, `Completed` for a completed record, `Pending` when a generation holds a live lease, and otherwise `Released`. |
 | `GetResultAsync(key, ct)` | Read the stored result of a completed record within retention, with the same lock-free read; otherwise `null`. |
+| `InspectAsync(key, ct)` | Read the record's metadata with the same lock-free read, judged on one store clock reading returned as `ObservedAt`: `null` when absent, or when retention has passed and no live lease holds it; a live lease keeps it visible past retention. Report the generation of the last admitted attempt (`null` when never admitted), the lease expiry only while an attempt holds the lease, and the result and recovery-state sizes, never their bytes. A field the store does not keep is `null`. |
+| `Info` | Return `IdempotencyStoreInfo(Provider, Location, PurgeDeletesRecords)` without I/O. Answer `PurgeDeletesRecords: false` when `PurgeAsync` never deletes anything. |
 | `PurgeAsync(olderThan, limit, ct)` | On the store's own connection, committed before it returns, delete at most `limit` records whose retention ended at least `olderThan` ago and whose lease is no longer live. Skip a record another transaction holds instead of waiting. Return the count deleted. |
 
 A store that checks at write time instead of locking at read time (an optimistic store, such as the cache provider) throws `IdempotencyRecordConflictException(key)` from a write another caller beat. The autonomous `AdmitAsync`, `CompleteAsync`, `SetRecoveryPointAsync`, and `ReleaseAsync` then run again from a fresh read, up to 8 attempts.
@@ -282,7 +316,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseInMemory());
 - Every admission, fence, completion, recovery point, and release takes an exclusive per-key lock, so admission decides exactly as on the relational providers. Generations come from one process-wide counter, so they grow per key across releases, takeovers, and purges, but restart from 1 when the process restarts, when every earlier record is gone too.
 - Autonomous calls run in a resource-less owned unit the store begins. Enlisted calls (`unit.Idempotency`) run only on a resource-less unit (`IUnitOfWorkFactory.BeginAsync()`); a unit over a database connection or `DbContext` is refused with `InvalidOperationException`, because in-memory records cannot commit or roll back with that transaction. The unit is the commit boundary: the record's lock is held until the unit ends, its writes reach the table only when the unit completes, and a rollback or a dispose without completing drops them. One unit may fence and then complete the same record without waiting on itself.
 - `FenceAsync` holds the record until the unit ends, so no admission in this process can take the key over under the unit. It guards nothing outside the process and is not coupled to any database transaction.
-- `PeekAsync` and `GetResultAsync` read the committed record without the lock and never see a unit's uncommitted writes. `RenewAsync` takes the lock and commits at once.
+- `PeekAsync`, `GetResultAsync`, and `InspectAsync` read the committed record without the lock and never see a unit's uncommitted writes. `RenewAsync` takes the lock and commits at once.
 - There is no deadlock detection. Units that lock several keys must lock them in one consistent order. Pass a cancellation token that bounds the wait.
 - The retention purge skips a record a unit holds and keeps a record whose lease is still live, like the relational providers.
 - `Headless.Idempotency.ResponseReplay` works on it unchanged: `AddHeadlessIdempotency(setup => setup.UseInMemory())` plus `AddHeadlessHttpIdempotency(...)` needs no database.
@@ -324,7 +358,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseCache());
 - **Retention is the cache's expiry.** Each entry expires in the cache at the later of its retention and its lease, so a live attempt keeps its record even past retention. `PurgeAsync` deletes nothing and the retention service has nothing to do; set `PurgeInterval = null` to keep it idle.
 - **Durability is the cache's.** An evicted or flushed record is a record that never existed: the next admission of the key is a fresh `Admitted`, not a `Replay`, and the operation runs again. When that matters, run Redis with a no-eviction policy (or `volatile-*` with enough memory) and persistence.
 - **Generations.** Drawn from a cache counter (`IncrementAsync`) that never expires. A generation is never issued at or below the highest one the record ever admitted, and the counter is raised past it, so generations keep growing per key even if the counter is evicted. Losing the counter and the record together can restart generations from 1.
-- `PeekAsync` and `GetResultAsync` are one cache read each. `RenewAsync` is its own compare-and-swap loop with the same bound as the autonomous calls.
+- `PeekAsync`, `GetResultAsync`, and `InspectAsync` are one cache read each. `InspectAsync` transfers the whole entry, result included, and returns only its size; it reports no takeover count, and `Describe()` reports no purge schedule. `RenewAsync` is its own compare-and-swap loop with the same bound as the autonomous calls.
 - `Headless.Idempotency.ResponseReplay` works on it unchanged, including `WaitAndReplay`, since the middleware uses only the autonomous surface. A handler that calls `unit.Idempotency.FenceAsync` or records a recovery point inside its unit is refused.
 
 ---
@@ -394,7 +428,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 ### Design and runtime behavior
 
 - The verbs are the shared relational store's (see [Headless.Idempotency](#headlessidempotency)). Two first admissions of one key serialize on a key-range lock and never raise a duplicate key, so a caller's `XACT_ABORT ON` transaction is never doomed by one.
-- Peek reads the record with no lock hint, so whether it waits depends on the database. With `READ_COMMITTED_SNAPSHOT` on, it reads the last committed row version and never waits. With it off, READ COMMITTED takes a shared lock on the row, so a peek waits behind any admission, fence, completion, or release that has written the row and not yet committed, up to `CommandTimeout`. An enlisted unit holds that lock until it ends, so turn on read committed snapshot isolation when `WaitAndReplay` polls keys that enlisted units hold.
+- Peek and inspect read the record with no lock hint, so whether they wait depends on the database. With `READ_COMMITTED_SNAPSHOT` on, it reads the last committed row version and never waits. With it off, READ COMMITTED takes a shared lock on the row, so a peek waits behind any admission, fence, completion, or release that has written the row and not yet committed, up to `CommandTimeout`. An enlisted unit holds that lock until it ends, so turn on read committed snapshot isolation when `WaitAndReplay` polls keys that enlisted units hold.
 - Each decision reads `SYSUTCDATETIME()` after the lock wait, so a wait never makes a lease look live past its expiry.
 - The autonomous path runs in its own READ COMMITTED transaction. The enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal, peek, and purge retry a transient fault raised before the commit, including a deadlock or snapshot update conflict (1205, 3960), a lock timeout (1222), and the connection faults EF Core's SQL Server retry set covers. The purge skips rows another transaction holds, with or without read committed snapshot isolation.
@@ -602,3 +636,42 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
 - On admission, sets `IHttpIdempotencyContext` as an `HttpContext` feature before invoking the handler, then renews the lease every third of `InFlightLease` while it runs; renewal stops before completion so it cannot race the settlement that ends the lease.
 - Completion runs after the handler's unit commits, with `CancellationToken.None` so a client disconnect cannot strand the admission until its lease expires. A `StaleAdmissionException` there (the lease expired or was taken over while the handler ran) is logged, never thrown. Only the owning attempt's result is ever stored.
 - When the **response** body exceeds `MaxBodySizeForHashing`, the body is not stored. For a response the cache predicate accepts (a success), the key still settles: it stores a `409` problem response with `g:idempotency_response_too_large`, which every retry replays, so the handler never runs a second time. A response the predicate refuses (a 5xx) releases the key as before. `OversizeBehavior` controls **request**-body handling only.
+
+---
+
+## Headless.Idempotency.Dashboard
+
+The Idempotency module of the unified dashboard: the store's settings and a read-only lookup of one key's record metadata in a tenant the operator names. Use it instead of writing the operator screen [Inspecting a record](#inspecting-a-record) describes.
+
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards/idempotency-module.md](dashboards/idempotency-module.md) lists the endpoints, the outcomes, and the screen's states.
+
+### Setup
+
+```bash
+dotnet add package Headless.Idempotency.Dashboard
+```
+
+```csharp
+using Headless.Dashboard;
+using Headless.Idempotency;
+
+builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(builder.Configuration.GetConnectionString("Default")!));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddIdempotency());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+**Verify:** start the host. Without `AddHeadlessIdempotency(...)` it fails to start naming that call. With it, the Platform tab shows Idempotency, and a signed-in viewer's `GET /headless/api/idempotency/store` answers `200` with the provider and its defaults.
+
+### Runtime behavior
+
+- The lookup is `POST {base}/api/idempotency/lookup` with `{ key, tenantId? }`, so the key never reaches a URL or a request log. It calls `IIdempotencyInspector.InspectAsync` inside `ICurrentTenant.Change(tenantId)`; an absent tenant reads the host scope, never the ambient tenant.
+- Every principal that passes the module's view policy reads any tenant's record metadata. Set a narrower `ViewPolicy` on the module when that is too wide.
+- The answer is the snapshot's metadata only, with the fingerprint as lowercase hex; it never carries the stored result or recovery-state bytes. A missing key answers `200` with `found: false`, and a store failure answers `503` with a fixed message that names neither the key nor the tenant.
+- The module has no command: no release, expire, or delete, because releasing a live attempt could run its operation twice.
+- HTTP middleware records are keyed by a hash of the request scope, so the client's `Idempotency-Key` alone does not find them on the screen.

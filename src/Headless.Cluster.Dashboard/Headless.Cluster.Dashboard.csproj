@@ -1,0 +1,41 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>The Cluster module of the Headless dashboard: the coordination membership of a cluster, its metadata agreement, and the health checks of the serving host.</Description>
+    <PackageTags>headless;cluster;coordination;health-checks;dashboard;dotnet</PackageTags>
+    <RootNamespace>Headless.Cluster</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Cluster.Dashboard.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Coordination\Headless.Coordination.csproj" />
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+  <!--
+    The front end is the Cluster dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/cluster, which embeds as Headless.Cluster.wwwroot.dist.modules.cluster.* (ClusterAssets), then
+    holds the module to its size budgets and writes .build-complete last, so a build whose budget step failed is not up
+    to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
+</Project>

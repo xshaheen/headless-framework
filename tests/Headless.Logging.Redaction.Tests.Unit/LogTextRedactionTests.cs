@@ -507,6 +507,43 @@ public sealed partial class LogTextRedactionTests : TestBase
         exception!.ToString().Should().NotContain(_NationalId).And.Contain("System.FormatException: ***");
     }
 
+    [Fact]
+    public void should_render_captured_exceptions_as_text_before_serilog_can_destructure_them()
+    {
+        var sink = new CollectingSink();
+        using var serilog = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.ClearProviders().AddProvider(new SerilogLoggerProvider(serilog)));
+        services.AddHeadlessRedaction();
+        using var provider = services.BuildServiceProvider();
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("App");
+        var propertyReads = 0;
+        var error = new CapturedException(() => propertyReads++);
+
+        using (logger.BeginScope("Scope {@ScopeError}", error))
+        {
+#pragma warning disable CA1848, CA1873 // Exercise the template extension that gives Serilog its destructuring hints.
+            logger.LogError(
+                "Failed {@Error} {@Envelope} {@Batch}",
+                error,
+                new ExceptionEnvelope(error),
+                new[] { error }
+            );
+#pragma warning restore CA1848, CA1873
+        }
+
+        var entry = sink.Events.Should().ContainSingle().Which;
+        propertyReads.Should().Be(0);
+        var text = error.ToString();
+        entry.Properties["Error"].Should().BeEquivalentTo(new ScalarValue(text));
+        entry
+            .Properties["Envelope"]
+            .Should()
+            .BeEquivalentTo(new ScalarValue($"ExceptionEnvelope {{ Error = {text} }}"));
+        entry.Properties["Batch"].Should().BeEquivalentTo(new ScalarValue(text));
+        entry.Properties["ScopeError"].Should().BeEquivalentTo(new ScalarValue(text));
+    }
+
     [LoggerMessage(7, LogLevel.Error, "Order {Order} failed")]
     private static partial void LogFailure(ILogger logger, Exception exception, int order);
 
@@ -558,6 +595,21 @@ public sealed partial class LogTextRedactionTests : TestBase
     {
         public override string ToString() => $"{base.ToString()} (citizen {_NationalId})";
     }
+
+    private sealed class CapturedException(Action onRead) : Exception("The operation failed.")
+    {
+        [PrivateData]
+        public string Detail
+        {
+            get
+            {
+                onRead();
+                return "diagnostic detail";
+            }
+        }
+    }
+
+    private sealed record ExceptionEnvelope(CapturedException Error);
 
     private sealed record Citizen(string Id)
     {

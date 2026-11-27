@@ -52,6 +52,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         // The unique indexes allow one row per scope; the order picks the same one if a schema lacks them.
         var sql =
             $"{_select} WHERE {_name} = @Name AND {_NullSafeEquals(_providerName, "ProviderName")} "
@@ -80,6 +82,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         var filters = new List<string>(3) { $"{_name} = @Name" };
 
         if (providerName is not null)
@@ -122,6 +126,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         if (names.Count == 0)
         {
             return Task.FromResult(new List<FeatureValueRecord>());
@@ -141,6 +147,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         var (connection, transaction) = _Enlist(unitOfWork);
 
         if (names.Count == 0)
@@ -161,6 +169,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         var (connection, transaction) = _Enlist(unitOfWork);
 
         return _ReadAsync(
@@ -179,6 +189,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
+        _ValidateScope(providerName, providerKey);
+
         return _ReadAsync(
             $"{_select} WHERE {_byScope};",
             command => _AddScope(command, providerName, providerKey),
@@ -232,6 +244,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
     {
         Argument.IsNotNullOrEmpty(names);
         Argument.IsNotNull(expectedVersion);
+        _ValidateScope(providerName, providerKey);
+        _ValidateInsertedScopes(inserted);
 
         return await RelationalVersionedWrite
             .ExecuteAsync(
@@ -305,6 +319,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         CancellationToken cancellationToken
     )
     {
+        _ValidateInsertedScopes(inserted);
+
         var (connection, transaction) = _Enlist(unitOfWork);
 
         if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
@@ -340,6 +356,8 @@ internal sealed class RelationalFeatureValueRecordRepository(
         bool requireUpdatedRows = true
     )
     {
+        _ValidateInsertedScopes(inserted);
+
         if (inserted.Count == 0 && updated.Count == 0 && deleted.Count == 0)
         {
             return;
@@ -455,6 +473,21 @@ internal sealed class RelationalFeatureValueRecordRepository(
                 _AddScope(command, providerName, providerKey);
             }
         );
+    }
+
+    private static void _ValidateScope(string? providerName, string? providerKey)
+    {
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+    }
+
+    private static void _ValidateInsertedScopes(IReadOnlyCollection<FeatureValueRecord> inserted)
+    {
+        // Validate the whole batch before its first write so a caller-owned unit cannot keep a partial insert.
+        foreach (var record in inserted)
+        {
+            _ValidateScope(record.ProviderName, record.ProviderKey);
+        }
     }
 
     private void _AddScope(DbCommand command, string providerName, string? providerKey)

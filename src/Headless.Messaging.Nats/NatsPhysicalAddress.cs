@@ -24,7 +24,10 @@ internal static class NatsPhysicalAddress
     );
 
     public static string Subject(string hostPrefix, MessageLane lane, string logicalSubject) =>
-        $"{SubjectRoot(hostPrefix)}.{_Lane(lane)}.{logicalSubject}";
+        $"{LaneRoot(hostPrefix, lane)}.{logicalSubject}";
+
+    /// <summary>Returns the first tokens of every subject this host derives on one lane: <c>{root}.{lane}</c>.</summary>
+    public static string LaneRoot(string hostPrefix, MessageLane lane) => $"{SubjectRoot(hostPrefix)}.{_Lane(lane)}";
 
     /// <summary>
     /// Returns the first tokens of every subject this host derives: <c>headless</c>, or <c>{prefix}.headless</c>. The

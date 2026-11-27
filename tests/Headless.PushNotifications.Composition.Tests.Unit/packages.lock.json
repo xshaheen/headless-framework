@@ -556,6 +556,13 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -631,6 +638,8 @@
       "headless.pushnotifications.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.PushNotifications": "[1.0.0, )"
         }
       },

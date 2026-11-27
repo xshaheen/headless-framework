@@ -145,7 +145,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
 
             // then
             result.Succeeded.Should().BeTrue(result.Exception?.ToString());
-            await _WaitForMessageCountAsync($"queue.{name}.dlq", expected: 1);
+            await _WaitForMessageCountAsync($"headless_dlq.queue.{name}", expected: 1);
             (await _MessageCountAsync($"queue.{name}")).Should().Be(0);
         }
         finally
@@ -200,7 +200,7 @@ public sealed class RabbitMqPublishSafetyTests(RabbitMqFixture fixture) : TestBa
 
             // then
             result.Succeeded.Should().BeTrue(result.Exception?.ToString());
-            await _WaitForMessageCountAsync($"queue.{name}.dlq", expected: 1);
+            await _WaitForMessageCountAsync($"headless_dlq.queue.{name}", expected: 1);
             (await _MessageCountAsync($"queue.{name}")).Should().Be(0);
         }
         finally

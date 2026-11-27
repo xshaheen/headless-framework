@@ -122,6 +122,48 @@ public sealed class InDoubtCommitTests : TestBase
         logger.Entries.Should().NotContain(entry => entry.EventId.Id == 7);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_preserve_the_driver_commit_outcome_when_releasing_the_transaction_faults(bool inDoubt)
+    {
+        await using var connection = Substitute.For<DbConnection>();
+        // The unit owns the transaction and exercises its failing disposal.
+        var transaction = Substitute.For<DbTransaction>();
+        var commitFault = new TimeoutException("Lost commit response.");
+        transaction
+            .CommitAsync(Arg.Any<CancellationToken>())
+            .Returns(inDoubt ? Task.FromException(commitFault) : Task.CompletedTask);
+        transaction.DisposeAsync().Returns(ValueTask.FromException(new InvalidOperationException("Dispose failed.")));
+        var resource = new DbConnectionUnitOfWorkResource(connection, transaction, static _ => true, owned: true);
+        var factory = new UnitOfWorkFactory();
+        await using var unit = await factory.BeginAsync(
+            _ => ValueTask.FromResult<IUnitOfWorkResource>(resource),
+            AbortToken
+        );
+        var completed = false;
+        unit.OnCompleted(() =>
+        {
+            completed = true;
+            return ValueTask.CompletedTask;
+        });
+        var act = () => unit.CompleteAsync(AbortToken).AsTask();
+
+        if (inDoubt)
+        {
+            var thrown = await act.Should().ThrowAsync<UnitOfWorkInDoubtException>();
+            thrown.Which.InnerException.Should().BeSameAs(commitFault);
+            unit.Failure!.Reason.Should().Be(UnitOfWorkFailureReason.InDoubt);
+            completed.Should().BeFalse();
+        }
+        else
+        {
+            await act();
+            unit.State.Should().Be(UnitOfWorkState.Completed);
+            completed.Should().BeTrue();
+        }
+    }
+
     [Fact]
     public async Task should_surface_an_in_doubt_commit_from_run_without_replaying_it()
     {

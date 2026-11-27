@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Threading.Channels;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Tests.Fakes;
 
 namespace Tests.Values;
@@ -116,6 +118,40 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_yield_when_the_backstop_timer_wakes_less_than_a_millisecond_early()
+    {
+        // A 2 ms backstop with ±10% jitter is due at 1.8–2.2 ms, so this wake leaves 0.3–0.7 ms.
+        var clock = new EarlyWakeTimeProvider(TimeSpan.FromMicroseconds(1_500));
+        var entry = new FakeEntry(TimeSpan.FromMilliseconds(2));
+        using var sut = new SettingsSnapshotHostedService(
+            [entry],
+            clock,
+            NullLogger<SettingsSnapshotHostedService>.Instance
+        );
+        await sut.StartAsync(AbortToken);
+
+        try
+        {
+            clock.Advance(await clock.WaitForTimerAsync(AbortToken));
+
+            var remainingDelay = await clock.WaitForTimerAsync(AbortToken);
+            remainingDelay.Should().Be(TimeSpan.FromMilliseconds(1));
+            entry.Backstops.Should().Be(0);
+
+            clock.Advance(remainingDelay);
+            await clock.WaitForTimerAsync(AbortToken);
+            entry.Backstops.Should().Be(1);
+        }
+        finally
+        {
+            await sut.StopAsync(AbortToken);
+        }
+
+        sut.ExecuteTask.Should().Match<Task>(task => task.IsCompletedSuccessfully);
+        entry.Backstops.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_keep_each_snapshot_on_its_own_interval()
     {
         // given
@@ -186,6 +222,42 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    private sealed class EarlyWakeTimeProvider(TimeSpan firstWake) : FakeTimeProvider
+    {
+        private readonly Channel<TimeSpan> _timers = Channel.CreateUnbounded<TimeSpan>();
+        private int _clockReads;
+        private bool _firstTimer = true;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            // A spinning continuation can run inside Advance, so bound clock reads rather than waiting for a timeout.
+            if (Interlocked.Increment(ref _clockReads) > 32)
+            {
+                var exception = new InvalidOperationException(
+                    "The snapshot worker kept reading the clock without waiting."
+                );
+                _timers.Writer.TryComplete(exception);
+                throw exception;
+            }
+
+            return base.GetUtcNow();
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var delay = _firstTimer ? firstWake : dueTime;
+            _firstTimer = false;
+
+            var timer = base.CreateTimer(callback, state, delay, period);
+            _timers.Writer.TryWrite(delay);
+
+            return timer;
+        }
+
+        public ValueTask<TimeSpan> WaitForTimerAsync(CancellationToken cancellationToken) =>
+            _timers.Reader.ReadAsync(cancellationToken);
     }
 
     private sealed class FakeEntry(TimeSpan backstop) : ISettingsSnapshotEntry

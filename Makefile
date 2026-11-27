@@ -54,9 +54,16 @@ NPM_WORKSPACE_DIR ?= .
 NPM_WORKSPACE_FILES ?= package.json package-lock.json .npmrc
 SHELL_DASHBOARD_DIR ?= src/Headless.Dashboard/wwwroot
 JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
+DEV_INBOX_DASHBOARD_DIR ?= src/Headless.DevInbox.Dashboard/wwwroot
 MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
+RATE_LIMITING_DASHBOARD_DIR ?= src/Headless.RateLimiting.Dashboard/wwwroot
+CLUSTER_DASHBOARD_DIR ?= src/Headless.Cluster.Dashboard/wwwroot
+IDEMPOTENCY_DASHBOARD_DIR ?= src/Headless.Idempotency.Dashboard/wwwroot
+LEASES_DASHBOARD_DIR ?= src/Headless.Leases.Dashboard/wwwroot
+SEQUENCES_DASHBOARD_DIR ?= src/Headless.Sequences.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
 CONFIGURATION ?= Release
+TARGET_FRAMEWORK ?= net10.0
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
@@ -102,7 +109,7 @@ MESSAGING_QUARANTINE_DIR ?= $(TEST_RESULTS_DIR)/messaging-quarantine
 MESSAGING_UNIT_PROJECT ?= tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj
 MESSAGING_CONFORMANCE_PROVIDERS ?= Aws Kafka Nats RabbitMq Redis
 MESSAGING_CONFORMANCE_EVIDENCE_PROJECTS ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/Headless.Messaging.$(provider).Tests.Integration.csproj)
-MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/net10.0/Headless.Messaging.$(provider).Tests.Integration.dll)
+MESSAGING_CONFORMANCE_EVIDENCE_MODULES ?= $(foreach provider,$(MESSAGING_CONFORMANCE_PROVIDERS),tests/Headless.Messaging.$(provider).Tests.Integration/bin/$(CONFIGURATION)/$(TARGET_FRAMEWORK)/Headless.Messaging.$(provider).Tests.Integration.dll)
 # `build` type-checks (vue-tsc) and bundles; CI's solution build passes `build-only` because the separate
 # Dashboard jobs already type-check, lint, and unit-test the SPAs.
 DASHBOARD_BUILD_SCRIPT ?= build
@@ -305,10 +312,11 @@ AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
 			find "$$run/unit-tests" "$$run/integration-tests" "$$run/coverage-reused" -name '*.cobertura.xml' -delete 2>/dev/null || true; \
 		else status=1; fi; \
 	fi;
-# Per-module reuse (test-affected-integration only). The whole-bundle reuse above needs every input to match, the
-# branch's patch included, so any review fix used to rerun every selected module. Each integration and integration-unit
-# module also gets a key over its own ProjectReference closure; a module whose key matches a module that passed in an
-# earlier integration bundle does not run again, and its TRX and coverage are carried into this bundle. The keys are
+# Per-module reuse (verify-affected and test-affected-integration). The whole-bundle reuse above needs every input to
+# match, the branch's patch included, so a review fix, or a rebase onto a main that changed one package, used to rerun
+# every selected module. Each unit, integration, and integration-unit module also gets a key over its own
+# ProjectReference closure; a module whose key matches a module that passed in an earlier bundle of the same gate does
+# not run again, and its TRX and coverage are carried into this bundle. The build and analyzer stages still run. The keys are
 # always written so this run's results can be reused later; PROOF_REUSE=false runs every module.
 AFFECTED_MODULE_REUSE_STAGE = $(GRAPH) module-keys --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)" || true; \
 	if [ "$(PROOF_REUSE)" = true ]; then $(PROOF) reuse-modules --dir "$$run" --root "$${run%/*}" --coverage "$$coverage" || true; fi;
@@ -332,10 +340,15 @@ AFFECTED_DASHBOARD_STAGE = $(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); \
 	done <<< "$$(changed_dashboards)";
 # A gate whose inputs match an earlier passing bundle of its kind reuses that bundle instead of running again, so a
 # message-only amend or a rebase onto a main that touched nothing the selection builds costs seconds, not a gate run.
-# The key (scripts/project-graph.py input-key) hashes the build closure's files, the build-wide files, the branch's
-# patch, the selection, and the settings below; any change to one runs every stage. PROOF_REUSE=false always runs.
+# The key (scripts/project-graph.py input-key) hashes the build closure's files, the build-wide files, the closure's
+# entries in the solution, the test-discipline baseline and the central package versions, the branch's patch, the
+# selection, and the settings below; any change to one runs every stage. PROOF_REUSE=false always runs.
 PROOF_REUSE ?= true
-PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,$(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
+# The gate's own code (this file, scripts/) is not in the key, so a tooling change that only speeds a gate up or rewords
+# its output leaves every open branch's proof valid. Bump this when a tooling change can turn a verdict: a new or
+# stricter stage, or a fix to a stage that passed what it should have failed. The bump reruns every gate once.
+PROOF_GATE_VERSION = 1
+PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,gate-v$(PROOF_GATE_VERSION) $(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
 # Sets `key` for the bundle in `run`, then exits the recipe with the reused bundle's report when one matches.
 PROOF_REUSE_STAGE = key="$$($(GRAPH) input-key --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)")" || key=""; \
 	if [ "$(PROOF_REUSE)" = true ] && $(PROOF) reuse --dir "$$run" --root "$${run%/*}" --key "$$key"; then $(PROOF_REPORT) "$$run"; exit 0; fi;
@@ -824,7 +837,7 @@ quality-fix-project: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS in PROJECT,
 	$(DOTNET) csharpier format .
 
 .PHONY: dashboards
-dashboards: dashboard-shell dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
+dashboards: dashboard-shell dashboard-jobs dashboard-messaging dashboard-rate-limiting dashboard-cluster dashboard-dev-inbox dashboard-idempotency dashboard-leases dashboard-sequences ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
 
 # Internal: fail early with a clear message when Node/npm is missing.
 .PHONY: _node-check
@@ -849,6 +862,25 @@ _npm-workspace: _node-check
 dashboard-messaging: _npm-workspace ## Rebuild the Messaging dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
+.PHONY: dashboard-rate-limiting
+dashboard-rate-limiting: _npm-workspace ## Rebuild the Rate limits dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(RATE_LIMITING_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-cluster
+dashboard-cluster: _npm-workspace ## Rebuild the Cluster dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(CLUSTER_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-dev-inbox
+dashboard-dev-inbox: _npm-workspace ## Rebuild the Dev inbox dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(DEV_INBOX_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-idempotency
+dashboard-idempotency: _npm-workspace ## Rebuild the Idempotency dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(IDEMPOTENCY_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-leases
+dashboard-leases: _npm-workspace ## Rebuild the Leases dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(LEASES_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-sequences
+dashboard-sequences: _npm-workspace ## Rebuild the Sequences dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(SEQUENCES_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+
 # The SPA gates CI's dashboard job runs, through each SPA's own package scripts. `type-check` plus `build-only` is
 # what `npm run build` runs in parallel; they run apart here so a failure names its stage. The other scripts stay
 # out of the CLI on purpose:
@@ -861,6 +893,12 @@ dashboard-messaging: _npm-workspace ## Rebuild the Messaging dashboard module (n
 # cli-exclude: script:headless-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-jobs/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-messaging/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-rate-limiting/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-cluster/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-dev-inbox/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-idempotency/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-leases/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-sequences/lint -- eslint --fix writes files; the gate runs lint:check
 # dashboard_check <name> <dir>: install from the nearest lockfile at or above <dir> (the root workspace's for the
 # shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
 # eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
@@ -903,12 +941,37 @@ dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboar
 dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messaging dashboard module, size budgets included (CI's Messaging dashboard job).
 	@$(DASHBOARD_CHECK_FN); dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)"
 
+.PHONY: dashboard-rate-limiting-test
+dashboard-rate-limiting-test: ## Lint, type-check, unit-test, and build the Rate limits dashboard module, size budgets included (CI's Rate limits dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check rate-limiting "$(RATE_LIMITING_DASHBOARD_DIR)"
+.PHONY: dashboard-cluster-test
+dashboard-cluster-test: ## Lint, type-check, unit-test, and build the Cluster dashboard module, size budgets included (CI's Cluster dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check cluster "$(CLUSTER_DASHBOARD_DIR)"
+.PHONY: dashboard-dev-inbox-test
+dashboard-dev-inbox-test: ## Lint, type-check, unit-test, and build the Dev inbox dashboard module, size budgets included (CI's Dev inbox dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check dev-inbox "$(DEV_INBOX_DASHBOARD_DIR)"
+.PHONY: dashboard-idempotency-test
+dashboard-idempotency-test: ## Lint, type-check, unit-test, and build the Idempotency dashboard module, size budgets included (CI's Idempotency dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check idempotency "$(IDEMPOTENCY_DASHBOARD_DIR)"
+.PHONY: dashboard-leases-test
+dashboard-leases-test: ## Lint, type-check, unit-test, and build the Leases dashboard module, size budgets included (CI's Leases dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check leases "$(LEASES_DASHBOARD_DIR)"
+.PHONY: dashboard-sequences-test
+dashboard-sequences-test: ## Lint, type-check, unit-test, and build the Sequences dashboard module, size budgets included (CI's Sequences dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check sequences "$(SEQUENCES_DASHBOARD_DIR)"
+
 .PHONY: dashboards-test
-dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, dashboard-jobs-test, dashboard-messaging-test); all run, every failure is reported.
+dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, dashboard-jobs-test, dashboard-messaging-test, dashboard-rate-limiting-test, dashboard-cluster-test, dashboard-dev-inbox-test, dashboard-idempotency-test, dashboard-leases-test, dashboard-sequences-test); all run, every failure is reported.
 	@$(DASHBOARD_CHECK_FN); rc=0; \
 	dashboard_check shell "$(SHELL_DASHBOARD_DIR)" || rc=$$?; \
 	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check rate-limiting "$(RATE_LIMITING_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check cluster "$(CLUSTER_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check dev-inbox "$(DEV_INBOX_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check idempotency "$(IDEMPOTENCY_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check leases "$(LEASES_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check sequences "$(SEQUENCES_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	exit $$rc
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
@@ -917,7 +980,7 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 # each also answers for its files.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
 	local base spa dir file paths; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
+	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)" "rate-limiting $(RATE_LIMITING_DASHBOARD_DIR)" "cluster $(CLUSTER_DASHBOARD_DIR)" "dev-inbox $(DEV_INBOX_DASHBOARD_DIR)" "idempotency $(IDEMPOTENCY_DASHBOARD_DIR)" "leases $(LEASES_DASHBOARD_DIR)" "sequences $(SEQUENCES_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
 		for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; \
 		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$${paths[@]}"; git ls-files --others --exclude-standard -- "$${paths[@]}")" ]; then echo "$$spa"; fi; \
 	done; }
@@ -938,7 +1001,7 @@ dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs A
 # its state, the revision `up` started from (up.rev), and the generated messaging-dashboard password live in CLI_DIR,
 # which is untracked and per checkout, so one worktree's `down` never stops another worktree's sandbox.
 SANDBOX_PROJECT ?= sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj
-SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/net10.0/Headless.Dashboards.Sandbox.dll
+SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/$(TARGET_FRAMEWORK)/Headless.Dashboards.Sandbox.dll
 SANDBOX_PORT ?= 5300
 SANDBOX_URL ?= http://127.0.0.1:$(SANDBOX_PORT)
 SANDBOX_DIR ?= $(CLI_DIR)
@@ -1004,7 +1067,7 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	$(DOTNET) build "$(SANDBOX_PROJECT)" -c "$(CONFIGURATION)" -nologo -v:q -clp:ErrorsOnly -clp:NoSummary; \
 	git rev-parse HEAD > "$(SANDBOX_REV)"; \
 	set -a; . "$(SANDBOX_ENV)"; set +a; \
-	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)" Sandbox__Auth="$(AUTH)"; \
+	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)" Sandbox__Auth="$(AUTH)" Sandbox__SequencesDatabasePath="$(SANDBOX_DIR)/sequences.db"; \
 	if [ "$(STORE)" = postgres ]; then \
 	  export Sandbox__PostgresConnectionString="Host=127.0.0.1;Port=$(SANDBOX_PG_PORT);Username=postgres;Database=$(SANDBOX_PG_DATABASE)"; fi; \
 	nohup $(DOTNET) "$(SANDBOX_DLL)" > "$(SANDBOX_LOG)" 2>&1 & echo $$! > "$(SANDBOX_PID)"; \
@@ -1015,6 +1078,9 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	else echo "  Headless dashboard:  $(SANDBOX_URL)/headless/ (sign in as admin / admin)"; fi; \
 	echo "  Jobs module:         $(SANDBOX_URL)/headless/jobs (the Headless dashboard's sign-in)"; \
 	echo "  Messaging module:    $(SANDBOX_URL)/headless/messaging (the Headless dashboard's sign-in)"; \
+	echo "  Rate limits module:  $(SANDBOX_URL)/headless/rate-limiting (the Headless dashboard's sign-in)"; \
+	echo "  Idempotency module:  $(SANDBOX_URL)/headless/idempotency (the Headless dashboard's sign-in)"; \
+	echo "  Sequences module:    $(SANDBOX_URL)/headless/sequences (the Headless dashboard's sign-in)"; \
 	echo "  Scenarios:          make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"; \
 	echo "Next: make ready $(UP_ENV)"
 
@@ -1125,11 +1191,11 @@ logs: ## Print the last TAIL lines of the sandbox log (TAIL=200; LINES= also wor
 	@if [ "$(FOLLOW)" = 1 ]; then tail -n "$(TAIL)" -f "$(SANDBOX_LOG)"; else tail -n "$(TAIL)" "$(SANDBOX_LOG)"; fi
 
 .PHONY: sandbox-reset
-sandbox-reset: ## Stop the sandbox and delete its PostgreSQL volume and generated password; requires CONFIRM=1.
+sandbox-reset: ## Stop the sandbox and delete its PostgreSQL volume, sequences database, and generated password; requires CONFIRM=1.
 	@test "$(CONFIRM)" = 1 || { echo "sandbox-reset deletes the sandbox database volume and password. Re-run: make sandbox-reset CONFIRM=1"; exit 2; }
 	@if [ -f "$(SANDBOX_PID)" ]; then kill "$$(cat "$(SANDBOX_PID)")" 2>/dev/null || true; rm -f "$(SANDBOX_PID)"; fi
 	@if command -v docker >/dev/null 2>&1; then $(SANDBOX_COMPOSE_CMD) down -v; fi
-	@rm -f "$(SANDBOX_STATE)" "$(SANDBOX_ENV)" "$(SANDBOX_LOG)" "$(SANDBOX_REV)"; echo "Sandbox reset."
+	@rm -f "$(SANDBOX_STATE)" "$(SANDBOX_ENV)" "$(SANDBOX_LOG)" "$(SANDBOX_REV)" "$(SANDBOX_DIR)"/sequences.db*; echo "Sandbox reset."
 
 # Tool restore is not in the formatting path: `make bootstrap` restores the pinned tools once, and doctor reports a
 # missing one as gated on `make tools`. CI is the exception: its format job starts from a runner with no restored
@@ -1266,6 +1332,7 @@ verify-affected: ## Format-check the changed files, then build and analyze the a
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(PROOF_REUSE_STAGE) \
+	$(AFFECTED_MODULE_REUSE_STAGE) \
 	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_TEST_DISCIPLINE_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \

@@ -29,9 +29,24 @@ internal sealed class LogPropertyRedactors(FrozenDictionary<string, Redactor> re
 
     /// <summary>
     /// Redacts a value found under a classified name: a collection element by element, anything else, a string or
-    /// buffer included, as one value, so the result is a string or a string array whatever the value's type.
+    /// buffer included, as one value, so the result is a string or a string array whatever the value's type. A value
+    /// whose enumeration, text, or redactor throws becomes a placeholder naming the exception type.
     /// </summary>
     public static object Redact(Redactor redactor, object value)
+    {
+        try
+        {
+            return _Redact(redactor, value);
+        }
+#pragma warning disable CA1031 // A log call, enrichment, or span tag is the boundary: the value is replaced, never rethrown into the caller.
+        catch (Exception ex) when (RedactionFailure.IsContained(ex))
+#pragma warning restore CA1031
+        {
+            return RedactionFailure.Text(value, ex);
+        }
+    }
+
+    private static object _Redact(Redactor redactor, object value)
     {
         if (value is IEnumerable items && !IsSingleValue(value))
         {
