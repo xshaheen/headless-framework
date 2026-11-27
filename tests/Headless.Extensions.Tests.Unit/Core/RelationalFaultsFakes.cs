@@ -47,8 +47,8 @@ namespace Microsoft.Data.Sqlite
     /// Stands in for Microsoft.Data.Sqlite's exception by its full type name; the classifier reads its extended
     /// result code.
     /// </summary>
-    internal sealed class SqliteException(int errorCode, int extendedErrorCode)
-        : DbException($"fake SQLite failure {errorCode}")
+    internal sealed class SqliteException(int errorCode, int extendedErrorCode, string? message = null)
+        : DbException(message ?? $"fake SQLite failure {errorCode}")
     {
         public int SqliteErrorCode { get; } = errorCode;
 

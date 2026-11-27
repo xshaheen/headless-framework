@@ -38,7 +38,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     // connection while reusing the cached compiled model / internal service provider — no model recompilation.
     private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions;
     private readonly ResiliencePipeline _treeDeleteRetryPipeline;
-    private string? _treeDeleteProviderName;
 
     // Test seam for the discovery/delete race. Always null in production and intentionally fires on every attempt.
     internal Func<Task>? OnTreeDeleteBeforeFirstDelete { get; set; }
@@ -822,16 +821,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                 async (attempt, _) =>
                 {
                     var dbContext = attempt.DbContext;
-                    // The factory is bound to one provider for the instance's lifetime, so the name is captured once;
-                    // the retry predicate reads it because Polly's predicate never sees the per-call state.
-                    if (_treeDeleteProviderName is null)
-                    {
-                        Interlocked.CompareExchange(
-                            ref _treeDeleteProviderName,
-                            dbContext.Database.ProviderName,
-                            comparand: null
-                        );
-                    }
 
                     // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the
                     // database cascades, so the subtree must be resolved explicitly. A surviving descendant is never
@@ -960,7 +949,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     ShouldHandle = args => new ValueTask<bool>(
                         args.Outcome.Exception is { } exception
                             && JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-                                _treeDeleteProviderName,
                                 exception,
                                 args.Context.Properties.GetValue(_TreeDeleteCommitStartedKey, defaultValue: false),
                                 args.Context.CancellationToken

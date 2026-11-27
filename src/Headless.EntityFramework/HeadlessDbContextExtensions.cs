@@ -32,20 +32,29 @@ public static class HeadlessDbContextExtensions
     }
 
     /// <summary>
-    /// Saves the context's changes and turns a unique-key violation of <paramref name="constraintName" /> into a
-    /// <see cref="ConflictException" /> carrying <paramref name="conflict" />.
+    /// Saves the context's changes and turns a violation of the unique key, unique index, or foreign key named
+    /// <paramref name="constraintName" /> into a <see cref="ConflictException" /> carrying <paramref name="conflict" />.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Use it where a handler checks that no other row holds a value and a concurrent writer can still take the value
     /// before the save. The index that enforces the value decides the race, and the caller gets its own error instead
-    /// of the generic <c>g:unique_violation</c>. Any other failure, a violation of another constraint included,
-    /// propagates unchanged. See <see cref="RelationalFaults.IsUniqueViolation(Exception, out string?)" /> for which
-    /// engines report the constraint name.
+    /// of the generic <c>g:unique_violation</c>.
+    /// </para>
+    /// <para>
+    /// Name a foreign key to answer a delete of a row that other rows still reference, such as a category in use, with
+    /// your own conflict: the key refuses the delete even when a referencing row was added after the handler's check.
+    /// </para>
+    /// <para>
+    /// Any other failure, a violation of another constraint included, propagates unchanged. See
+    /// <see cref="RelationalFaults.IsUniqueViolation(Exception, out string?)" /> and
+    /// <see cref="RelationalFaults.IsReferenceViolation(Exception, out string?)" /> for which engines report the name.
+    /// </para>
     /// </remarks>
     /// <param name="context">The context to save.</param>
     /// <param name="constraintName">
-    /// The violated constraint or unique index, as the database names it (for an EF index, its
-    /// <c>GetDatabaseName()</c>), compared ordinally.
+    /// The violated key or unique index, as the database names it (for an EF index, its <c>GetDatabaseName()</c>; for a
+    /// foreign key, its <c>GetConstraintName()</c>), compared ordinally.
     /// </param>
     /// <param name="conflict">The error the conflict carries.</param>
     /// <param name="cancellationToken">The token to cancel the save.</param>
@@ -70,8 +79,8 @@ public static class HeadlessDbContextExtensions
     }
 
     /// <summary>
-    /// Saves the context's changes and turns a unique-key violation of a constraint in <paramref name="conflicts" />
-    /// into a <see cref="ConflictException" /> carrying that constraint's error.
+    /// Saves the context's changes and turns a unique-key or foreign-key violation of a constraint in
+    /// <paramref name="conflicts" /> into a <see cref="ConflictException" /> carrying that constraint's error.
     /// </summary>
     /// <remarks>
     /// The dictionary's comparer matches the name the database reports; build it with <see cref="StringComparer.Ordinal" />
@@ -80,7 +89,7 @@ public static class HeadlessDbContextExtensions
     /// reports it, a commit of the context's own transaction included.
     /// </remarks>
     /// <param name="context">The context to save.</param>
-    /// <param name="conflicts">The error for each constraint or unique index name.</param>
+    /// <param name="conflicts">The error for each key or unique index name.</param>
     /// <param name="cancellationToken">The token to cancel the save.</param>
     /// <returns>The number of state entries written to the database.</returns>
     /// <exception cref="ConflictException">The save violated a constraint in <paramref name="conflicts" />.</exception>
@@ -99,13 +108,22 @@ public static class HeadlessDbContextExtensions
             return await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
-            when (RelationalFaults.IsUniqueViolation(exception, out var constraintName)
-                && constraintName is not null
+            when (_ViolatedConstraintName(exception) is { } constraintName
                 && conflicts.TryGetValue(constraintName, out var conflict)
             )
         {
             throw new ConflictException(conflict, exception);
         }
+    }
+
+    private static string? _ViolatedConstraintName(Exception exception)
+    {
+        if (RelationalFaults.IsUniqueViolation(exception, out var constraintName))
+        {
+            return constraintName;
+        }
+
+        return RelationalFaults.IsReferenceViolation(exception, out constraintName) ? constraintName : null;
     }
 
     /// <summary>

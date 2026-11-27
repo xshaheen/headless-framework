@@ -9,11 +9,9 @@ namespace Tests.Provider;
 
 public sealed class TimeJobDeleteConflictClassifierTests : TestBase
 {
-    private const string _PostgreSqlProvider = "Npgsql.EntityFrameworkCore.PostgreSQL";
-    private const string _SqlServerProvider = "Microsoft.EntityFrameworkCore.SqlServer";
-
     [Theory]
     [InlineData("23503")]
+    [InlineData("23001")]
     [InlineData("40001")]
     [InlineData("40P01")]
     public void should_retry_postgresql_tree_delete_conflicts(string sqlState)
@@ -21,7 +19,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = new FakeDbException(sqlState: sqlState);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _PostgreSqlProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -36,7 +33,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = new FakeDbException(sqlState: "23505");
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _PostgreSqlProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -54,7 +50,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = SqlClientExceptions.Create(number);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _SqlServerProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -70,7 +65,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = SqlClientExceptions.Create(3621, 547);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _SqlServerProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -86,7 +80,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = new FakeDbException(number: 547);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _SqlServerProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -101,7 +94,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = SqlClientExceptions.Create(2627);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _SqlServerProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -111,12 +103,11 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     }
 
     [Fact]
-    public void should_retry_transient_database_failure_for_any_provider()
+    public void should_retry_a_transient_database_failure()
     {
         var exception = new FakeDbException(isTransient: true);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            "Unknown.Provider",
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -125,14 +116,10 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         result.Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(_PostgreSqlProvider)]
-    [InlineData(_SqlServerProvider)]
-    [InlineData("Unknown.Provider")]
-    public void should_not_retry_operation_cancellation(string providerName)
+    [Fact]
+    public void should_not_retry_operation_cancellation()
     {
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            providerName,
             new OperationCanceledException(),
             commitStarted: false,
             CancellationToken.None
@@ -148,7 +135,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         cancellation.Cancel();
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _PostgreSqlProvider,
             new FakeDbException(sqlState: "23503"),
             commitStarted: false,
             cancellation.Token
@@ -157,16 +143,12 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         result.Should().BeFalse();
     }
 
-    [Theory]
-    [InlineData(_PostgreSqlProvider)]
-    [InlineData(_SqlServerProvider)]
-    [InlineData("Unknown.Provider")]
-    public void should_not_retry_after_commit_starts(string providerName)
+    [Fact]
+    public void should_not_retry_after_commit_starts()
     {
         var exception = new FakeDbException(sqlState: "23503", number: 547, isTransient: true);
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            providerName,
             exception,
             commitStarted: true,
             CancellationToken.None
@@ -175,14 +157,10 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         result.Should().BeFalse();
     }
 
-    [Theory]
-    [InlineData(_PostgreSqlProvider)]
-    [InlineData(_SqlServerProvider)]
-    [InlineData("Unknown.Provider")]
-    public void should_not_retry_invalid_operation_failure(string providerName)
+    [Fact]
+    public void should_not_retry_invalid_operation_failure()
     {
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            providerName,
             new InvalidOperationException(),
             commitStarted: false,
             CancellationToken.None
@@ -197,7 +175,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = new DbUpdateException("delete failed", new FakeDbException(sqlState: "40P01"));
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _PostgreSqlProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -214,7 +191,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         var exception = new FakeDbException(isTransient: true, inner: new IOException("connection reset"));
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            "Unknown.Provider",
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -232,7 +208,6 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
         );
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            _PostgreSqlProvider,
             exception,
             commitStarted: false,
             CancellationToken.None
@@ -242,12 +217,27 @@ public sealed class TimeJobDeleteConflictClassifierTests : TestBase
     }
 
     [Fact]
-    public void should_not_retry_non_transient_database_failure_for_unknown_provider()
+    public void should_retry_a_standard_foreign_key_sqlstate_from_any_driver()
     {
-        var exception = new FakeDbException(sqlState: "23503", number: 547);
+        // SQLSTATE is the SQL standard's code space, so 23503 means a foreign-key violation on every driver that
+        // reports one.
+        var exception = new FakeDbException(sqlState: "23503");
 
         var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
-            "Unknown.Provider",
+            exception,
+            commitStarted: false,
+            CancellationToken.None
+        );
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_not_retry_a_constraint_number_from_a_driver_other_than_sql_client()
+    {
+        var exception = new FakeDbException(number: 547);
+
+        var result = JobsTreeDeleteConflicts.IsRetryableTreeDeleteFailure(
             exception,
             commitStarted: false,
             CancellationToken.None

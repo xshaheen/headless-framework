@@ -13,17 +13,16 @@ namespace Headless.Jobs.Infrastructure;
 internal static class JobsTreeDeleteConflicts
 {
     /// <summary>
-    /// Returns whether <paramref name="exception"/> is a retryable tree-delete conflict for the given EF provider.
+    /// Returns whether <paramref name="exception"/> is a retryable tree-delete conflict.
     /// </summary>
     /// <remarks>
     /// The unit-of-work transient classifier supplies the shared rules (<see cref="RelationalTransientFaults" />);
     /// this adds the foreign-key violation that signals a concurrent append, which only a tree delete may retry. The
     /// commit phase is never retried: a commit that succeeded on the server but failed on the wire would otherwise be
-    /// re-run and report zero rows for a tree that is already gone. Foreign-key codes are gated by the EF provider
-    /// name, so a driver exception is never read in another provider's code space.
+    /// re-run and report zero rows for a tree that is already gone. The foreign-key classifier reads each driver's
+    /// codes only from that driver's exception type, so no provider gate is needed here.
     /// </remarks>
     internal static bool IsRetryableTreeDeleteFailure(
-        string? providerName,
         Exception exception,
         bool commitStarted,
         CancellationToken cancellationToken
@@ -40,25 +39,6 @@ internal static class JobsTreeDeleteConflicts
             return true;
         }
 
-        if (RelationalFaults.FindDatabaseException(exception) is not { } databaseException)
-        {
-            return false;
-        }
-
-        if (string.Equals(providerName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
-        {
-            return databaseException.SqlState is SqlErrorCodes.PostgreSql.ForeignKeyViolation;
-        }
-
-        if (string.Equals(providerName, "Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal))
-        {
-            // Every error in the batch counts: SqlClient reports several per exception, and the foreign-key conflict
-            // is not always the first.
-            return RelationalFaults
-                .GetSqlServerErrorNumbers(databaseException)
-                .Contains(SqlErrorCodes.SqlServer.ConstraintViolation);
-        }
-
-        return false;
+        return RelationalFaults.IsReferenceViolation(exception);
     }
 }

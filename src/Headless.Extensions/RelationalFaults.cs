@@ -11,8 +11,9 @@ namespace Headless;
 
 /// <summary>
 /// Reads a relational failure without referencing any ADO.NET driver: finds the database exception in a failure's
-/// chain, enumerates every SQL Server error number it carries, and recognizes a unique-key violation on PostgreSQL,
-/// SQL Server, and SQLite, with the violated constraint's name where the engine reports one. The unit of work's transient classifier reads faults the same way; build a narrower
+/// chain, enumerates every SQL Server error number it carries, and recognizes a unique-key, foreign-key, CHECK, or NOT
+/// NULL violation, a value too long for its column, and a numeric overflow on PostgreSQL, SQL Server, and SQLite, with
+/// the violated constraint's name where the engine reports one. The unit of work's transient classifier reads faults the same way; build a narrower
 /// classifier (a conflict mapper, a duplicate-insert check) on these instead of reading driver properties by hand.
 /// </summary>
 /// <remarks>
@@ -38,6 +39,11 @@ public static partial class RelationalFaults
     // (6) subcodes. The primary code alone also covers NOT NULL, CHECK, and foreign-key failures, so it cannot be used.
     private const int _SqliteConstraintUnique = 19 | (8 << 8);
     private const int _SqliteConstraintPrimaryKey = 19 | (6 << 8);
+    private const int _SqliteConstraintCheck = 19 | (1 << 8);
+    private const int _SqliteConstraintForeignKey = 19 | (3 << 8);
+    private const int _SqliteConstraintNotNull = 19 | (5 << 8);
+    private const int _SqliteConstraintTrigger = 19 | (7 << 8);
+    private const int _SqliteTooBig = 18;
 
     // Reflection runs only on the fault path, but a fault under load is exactly when a per-call GetProperty would
     // hurt, so the lookups are cached per exception (and per error) type.
@@ -157,6 +163,241 @@ public static partial class RelationalFaults
     }
 
     /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a foreign-key violation: a write that names a missing
+    /// row, or a delete or update refused because other rows still reference the row.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// PostgreSQL reports SQLSTATE <c>23503</c> for a missing row and for a <c>NO ACTION</c> key, and <c>23001</c> for a
+    /// <c>RESTRICT</c> key (EF Core's <c>DeleteBehavior.Restrict</c>), so both count. SQL Server reports error 547 for
+    /// a foreign key and for a CHECK constraint alike; the English message tells them apart, and a 547 whose message the
+    /// session's language localizes counts as a foreign-key violation. SQLite reports
+    /// <c>SQLITE_CONSTRAINT_FOREIGNKEY</c> (787), or <c>SQLITE_CONSTRAINT_TRIGGER</c> (1811) with the message
+    /// "FOREIGN KEY constraint failed" for a <c>RESTRICT</c> key, only while <c>PRAGMA foreign_keys</c> is on.
+    /// </para>
+    /// <para>
+    /// Use it to answer a delete of a row that is still in use with your own conflict, matching the key by name with
+    /// <see cref="IsReferenceViolation(Exception, out string?)" />.
+    /// </para>
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <returns><see langword="true" /> when the statement failed on a foreign key.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsReferenceViolation(Exception exception)
+    {
+        return IsReferenceViolation(exception, out _);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a foreign-key violation, as
+    /// <see cref="IsReferenceViolation(Exception)" /> does, and the name of the violated key when the engine reports it.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL reports the name in its own field (Npgsql's <c>ConstraintName</c>). SQL Server reports it only in the
+    /// English message of error 547, so the name is <see langword="null" /> when the session's language localizes the
+    /// message. SQLite reports no name.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <param name="constraintName">
+    /// The violated foreign key; <see langword="null" /> when the result is <see langword="false" /> or the engine did
+    /// not report a name.
+    /// </param>
+    /// <returns><see langword="true" /> when the statement failed on a foreign key.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsReferenceViolation(Exception exception, out string? constraintName)
+    {
+        Argument.IsNotNull(exception);
+
+        constraintName = null;
+
+        if (FindDatabaseException(exception) is not { } databaseException)
+        {
+            return false;
+        }
+
+        if (
+            databaseException.SqlState
+            is SqlErrorCodes.PostgreSql.ForeignKeyViolation
+                or SqlErrorCodes.PostgreSql.RestrictViolation
+        )
+        {
+            constraintName = _ReadPostgreSqlConstraintName(databaseException);
+
+            return true;
+        }
+
+        if (_FindSqlServerConstraintConflict(databaseException) is { IsCheck: false } conflict)
+        {
+            constraintName = conflict.Name;
+
+            return true;
+        }
+
+        return _ReadSqliteExtendedErrorCode(databaseException) switch
+        {
+            _SqliteConstraintForeignKey => true,
+            // SQLite enforces a RESTRICT action through an internal trigger, so the refusal carries the trigger
+            // subcode; its fixed English message (SQLite never localizes one) tells it from a user trigger's RAISE.
+            _SqliteConstraintTrigger => databaseException.Message.Contains(
+                "FOREIGN KEY constraint failed",
+                StringComparison.Ordinal
+            ),
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a CHECK constraint violation: SQLSTATE <c>23514</c> on
+    /// PostgreSQL, error 547 naming a CHECK constraint in SQL Server's English message, or
+    /// <c>SQLITE_CONSTRAINT_CHECK</c> (275) on <c>Microsoft.Data.Sqlite</c>.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server shares error 547 with foreign keys, so a CHECK violation whose message the session's language
+    /// localizes is not recognized here; <see cref="IsReferenceViolation(Exception)" /> reports it instead.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <returns><see langword="true" /> when the statement failed on a CHECK constraint.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsCheckViolation(Exception exception)
+    {
+        return IsCheckViolation(exception, out _);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a CHECK constraint violation, as
+    /// <see cref="IsCheckViolation(Exception)" /> does, and the constraint's name when the engine reports it.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL reports the name in its own field and SQL Server in the English message. SQLite reports it only in its
+    /// message text, so the name is <see langword="null" /> there.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <param name="constraintName">
+    /// The violated CHECK constraint; <see langword="null" /> when the result is <see langword="false" /> or the engine
+    /// did not report a name.
+    /// </param>
+    /// <returns><see langword="true" /> when the statement failed on a CHECK constraint.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsCheckViolation(Exception exception, out string? constraintName)
+    {
+        Argument.IsNotNull(exception);
+
+        constraintName = null;
+
+        if (FindDatabaseException(exception) is not { } databaseException)
+        {
+            return false;
+        }
+
+        if (
+            string.Equals(databaseException.SqlState, SqlErrorCodes.PostgreSql.CheckViolation, StringComparison.Ordinal)
+        )
+        {
+            constraintName = _ReadPostgreSqlConstraintName(databaseException);
+
+            return true;
+        }
+
+        if (_FindSqlServerConstraintConflict(databaseException) is { IsCheck: true } conflict)
+        {
+            constraintName = conflict.Name;
+
+            return true;
+        }
+
+        return _ReadSqliteExtendedErrorCode(databaseException) is _SqliteConstraintCheck;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a NULL written to a column that does not allow one: SQLSTATE
+    /// <c>23502</c> on PostgreSQL, error 515 in any error of a SQL Server <c>SqlException</c>, or
+    /// <c>SQLITE_CONSTRAINT_NOTNULL</c> (1299) on <c>Microsoft.Data.Sqlite</c>.
+    /// </summary>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <returns><see langword="true" /> when the statement failed on a NOT NULL column.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsNotNullViolation(Exception exception)
+    {
+        Argument.IsNotNull(exception);
+
+        return FindDatabaseException(exception) is { } databaseException
+            && (
+                string.Equals(
+                    databaseException.SqlState,
+                    SqlErrorCodes.PostgreSql.NotNullViolation,
+                    StringComparison.Ordinal
+                )
+                || GetSqlServerErrorNumbers(databaseException).Contains(SqlErrorCodes.SqlServer.CannotInsertNull)
+                || _ReadSqliteExtendedErrorCode(databaseException) is _SqliteConstraintNotNull
+            );
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a value longer than its column allows: SQLSTATE
+    /// <c>22001</c> on PostgreSQL, or error 8152 or 2628 in any error of a SQL Server <c>SqlException</c>.
+    /// </summary>
+    /// <remarks>
+    /// SQLite does not enforce a declared length such as <c>varchar(64)</c>, so it never reports one; its
+    /// <c>SQLITE_TOOBIG</c> (18) for a value past the engine's own size limit counts.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <returns><see langword="true" /> when the statement failed on a value's length.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsMaxLengthExceeded(Exception exception)
+    {
+        Argument.IsNotNull(exception);
+
+        return FindDatabaseException(exception) is { } databaseException
+            && (
+                string.Equals(
+                    databaseException.SqlState,
+                    SqlErrorCodes.PostgreSql.StringDataRightTruncation,
+                    StringComparison.Ordinal
+                )
+                || GetSqlServerErrorNumbers(databaseException)
+                    .Any(number =>
+                        number
+                            is SqlErrorCodes.SqlServer.StringOrBinaryDataTruncated
+                                or SqlErrorCodes.SqlServer.StringOrBinaryDataTruncatedInColumn
+                    )
+                || _ReadSqliteExtendedErrorCode(databaseException) is _SqliteTooBig
+            );
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="exception" /> reports a number outside its column's range or precision: SQLSTATE
+    /// <c>22003</c> on PostgreSQL, or error 8115 or 220 in any error of a SQL Server <c>SqlException</c>.
+    /// </summary>
+    /// <remarks>
+    /// SQLite stores any number in any numeric column, so it never reports one. SqlClient refuses a <see langword="decimal" />
+    /// parameter beyond the precision it declares with an <see cref="ArgumentException" /> before the server sees it,
+    /// such as an EF Core save to a <c>decimal(5, 2)</c> column; that failure carries no database error, so this
+    /// returns <see langword="false" /> for it.
+    /// </remarks>
+    /// <param name="exception">The failure, as thrown, or the database exception itself.</param>
+    /// <returns><see langword="true" /> when the statement failed on a numeric overflow.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception" /> is <see langword="null" />.</exception>
+    public static bool IsNumericOverflow(Exception exception)
+    {
+        Argument.IsNotNull(exception);
+
+        return FindDatabaseException(exception) is { } databaseException
+            && (
+                string.Equals(
+                    databaseException.SqlState,
+                    SqlErrorCodes.PostgreSql.NumericValueOutOfRange,
+                    StringComparison.Ordinal
+                )
+                || GetSqlServerErrorNumbers(databaseException)
+                    .Any(number =>
+                        number
+                            is SqlErrorCodes.SqlServer.ArithmeticOverflow
+                                or SqlErrorCodes.SqlServer.ArithmeticOverflowForDataType
+                    )
+            );
+    }
+
+    /// <summary>
     /// Recognizes serialization failures, deadlock victims, and unique-key violations that can be retried after
     /// disposing the failed transaction. Includes SQLite busy and locked results, but not connection failures or timeouts.
     /// </summary>
@@ -199,16 +440,7 @@ public static partial class RelationalFaults
             return true;
         }
 
-        if (string.Equals(fault.GetType().FullName, _SqliteExceptionTypeName, StringComparison.Ordinal))
-        {
-            var property = _SqliteExtendedErrorCodeProperties.GetOrAdd(
-                fault.GetType(),
-                static type => type.GetProperty("SqliteExtendedErrorCode", BindingFlags.Public | BindingFlags.Instance)
-            );
-            return property?.GetValue(fault) is int code && (code & 0xff) is 5 or 6;
-        }
-
-        return false;
+        return _ReadSqliteExtendedErrorCode(fault) is { } code && (code & 0xff) is 5 or 6;
     }
 
     private static bool _IsUniqueViolation(DbException exception)
@@ -235,33 +467,105 @@ public static partial class RelationalFaults
             return false;
         }
 
-        if (string.Equals(exception.GetType().FullName, _SqliteExceptionTypeName, StringComparison.Ordinal))
-        {
-            var property = _SqliteExtendedErrorCodeProperties.GetOrAdd(
-                exception.GetType(),
-                static type => type.GetProperty("SqliteExtendedErrorCode", BindingFlags.Public | BindingFlags.Instance)
-            );
+        return _ReadSqliteExtendedErrorCode(exception) is _SqliteConstraintUnique or _SqliteConstraintPrimaryKey;
+    }
 
-            return property?.GetValue(exception) is _SqliteConstraintUnique or _SqliteConstraintPrimaryKey;
+    private static string? _ReadPostgreSqlConstraintName(DbException exception)
+    {
+        return
+            _ConstraintNameProperties
+                .GetOrAdd(
+                    exception.GetType(),
+                    static type => type.GetProperty("ConstraintName", BindingFlags.Public | BindingFlags.Instance)
+                )
+                ?.GetValue(exception) as string
+                is { Length: > 0 } name
+            ? name
+            : null;
+    }
+
+    private static int? _ReadSqliteExtendedErrorCode(DbException exception)
+    {
+        if (!string.Equals(exception.GetType().FullName, _SqliteExceptionTypeName, StringComparison.Ordinal))
+        {
+            return null;
         }
 
-        return false;
+        return _SqliteExtendedErrorCodeProperties
+                .GetOrAdd(
+                    exception.GetType(),
+                    static type =>
+                        type.GetProperty("SqliteExtendedErrorCode", BindingFlags.Public | BindingFlags.Instance)
+                )
+                ?.GetValue(exception) as int?;
+    }
+
+    /// <summary>
+    /// Finds error 547 among a SqlClient exception's errors and reads, from its English message, whether a CHECK
+    /// constraint or a foreign key raised it and the constraint's name. A localized message yields a foreign key with
+    /// no name, because the number alone cannot tell the two apart.
+    /// </summary>
+    private static (bool IsCheck, string? Name)? _FindSqlServerConstraintConflict(DbException exception)
+    {
+        if (!_IsSqlClientException(exception))
+        {
+            return null;
+        }
+
+        var found = false;
+
+        if (
+            _ErrorsProperties
+                .GetOrAdd(exception.GetType(), static type => type.GetProperty("Errors"))
+                ?.GetValue(exception)
+            is IEnumerable errors
+        )
+        {
+            foreach (var error in errors)
+            {
+                if (error is null || _ReadNumber(error) is not SqlErrorCodes.SqlServer.ConstraintViolation)
+                {
+                    continue;
+                }
+
+                found = true;
+
+                if (_ReadMessage(error) is { } message && _ParseSqlServerConstraintConflict(message) is { } parsed)
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        // An exception whose errors carry no readable message still reports the first error as its own Number and
+        // Message, as _ReadErrorNumbers falls back to Number.
+        if (_ReadNumber(exception) is SqlErrorCodes.SqlServer.ConstraintViolation)
+        {
+            return _ParseSqlServerConstraintConflict(exception.Message) ?? (false, null);
+        }
+
+        return found ? (false, null) : null;
+    }
+
+    private static (bool IsCheck, string? Name)? _ParseSqlServerConstraintConflict(string message)
+    {
+        var match = _SqlServerConstraintConflict.Match(message);
+
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var isCheck = match.Groups["kind"].Value.Contains("CHECK", StringComparison.OrdinalIgnoreCase);
+
+        return (isCheck, match.Groups["name"].Value);
     }
 
     private static string? _ReadUniqueConstraintName(DbException exception)
     {
         if (string.Equals(exception.SqlState, SqlErrorCodes.PostgreSql.UniqueViolation, StringComparison.Ordinal))
         {
-            return
-                _ConstraintNameProperties
-                    .GetOrAdd(
-                        exception.GetType(),
-                        static type => type.GetProperty("ConstraintName", BindingFlags.Public | BindingFlags.Instance)
-                    )
-                    ?.GetValue(exception) as string
-                    is { Length: > 0 } name
-                ? name
-                : null;
+            return _ReadPostgreSqlConstraintName(exception);
         }
 
         if (!_IsSqlClientException(exception))
@@ -336,6 +640,17 @@ public static partial class RelationalFaults
         matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
     )]
     private static partial Regex _SqlServerDuplicateIndex { get; }
+
+    // Error 547: 'The DELETE statement conflicted with the REFERENCE constraint "FK_T_P". The conflict occurred in
+    // database "db", table "dbo.T", column 'PId'.' The kind is FOREIGN KEY, REFERENCE, SAME TABLE REFERENCE, FOREIGN KEY
+    // SAME TABLE, or CHECK. The lazy name stops at the first '". The conflict occurred', so a name holding a quote still
+    // parses.
+    [GeneratedRegex(
+        pattern: @"\Athe [a-z ]+? statement conflicted with the (?<kind>[a-z ]+?) constraint ""(?<name>.+?)""\. the conflict occurred",
+        options: RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: RegexPatterns.MatchTimeoutMilliseconds
+    )]
+    private static partial Regex _SqlServerConstraintConflict { get; }
 
     private static bool _IsSqlClientException(DbException exception)
     {
