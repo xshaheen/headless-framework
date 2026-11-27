@@ -269,6 +269,8 @@ else
 
 ### Read the captured notifications
 
+To read them in the dashboard, add the Dev inbox module: see [Dev inbox module](dashboards/dev-inbox-module.md).
+
 Resolve `IPushNotificationCaptureStore` from the container. It is registered only when a `UseDevelopment` service is, so `GetService<IPushNotificationCaptureStore>()` returning `null` means no development service is in use.
 
 ```csharp
