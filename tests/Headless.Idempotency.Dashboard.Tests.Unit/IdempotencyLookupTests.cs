@@ -295,7 +295,7 @@ public sealed class IdempotencyLookupTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
         text.Should().NotContain(_Key).And.NotContain("kkkkkkkkkk").And.NotContain("tttttttttt");
-        JsonDocument.Parse(text).RootElement.GetProperty("errors").TryGetProperty(field, out _).Should().BeTrue();
+        JsonElement.Parse(text).GetProperty("errors").TryGetProperty(field, out _).Should().BeTrue();
     }
 
     [Fact]
@@ -540,7 +540,7 @@ public sealed class IdempotencyLookupTests : TestBase
         using var response = await IdempotencyHost.PostAsync(client, _Lookup, body, cookie, AbortToken);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
 
-        return (response.StatusCode, text, JsonDocument.Parse(text).RootElement.Clone());
+        return (response.StatusCode, text, JsonElement.Parse(text));
     }
 
     /// <summary>A current tenant that records every change and whether each scope was closed.</summary>
