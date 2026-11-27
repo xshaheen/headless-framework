@@ -693,6 +693,14 @@
           "Headless.Hosting": "[1.0.0, )"
         }
       },
+      "headless.caching.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching": "[1.0.0, )",
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
       "headless.caching.redis": {
         "type": "Project",
         "dependencies": {
@@ -1206,6 +1214,22 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.ratelimiting": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.ratelimiting.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.RateLimiting": "[1.0.0, )"
         }
       },
       "headless.redis": {

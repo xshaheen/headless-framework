@@ -170,6 +170,7 @@ Headless.PushNotifications.Apns
 Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
 Headless.RateLimiting
+Headless.RateLimiting.Dashboard
 Headless.Redis
 Headless.Reliability.Abstractions
 Headless.Search

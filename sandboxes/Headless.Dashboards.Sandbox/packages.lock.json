@@ -239,11 +239,28 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
+      "headless.caching": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Serializer.Abstractions": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.21.0, )"
+        }
+      },
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
+        }
+      },
+      "headless.caching.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching": "[1.0.0, )",
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.checks": {
@@ -542,6 +559,22 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.ratelimiting": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.ratelimiting.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.RateLimiting": "[1.0.0, )"
         }
       },
       "headless.reliability.abstractions": {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
 using Headless.Coordination;
 using Headless.Dashboard;
 using Headless.Dashboards.Sandbox;
@@ -8,6 +9,7 @@ using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
+using Headless.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 // A local test host for the Headless dashboard, with its Jobs and Messaging modules, started and stopped by the
@@ -55,6 +57,20 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // The Messaging module reads the stores AddHeadlessMessaging configures below, and inherits the host policies
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
+    dashboard.AddRateLimiting();
+});
+
+// One loopback process, so the in-memory cache counts every attempt the sandbox makes. An app with more than one
+// replica counts per process this way and must point the limiter at the remote cache.
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddAttemptLimiter(options =>
+{
+    options.SubjectKey = SandboxRateLimits.SubjectKey;
+
+    foreach (var (purpose, quota) in SandboxRateLimits.Purposes)
+    {
+        options.Purposes[purpose] = quota;
+    }
 });
 
 builder.Services.AddHeadlessJobs(options =>
@@ -175,6 +191,7 @@ app.MapGet(
                 headlessDashboard = "/headless",
                 jobsModule = "/headless/jobs",
                 messagingModule = "/headless/messaging",
+                rateLimitingModule = "/headless/rate-limiting",
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }
