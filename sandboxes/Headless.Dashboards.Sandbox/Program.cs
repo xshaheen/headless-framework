@@ -5,9 +5,12 @@ using Headless.Cluster;
 using Headless.Coordination;
 using Headless.Dashboard;
 using Headless.Dashboards.Sandbox;
+using Headless.DistributedLocks;
+using Headless.Fencing;
 using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Jobs;
+using Headless.Leases;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Persistence;
@@ -81,7 +84,14 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     dashboard.AddCluster();
     // The Dev inbox module and the senders it reads, registered only in Development, which `make up` sets.
     SandboxDevInbox.Add(builder, dashboard);
+    // The Leases module shows the fenced leases and held locks registered below.
+    dashboard.AddLeases();
 });
+
+// In memory in both store modes: the fencing store needs no provisioning, and the in-memory lock provider lists only
+// this host's handles, which is what the Leases module's scope note describes.
+builder.Services.AddHeadlessFencing(setup => setup.UseInMemory());
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
 
 // One loopback process, so the in-memory cache counts every attempt the sandbox makes. An app with more than one
 // replica counts per process this way and must point the limiter at the remote cache.
@@ -231,6 +241,7 @@ app.MapGet(
                 rateLimitingModule = "/headless/rate-limiting",
                 clusterModule = "/headless/cluster",
                 devInboxModule = builder.Environment.IsDevelopment() ? "/headless/dev-inbox" : null,
+                leasesModule = "/headless/leases",
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }
