@@ -24,6 +24,37 @@ public sealed class SqlCancellationTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_a_database_fault_from_a_value_task_as_the_cancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var fault = new FakeDbException(isTransient: false);
+
+        (
+            await FluentActions
+                .Awaiting(() =>
+                    SqlCancellation
+                        .ObserveAsync(new ValueTask<int>(Task.FromException<int>(fault)), cancellation.Token)
+                        .AsTask()
+                )
+                .Should()
+                .ThrowAsync<OperationCanceledException>()
+        )
+            .Which.InnerException.Should()
+            .BeSameAs(fault);
+        (
+            await FluentActions
+                .Awaiting(() =>
+                    SqlCancellation.ObserveAsync(new ValueTask(Task.FromException(fault)), cancellation.Token).AsTask()
+                )
+                .Should()
+                .ThrowAsync<OperationCanceledException>()
+        )
+            .Which.InnerException.Should()
+            .BeSameAs(fault);
+    }
+
+    [Fact]
     public async Task should_find_the_database_fault_inside_a_wrapper()
     {
         using var cancellation = new CancellationTokenSource();
