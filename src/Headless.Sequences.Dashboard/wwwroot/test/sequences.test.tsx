@@ -1,5 +1,5 @@
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -545,5 +545,15 @@ describe('the counter panel', () => {
 
     const panel = await findPanel('order')
     expect(panel.getByText(/end of the last reserved block/)).toBeTruthy()
+  })
+
+  it('says in the panel whether the policy is registered or the default one', async () => {
+    const adhoc = counter({ name: 'adhoc', policySource: 'default' })
+    open({ counters: [adhoc] }, { path: `?open=${encodeURIComponent(adhoc.id)}` })
+    expect((await findPanel('adhoc')).getByText('Default policy')).toBeTruthy()
+
+    cleanup()
+    open(fake, { path: `?open=${encodeURIComponent(acmeInvoice.id)}` })
+    expect((await findPanel('invoice')).getByText('Registered for this name')).toBeTruthy()
   })
 })
