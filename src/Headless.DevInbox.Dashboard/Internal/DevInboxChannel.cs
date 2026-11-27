@@ -57,7 +57,6 @@ internal abstract class DevInboxChannel<TCapture, TRow, TDetail> : IDevInboxChan
             .Take(limit + 1)
             .ToList();
 
-        // A row past the page means another page exists; the next page starts below this page's last row.
         long? next = page.Count > limit ? SequenceOf(page[limit - 1]) : null;
 
         return ([.. page.Take(limit).Select(ToRow)], next);

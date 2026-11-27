@@ -136,7 +136,6 @@ export interface FakeServer {
   emails?: EmailDetail[]
   sms?: SmsDetail[]
   push?: PushDetail[]
-  /** The channels the host registered; every one by default. */
   channels?: ChannelKind[]
 }
 

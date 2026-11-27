@@ -3,8 +3,6 @@ import { defineModule } from '@headless/dashboard-sdk'
 export default defineModule({
   id: 'dev-inbox',
   product: 'dev-inbox',
-  // Each countKey is a key the module's counts answer serves; an unregistered channel's key is absent, so its count
-  // reads as unknown rather than zero.
   sidebar: [
     {
       label: 'Inbox',

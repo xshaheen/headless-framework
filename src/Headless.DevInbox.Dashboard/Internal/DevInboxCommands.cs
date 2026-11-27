@@ -243,7 +243,6 @@ internal sealed class DevInboxCommands(string moduleId, DevInboxChannels channel
             : throw new ArgumentException($"Command '{commandId}' does not run over a filter.", nameof(commandId));
     }
 
-    // A Clear's filter is { "search": null } for the whole channel, or a search the list was narrowed by.
     private static string? _ParseFilter(JsonElement filter)
     {
         if (filter.ValueKind != JsonValueKind.Object)

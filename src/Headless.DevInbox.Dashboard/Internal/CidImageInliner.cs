@@ -87,7 +87,6 @@ internal static partial class CidImageInliner
         return null;
     }
 
-    // A cid: reference in an src attribute or a CSS url(), quoted or not.
     [GeneratedRegex(
         """(?<prefix>\bsrc\s*=\s*["']?|url\(\s*["']?)cid:(?<token>[^"'\s)>]+)""",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,

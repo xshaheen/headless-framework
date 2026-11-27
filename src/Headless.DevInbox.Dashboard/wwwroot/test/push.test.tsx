@@ -38,7 +38,6 @@ describe('push view', () => {
 
     await screen.findByText('120 bytes')
     expect(screen.queryByText(/Over the 4,096-byte limit/)).toBeNull()
-    expect(screen.getByText('120 bytes')).toBeTruthy()
   })
 
   it('says a data-only push is data-only and shows no title field', async () => {

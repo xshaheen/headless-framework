@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 const moduleRoot = resolve(import.meta.dirname, '..')
 const eslint = new ESLint({ cwd: moduleRoot })
 
-/** Lints `code` as if it were a view under `src/`, where the module rules apply. */
 async function lintView(code: string) {
   const [result] = await eslint.lintText(code, { filePath: resolve(moduleRoot, 'src/probe.tsx') })
 

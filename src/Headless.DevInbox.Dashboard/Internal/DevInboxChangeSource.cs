@@ -33,6 +33,15 @@ internal sealed class DevInboxChangeSource(string moduleId, DevInboxChannels cha
         foreach (var channel in _channels.All)
         {
             var after = positions.GetValueOrDefault(channel.Kind, channel.Version);
+
+            // Every capture's sequence is the store's version after its add, so an unmoved version means no new rows,
+            // and the poll skips scanning the store under its lock.
+            if (channel.Version <= after)
+            {
+                next[channel.Kind] = after;
+                continue;
+            }
+
             var rows = channel.RowsAfter(after);
             next[channel.Kind] = rows.Count == 0 ? after : Math.Max(after, rows.Max(static row => row.Sequence));
 

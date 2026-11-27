@@ -4,10 +4,8 @@ import type { DashboardApi, DashboardListPage } from '@headless/dashboard-sdk/da
 import { useQuery } from '@headless/dashboard-sdk/query'
 import type { ListPageRequest } from '@headless/dashboard-sdk/table'
 
-/** The object kind of each channel, as the server names it. */
 export type ChannelKind = 'email' | 'sms' | 'push'
 
-/** Each channel's API path segment under the module and its stream topic. */
 export const channelPaths: Readonly<Record<ChannelKind, string>> = { email: 'emails', sms: 'sms', push: 'push' }
 
 export const pageSize = 50
@@ -160,7 +158,6 @@ export async function fetchDetail<T extends CaptureRow>(api: DashboardApi, kind:
   )
 }
 
-/** The channels the host registered a capture store for, each with the store's capacity. */
 export function useChannels() {
   const { api } = useDashboard()
 
@@ -177,7 +174,6 @@ export function useChannels() {
   })
 }
 
-/** The module's commands for a channel: its Delete and its Clear, each disabled with the reason a viewer cannot run it. */
 export function useChannelCommands(kind: ChannelKind) {
   const { api } = useDashboard()
   const module = useModule()
@@ -201,7 +197,6 @@ export function useChannelCommands(kind: ChannelKind) {
   return { all, delete: find('delete'), clear: find('clear') }
 }
 
-/** What a channel holds, for titles, empty states, and confirmations. */
 export const channelNouns: Readonly<Record<ChannelKind, { one: string; many: string; setup: string }>> = {
   email: { one: 'email', many: 'emails', setup: 'AddHeadlessEmails' },
   sms: { one: 'SMS', many: 'SMS', setup: 'AddHeadlessSms' },

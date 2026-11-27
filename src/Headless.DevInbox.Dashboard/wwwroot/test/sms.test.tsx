@@ -68,7 +68,6 @@ describe('sms view', () => {
 
     await actor.click(screen.getByRole('button', { name: 'Clear' }))
 
-    // The confirm asks for the reason first; nothing is counted or run until the operator gives one.
     expect(await screen.findByRole('textbox', { name: /Reason/ })).toBeTruthy()
     expect(await screen.findByText(/Clear captured SMS/)).toBeTruthy()
     expect(view.requests.some((request) => request.path.endsWith('/confirm') || request.path.endsWith('/chunks'))).toBe(

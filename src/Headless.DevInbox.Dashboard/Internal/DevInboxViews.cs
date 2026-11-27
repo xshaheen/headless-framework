@@ -39,12 +39,7 @@ internal static class DevInboxViews
             _ => encoding.ToString(),
         };
 
-    public static string? Priority(PushNotificationPriority? priority) =>
-        priority switch
-        {
-            null => null,
-            _ => priority.Value.ToString(),
-        };
+    public static string? Priority(PushNotificationPriority? priority) => priority?.ToString();
 }
 
 /// <summary>An email address and its display name.</summary>

@@ -40,14 +40,12 @@ import {
   type ChannelKind,
 } from './inbox.ts'
 
-/** The note every view opens with: what the inbox holds, and that nothing it shows was delivered. */
 export function DevelopmentBanner() {
   return (
     <Banner tone="info">Development only. These messages were captured instead of sent; nothing was delivered.</Banner>
   )
 }
 
-/** A failed send's error, above the panel's tabs, in the failure tone. */
 export function FailureNotice({ error }: { error?: string | null }) {
   return error ? <Banner tone="error">{`The send failed: ${error}`}</Banner> : null
 }
@@ -69,12 +67,10 @@ export function withFailure(tabs: readonly DetailTab[], error?: string | null): 
   )
 }
 
-/** A failed send reads as failed; an accepted capture carries no state. */
 export function captureStatus(row: Pick<CaptureRow, 'failed'>) {
   return row.failed ? ({ tone: 'fail', label: 'Failed' } as const) : undefined
 }
 
-/** A download link to a module endpoint, which answers as an attachment. */
 export function DownloadLink({ path, children }: { path: string; children: ReactNode }) {
   const { apiBase } = useDashboard()
 
@@ -85,7 +81,6 @@ export function DownloadLink({ path, children }: { path: string; children: React
   )
 }
 
-/** Delete one capture: an irreversible change, confirmed with what it removes, and refused to a viewer. */
 export function DeleteAction({ kind, id, name }: { kind: ChannelKind; id: string; name: string }) {
   const module = useModule()
   const commands = useChannelCommands(kind)
@@ -102,13 +97,11 @@ export function DeleteAction({ kind, id, name }: { kind: ChannelKind; id: string
       icon={DeleteIcon}
       commands={commands.all}
       reach={`${name} is removed from the inbox for good.`}
-      disabledReason={command.canRun ? null : (command.disabledReason ?? viewOnlyReason)}
       onDone={() => void refetchTopics(client, [topicOf(kind)])}
     />
   ) : null
 }
 
-/** Clear a channel, or the captures its search matches: an Operation the operator gives a reason for. */
 function ClearAction({ kind, search }: { kind: ChannelKind; search: string }) {
   const module = useModule()
   const { start } = useOperations()
@@ -139,7 +132,6 @@ export interface ChannelViewProps<TRow extends CaptureRow, TDetail extends Captu
   title: string
   description: string
   columns: readonly DataTableColumn<TRow>[]
-  /** The open capture's panel, once its detail answered. */
   panel: (detail: TDetail) => ReactNode
 }
 
