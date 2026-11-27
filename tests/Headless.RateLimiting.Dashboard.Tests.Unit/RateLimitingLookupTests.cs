@@ -53,7 +53,7 @@ public sealed class RateLimitingLookupTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
         text.Should().NotContain(_Subject);
-        var body = JsonDocument.Parse(text).RootElement;
+        var body = JsonElement.Parse(text);
         body.GetProperty("purpose").GetString().Should().Be(RateLimitingHost.Purpose);
         body.GetProperty("count").GetInt64().Should().Be(5);
         body.GetProperty("limit").GetInt32().Should().Be(5);
@@ -213,7 +213,7 @@ public sealed class RateLimitingLookupTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
         text.Should().NotContain(_Subject);
-        JsonDocument.Parse(text).RootElement.GetProperty("errors").TryGetProperty("quota", out _).Should().BeTrue();
+        JsonElement.Parse(text).GetProperty("errors").TryGetProperty("quota", out _).Should().BeTrue();
     }
 
     public static TheoryData<string, string> FieldRefusals =>
@@ -244,7 +244,7 @@ public sealed class RateLimitingLookupTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
         text.Should().NotContain(_Subject);
-        JsonDocument.Parse(text).RootElement.GetProperty("errors").TryGetProperty(field, out _).Should().BeTrue();
+        JsonElement.Parse(text).GetProperty("errors").TryGetProperty(field, out _).Should().BeTrue();
     }
 
     [Fact]
@@ -279,9 +279,9 @@ public sealed class RateLimitingLookupTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var text = await response.Content.ReadAsStringAsync(AbortToken);
         text.Should().NotContain(_Subject);
-        JsonDocument
+        JsonElement
             .Parse(text)
-            .RootElement.GetProperty("detail")
+            .GetProperty("detail")
             .GetString()
             .Should()
             .Be("The attempt limiter for 'sign-in.password' is unavailable.");

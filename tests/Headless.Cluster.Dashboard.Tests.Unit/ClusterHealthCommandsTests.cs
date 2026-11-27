@@ -93,7 +93,7 @@ public sealed class ClusterHealthCommandsTests : TestBase
     private sealed class ScriptedMonitor : IHealthCheckMonitor
     {
         private readonly Lock _lock = new();
-        private readonly Dictionary<string, HealthCheckProbeResult> _results = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, HealthCheckProbeResult> _results = [with(StringComparer.Ordinal)];
 
         public Func<CancellationToken, HealthReport> ProbeAll { get; set; } =
             static _ => throw new NotSupportedException();
