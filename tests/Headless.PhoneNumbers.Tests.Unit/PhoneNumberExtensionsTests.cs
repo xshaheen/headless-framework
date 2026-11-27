@@ -21,6 +21,18 @@ public sealed class PhoneNumberExtensionsTests
         normalized.Should().Be("+201018541323");
     }
 
+    [Theory]
+    [InlineData("+201200000910", "+201200000910")]
+    [InlineData("+201200000911", "+201200000911")]
+    public void should_keep_every_digit_when_normalize_international_number(string number, string expected)
+    {
+        // when
+        var normalized = PhoneNumber.NormalizeInternationalNumber(number);
+
+        // then
+        normalized.Should().Be(expected);
+    }
+
     [Fact]
     public void should_return_valid_region_when_get_region_codes()
     {
@@ -38,6 +50,7 @@ public sealed class PhoneNumberExtensionsTests
     [InlineData(20, "1018541323", "+201018541323")]
     [InlineData(20, "01018541323", "+201018541323")]
     [InlineData(20, "010 18541 323", "+201018541323")]
+    [InlineData(20, "1200000910", "+201200000910")]
     public void should_return_correct_format_when_normalize_single_string(int code, string number, string expected)
     {
         // when
@@ -183,6 +196,7 @@ public sealed class PhoneNumberExtensionsTests
     [InlineData(1, "2025551234", "+1202-555-1234")] // US - formatted by libphonenumber
     [InlineData(44, "2079460958", "+442079460958")] // UK
     [InlineData(20, "1001234567", "+201001234567")] // Egypt
+    [InlineData(20, "1200000910", "+201200000910")] // Egypt, ends in 0
     public void should_normalize_phone_number(int countryCode, string number, string expectedNormalized)
     {
         // given

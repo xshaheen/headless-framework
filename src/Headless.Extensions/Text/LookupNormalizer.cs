@@ -34,18 +34,14 @@ public static class LookupNormalizer
     }
 
     /// <summary>
-    /// Normalizes a phone number by trimming whitespace, removing spaces, converting digits to their invariant
-    /// (ASCII) form, and stripping a single trailing <c>0</c>.
+    /// Normalizes a phone number by trimming whitespace, removing spaces, and converting digits to their invariant
+    /// (ASCII) form. Every digit is kept, so two numbers that differ only in a trailing <c>0</c> stay distinct.
     /// </summary>
     /// <param name="number">The phone number to normalize.</param>
     /// <returns>The normalized phone number, or <see langword="null"/> when <paramref name="number"/> is <see langword="null"/>.</returns>
     [return: NotNullIfNotNull(nameof(number))]
     public static string? NormalizePhoneNumber(string? number)
     {
-        return number
-            ?.NullableTrim()
-            ?.RemoveCharacter(' ')
-            .ToInvariantDigits()
-            .RemovePostfix(StringComparison.Ordinal, "0");
+        return number?.NullableTrim()?.RemoveCharacter(' ').ToInvariantDigits();
     }
 }

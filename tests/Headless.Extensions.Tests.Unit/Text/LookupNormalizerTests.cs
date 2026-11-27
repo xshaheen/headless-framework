@@ -151,7 +151,7 @@ public sealed class LookupNormalizerTests
     [Fact]
     public void should_convert_arabic_digits_to_invariant_when_normalize_phone_number()
     {
-        // given - Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) - note: ٠ = 0, trailing 0 removed
+        // given - Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩)
         const string phoneNumber = "١٢٣٤٥٦٧٨٩";
         const string expected = "123456789";
 
@@ -165,7 +165,7 @@ public sealed class LookupNormalizerTests
     [Fact]
     public void should_convert_persian_digits_to_invariant_when_normalize_phone_number()
     {
-        // given - Persian digits (۱۲۳۴۵۶۷۸۹) - note: ۰ = 0, trailing 0 removed
+        // given - Persian digits (۱۲۳۴۵۶۷۸۹)
         const string phoneNumber = "۱۲۳۴۵۶۷۸۹";
         const string expected = "123456789";
 
@@ -177,11 +177,11 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void should_remove_single_trailing_zero_when_normalize_phone_number()
+    public void should_keep_trailing_zero_when_normalize_phone_number()
     {
-        // given - RemovePostfix removes only one trailing "0"
+        // given - a final 0 is a digit of the number, not formatting
         const string phoneNumber = "1234567890";
-        const string expected = "123456789";
+        const string expected = "1234567890";
 
         // when
         var result = LookupNormalizer.NormalizePhoneNumber(phoneNumber);
@@ -191,11 +191,23 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void should_preserve_leading_zeros_when_normalize_phone_number()
+    public void should_keep_distinct_keys_when_numbers_differ_only_by_trailing_zero()
     {
-        // given - leading zeros preserved, only trailing "0" removed
+        // when
+        var withZero = LookupNormalizer.NormalizePhoneNumber("+201200000910");
+        var withoutZero = LookupNormalizer.NormalizePhoneNumber("+20120000091");
+
+        // then
+        withZero.Should().Be("+201200000910");
+        withZero.Should().NotBe(withoutZero);
+    }
+
+    [Fact]
+    public void should_preserve_leading_and_trailing_zeros_when_normalize_phone_number()
+    {
+        // given
         const string phoneNumber = "0012345670";
-        const string expected = "001234567";
+        const string expected = "0012345670";
 
         // when
         var result = LookupNormalizer.NormalizePhoneNumber(phoneNumber);
@@ -207,9 +219,9 @@ public sealed class LookupNormalizerTests
     [Fact]
     public void should_handle_plus_prefix_when_normalize_phone_number()
     {
-        // given - plus preserved, spaces removed, trailing 0 removed
+        // given - plus preserved, spaces removed
         const string phoneNumber = "+1 234 567 80";
-        const string expected = "+12345678";
+        const string expected = "+123456780";
 
         // when
         var result = LookupNormalizer.NormalizePhoneNumber(phoneNumber);
@@ -219,9 +231,9 @@ public sealed class LookupNormalizerTests
     }
 
     [Fact]
-    public void should_not_remove_non_trailing_zero_when_normalize_phone_number()
+    public void should_return_digits_unchanged_when_normalize_phone_number_has_no_formatting()
     {
-        // given - no trailing 0 to remove
+        // given
         const string phoneNumber = "123456789";
         const string expected = "123456789";
 
