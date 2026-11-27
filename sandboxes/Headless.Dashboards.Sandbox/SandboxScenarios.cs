@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
+using Headless.RateLimiting;
 
 namespace Headless.Dashboards.Sandbox;
 
@@ -15,13 +16,15 @@ namespace Headless.Dashboards.Sandbox;
 /// <param name="Queue">Enqueues the Queue-lane messages.</param>
 /// <param name="Storage">The Messaging store, for the operator actions a scenario applies to a received row.</param>
 /// <param name="Clock">Times the wait for a consumer to finish.</param>
+/// <param name="Limiter">Spends attempts for the rate-limit fixtures.</param>
 public sealed record SandboxScenarioServices(
     IJobScheduler Jobs,
     ICronJobManager<CronJobEntity> CronJobs,
     IBus Bus,
     IQueue Queue,
     IDataStorage Storage,
-    TimeProvider Clock
+    TimeProvider Clock,
+    IAttemptLimiter Limiter
 );
 
 /// <summary>
@@ -87,6 +90,8 @@ public static class SandboxScenarios
             "One message published with a delivery deadline that has passed by the time it is sent: a published row that failed for good.",
         ["trace"] =
             "Time job that publishes a message to sandbox.invoices and sandbox.fulfilment, which schedules a follow-up job: one correlation id, the run's id, opens all of it on the trace page.",
+        ["attempts"] =
+            "Two new sign-in.password subjects: one locked out with 5 of 5 attempts, one with 2 of 5; returns each subject, its purpose, and its window end.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -96,7 +101,7 @@ public static class SandboxScenarios
     )
     {
         Argument.IsNotNull(services);
-        var (jobs, cronJobs, bus, queue, _, _) = services;
+        var (jobs, cronJobs, bus, queue, _, _, _) = services;
 
         return name switch
         {
@@ -179,6 +184,7 @@ public static class SandboxScenarios
             [
                 _Id(await jobs.EnqueueAsync(new TraceCheckoutArgs(OrderId: 9501), _NoRetries, cancellationToken)),
             ],
+            "attempts" => await SandboxRateLimits.SeedAsync(services.Limiter, cancellationToken),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."

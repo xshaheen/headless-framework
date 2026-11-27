@@ -5,7 +5,7 @@ wiring favors reaching every state quickly over showing production setup. For co
 
 ## Dashboard sandbox
 
-`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs and Messaging modules, on loopback. The project CLI owns it:
+`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs, Messaging, and Rate limits modules, on loopback. The project CLI owns it:
 
 ```sh
 make up                                   # build and start; STORE=postgres adds sandboxes/compose.yaml
@@ -21,9 +21,9 @@ and `down` take the same override.
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Headless, with the Jobs and Messaging modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
+| Headless, with the Jobs, Messaging, and Rate limits modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`, Rate limits at `/headless/rate-limiting`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
 
-Both modules sit behind the same sign-in, so inbox and scheduled operations record the signed-in operator's name.
+Every module sits behind the same sign-in, so inbox and scheduled operations record the signed-in operator's name.
 `GET /sandbox/usable` answers once the Messaging store does, with its published and received counts.
 
 By default the dashboard signs in with its own Basic mode and the fixed credential `admin` / `admin`, as one operator who
@@ -75,6 +75,7 @@ short cadences (progress writes every 500 ms, a 30 s lease, a 5 s fallback poll)
 | `message-backlog` | Five Queue-lane messages that `sandbox.stock-counts` takes 45 s to 165 s to handle | A received backlog that drains one row every 30 s, for under three minutes |
 | `message-rate-limited` | Six Queue-lane messages for `sandbox.carrier-quotes`, which handles one every 30 s | Received rows that wait for a rate-limit permit and drain one every 30 s. Run it with `message-retrying`: the shipments' retries still run when they are due |
 | `message-publish-failed` | One message published with a delivery deadline that has already passed when it is sent | A published row that failed for good, with Re-send and Delete |
+| `attempts` | Two new `sign-in.password` subjects: one locked out at 5 of 5, one at 2 of 5; the call returns each subject and its window end | Look up a locked-out subject on Rate limits, and Reset its window |
 
 The host also defines `sandbox.nightly-report` in code with a daily cron schedule, so the Cron jobs view always lists
 a cron job defined in code, whose schedule stays read-only.
