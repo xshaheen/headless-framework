@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.108.0",
+    "@tanstack/react-query": "^5.108.2",
     "@uppy/core": "^6.3.2",
     "@uppy/dashboard": "^6.0.3",
     "@uppy/react": "^6.1.1",
@@ -17,7 +17,7 @@
     "pretty-bytes": "^7.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-dropzone": "^20.2.0",
+    "react-dropzone": "^20.2.1",
     "tus-js-client": "^4.3.1",
     "use-tus": "^0.9.0"
   },
