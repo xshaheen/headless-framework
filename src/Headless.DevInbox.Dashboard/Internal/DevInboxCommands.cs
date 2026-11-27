@@ -250,7 +250,24 @@ internal sealed class DevInboxCommands(string moduleId, DevInboxChannels channel
             throw new ArgumentException("The filter is not a Dev inbox channel filter.", nameof(filter));
         }
 
-        if (!filter.TryGetProperty("search", out var search) || search.ValueKind == JsonValueKind.Null)
+        // A property this filter does not know would otherwise widen the Clear to the whole channel, so anything but
+        // one "search" is refused before the scope is counted.
+        JsonElement? found = null;
+
+        foreach (var property in filter.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, "search", StringComparison.Ordinal) || found is not null)
+            {
+                throw new ArgumentException(
+                    $"The filter's '{property.Name}' is not a Dev inbox channel filter property; send only one 'search'.",
+                    nameof(filter)
+                );
+            }
+
+            found = property.Value;
+        }
+
+        if (found is not { } search || search.ValueKind == JsonValueKind.Null)
         {
             return null;
         }

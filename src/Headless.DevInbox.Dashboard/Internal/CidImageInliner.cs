@@ -29,7 +29,8 @@ internal static partial class CidImageInliner
             return html;
         }
 
-        var images = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var images = new Dictionary<string, InlineImage?>(StringComparer.OrdinalIgnoreCase);
+        var uris = new Dictionary<CapturedEmailAttachment, string>(ReferenceEqualityComparer.Instance);
         var remaining = MaxInlineLength;
 
         return _CidReference.Replace(
@@ -38,15 +39,22 @@ internal static partial class CidImageInliner
             {
                 var token = match.Groups["token"].Value;
 
-                if (!images.TryGetValue(token, out var uri))
+                if (!images.TryGetValue(token, out var image))
                 {
-                    uri = _DataUri(token, attachments);
-                    images[token] = uri;
+                    image = _Resolve(token, attachments);
+                    images[token] = image;
                 }
 
-                if (uri is null || uri.Length > remaining)
+                // The length is known before encoding, so a reference past the budget never allocates its copy.
+                if (image is not { } kept || kept.UriLength > remaining)
                 {
                     return match.Value;
+                }
+
+                if (!uris.TryGetValue(kept.Attachment, out var uri))
+                {
+                    uri = $"data:{kept.Type};base64,{Convert.ToBase64String(kept.Content.Span)}";
+                    uris[kept.Attachment] = uri;
                 }
 
                 remaining -= uri.Length;
@@ -56,7 +64,7 @@ internal static partial class CidImageInliner
         );
     }
 
-    private static string? _DataUri(string token, IReadOnlyList<CapturedEmailAttachment> attachments)
+    private static InlineImage? _Resolve(string token, IReadOnlyList<CapturedEmailAttachment> attachments)
     {
         var at = token.IndexOf('@', StringComparison.Ordinal);
         var name = at > 0 ? token[..at] : token;
@@ -81,11 +89,21 @@ internal static partial class CidImageInliner
                 continue;
             }
 
-            return $"data:{type};base64,{Convert.ToBase64String(content.Span)}";
+            var uriLength =
+                (long)"data:".Length + type.Length + ";base64,".Length + (((long)content.Length + 2) / 3 * 4);
+
+            return new InlineImage(attachment, type, content, uriLength);
         }
 
         return null;
     }
+
+    private readonly record struct InlineImage(
+        CapturedEmailAttachment Attachment,
+        string Type,
+        ReadOnlyMemory<byte> Content,
+        long UriLength
+    );
 
     [GeneratedRegex(
         """(?<prefix>\bsrc\s*=\s*["']?|url\(\s*["']?)cid:(?<token>[^"'\s)>]+)""",

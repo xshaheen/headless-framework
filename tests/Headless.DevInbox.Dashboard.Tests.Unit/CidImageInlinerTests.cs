@@ -103,6 +103,31 @@ public sealed class CidImageInlinerTests : TestBase
         (inlined.Length - html.Length).Should().BeLessThanOrEqualTo(CidImageInliner.MaxInlineLength);
     }
 
+    [Fact]
+    public void should_skip_an_image_larger_than_the_budget_and_still_inline_a_later_small_one()
+    {
+        // given: one image whose data: URI alone is past the budget, then a small one
+        var huge = new byte[CidImageInliner.MaxInlineLength];
+        const string html = """<img src="cid:huge.png"><img src="cid:logo.png">""";
+        CapturedEmailAttachment[] attachments =
+        [
+            new()
+            {
+                FileName = "huge.png",
+                ContentType = "image/png",
+                SizeBytes = huge.Length,
+                Content = huge,
+            },
+            _Kept("logo.png", "image/png"),
+        ];
+
+        // when
+        var inlined = CidImageInliner.Inline(html, attachments);
+
+        // then
+        inlined.Should().Be($"""<img src="cid:huge.png"><img src="{_PngUri}">""");
+    }
+
     private static int _Occurrences(string text, string value)
     {
         var count = 0;

@@ -59,4 +59,25 @@ public sealed class ChangeSourceTests : TestBase
         batch.Changes.Should().BeEmpty();
         next.Changes.Select(static c => c.Projection!.Value.GetProperty("subject").GetString()).Should().Equal("new");
     }
+
+    [Fact]
+    public async Task should_advance_the_cursor_past_a_deletion_and_still_read_a_later_capture_once()
+    {
+        // given
+        await using var app = await DevInboxTestHost.StartAsync(AbortToken);
+        IDashboardChangeSource source = app.Services.GetRequiredService<DevInboxModule>();
+        var deleted = await DevInboxTestHost.SendEmailAsync(app, "deleted", AbortToken);
+        var start = await source.GetStartCursorAsync(AbortToken);
+        DevInboxTestHost.EmailStore(app).Delete(deleted.Id).Should().BeTrue();
+
+        // when
+        var afterDelete = await source.ReadChangesAsync(start, AbortToken);
+        var later = await DevInboxTestHost.SendEmailAsync(app, "later", AbortToken);
+        var next = await source.ReadChangesAsync(afterDelete.Cursor, AbortToken);
+
+        // then
+        afterDelete.Changes.Should().BeEmpty();
+        afterDelete.Cursor.Should().NotBe(start);
+        next.Changes.Should().ContainSingle().Which.Target.Id.Should().Be(later.Id.ToString("D"));
+    }
 }

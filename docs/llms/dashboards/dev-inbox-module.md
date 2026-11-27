@@ -33,21 +33,23 @@ if (builder.Environment.IsDevelopment())
     builder.Services.AddHeadlessPushNotifications(setup => setup.UseDevelopment());
 }
 
-builder.Services.AddHeadlessDashboard(dashboard =>
+if (builder.Environment.IsDevelopment())
 {
-    dashboard.WithNoAuth();
-
-    if (builder.Environment.IsDevelopment())
-    {
-        dashboard.AddDevInbox();
-    }
-});
+    // This dashboard exists only for local development, so it runs without sign-in and only in Development.
+    builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddDevInbox());
+}
 
 var app = builder.Build();
-app.MapHeadlessDashboard();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapHeadlessDashboard();
+}
 ```
 
-**Verify:** `GET {base}/api/dev-inbox/channels` (by default `/headless/api/dev-inbox/channels`) answers `200` and lists `email`, `sms`, and `push` with each store's `capacity`, and the shell shows a Dev inbox tab with the `DEV` badge. The same host started as Production fails at start.
+When the host already serves a shared dashboard with its own authentication, keep that registration as it is and put only `dashboard.AddDevInbox()` inside the Development condition. Never call `WithNoAuth()` outside Development.
+
+**Verify:** `GET {base}/api/dev-inbox/channels` (by default `/headless/api/dev-inbox/channels`) answers `200` and lists `email`, `sms`, and `push` with each store's `capacity`, and the shell shows a Dev inbox tab with the `DEV` badge. Started as Production, the host serves no `{base}` route. To see the startup refusal, register `AddDevInbox()` in a host whose environment is not Development: the start fails with `InvalidOperationException`.
 
 - `AddDevInbox()`, `AddDevInbox(Action<DevInboxDashboardOptions>)`, `AddDevInbox(Action<DevInboxDashboardOptions, IServiceProvider>)`, and `AddDevInbox(IConfiguration)` register the module. `DevInboxDashboardOptions` carries the `ViewPolicy` and `OperatePolicy` every module has. A white-space policy fails the start with `OptionsValidationException`.
 - Register any combination of the three stores. A channel whose store is absent shows `–` as its sidebar count and an empty state naming the `UseDevelopment()` call it needs.
@@ -99,7 +101,7 @@ The preview inlines each `cid:` image the HTML references, in an `src` attribute
 | Command | On | Effect |
 | --- | --- | --- |
 | `dev-inbox.email.delete`, `dev-inbox.sms.delete`, `dev-inbox.push.delete` | one capture | Removes it. Confirmed, no inverse, optional reason. A capture already gone reports `skipped`. |
-| `dev-inbox.email.clear`, `dev-inbox.sms.clear`, `dev-inbox.push.clear` | the channel | Runs as an Operation over `{ "search": null }`, or a search, with a required reason. |
+| `dev-inbox.email.clear`, `dev-inbox.sms.clear`, `dev-inbox.push.clear` | the channel | Runs as an Operation over `{ "search": null }` (the whole channel) or `{ "search": "<text>" }` (the captures the list search matches), with a required reason. Any other filter property, a repeated `search`, or a `search` that is not text or null is refused before anything is counted. |
 
 - Both need operate permission and write the operator log. The module offers only the commands of the registered channels.
 - Clear removes only the captures that existed when the operator confirmed it. A capture that arrives during the clear stays.

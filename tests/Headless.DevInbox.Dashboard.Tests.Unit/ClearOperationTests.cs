@@ -4,6 +4,7 @@ using System.Net;
 using System.Security.Claims;
 using Headless.Dashboard;
 using Headless.DevInbox.Dashboard;
+using Headless.DevInbox.Dashboard.Internal;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -197,24 +198,76 @@ public sealed class ClearOperationTests : TestBase
             .BeEquivalentTo([("sms", first.Id.ToString("D"), true), ("sms", second.Id.ToString("D"), true)]);
     }
 
+    [Fact]
+    public async Task should_clear_only_the_sms_matching_the_search_and_log_the_search_redacted()
+    {
+        // given
+        await using var app = await DevInboxTestHost.StartAsync(AbortToken);
+        var module = _Module(app);
+        await DevInboxTestHost.SendSmsAsync(app, "your code is 1234", AbortToken);
+        await DevInboxTestHost.SendSmsAsync(app, "another CODE 5678", AbortToken);
+        await DevInboxTestHost.SendSmsAsync(app, "hello", AbortToken);
+        var filter = JsonSerializer.SerializeToElement(new { search = "code" });
+
+        // when
+        var scope = await module.PrepareAsync(_Scope(filter), AbortToken);
+        var chunk = await module.RunChunkAsync(
+            _Chunk(scope.HighWaterMark, cursor: null, chunkSize: 500, filter),
+            AbortToken
+        );
+
+        // then
+        scope.Count.Should().Be(2);
+        var logged = scope.LoggedFilter!.Value.GetRawText();
+        logged.Should().Contain(DevInboxCommands.RedactedSearch).And.NotContain("code");
+        chunk.Rows.Should().HaveCount(2);
+        DevInboxTestHost.SmsStore(app).Query(new()).Select(static sms => sms.Text).Should().Equal("hello");
+    }
+
+    [Theory]
+    [InlineData("""{"query":"code"}""")]
+    [InlineData("""{"search":"a","search":"b"}""")]
+    [InlineData("""{"search":5}""")]
+    [InlineData("""[]""")]
+    public async Task should_refuse_a_filter_that_is_not_a_single_search_and_delete_nothing(string json)
+    {
+        // given
+        await using var app = await DevInboxTestHost.StartAsync(AbortToken);
+        var module = _Module(app);
+        await DevInboxTestHost.SendSmsAsync(app, "kept", AbortToken);
+        using var document = JsonDocument.Parse(json);
+
+        // when
+        var act = () => module.PrepareAsync(_Scope(document.RootElement.Clone()), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>();
+        DevInboxTestHost.SmsStore(app).Count.Should().Be(1);
+    }
+
     private static IDashboardOperationRunner _Module(WebApplication app) =>
         app.Services.GetRequiredService<DevInboxModule>();
 
-    private static DashboardOperationScopeRequest _Scope() =>
+    private static DashboardOperationScopeRequest _Scope(JsonElement? filter = null) =>
         new()
         {
             CommandId = "dev-inbox.sms.clear",
-            Filter = _WholeChannel,
+            Filter = filter ?? _WholeChannel,
             CountLimit = 100_000,
             SampleSize = 5,
             User = new ClaimsPrincipal(),
         };
 
-    private static DashboardOperationChunkRequest _Chunk(string mark, string? cursor, int chunkSize) =>
+    private static DashboardOperationChunkRequest _Chunk(
+        string mark,
+        string? cursor,
+        int chunkSize,
+        JsonElement? filter = null
+    ) =>
         new()
         {
             CommandId = "dev-inbox.sms.clear",
-            Filter = _WholeChannel,
+            Filter = filter ?? _WholeChannel,
             HighWaterMark = mark,
             Cursor = cursor,
             ChunkSize = chunkSize,

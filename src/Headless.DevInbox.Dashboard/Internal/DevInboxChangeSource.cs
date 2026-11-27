@@ -36,14 +36,18 @@ internal sealed class DevInboxChangeSource(string moduleId, DevInboxChannels cha
 
             // Every capture's sequence is the store's version after its add, so an unmoved version means no new rows,
             // and the poll skips scanning the store under its lock.
-            if (channel.Version <= after)
+            var seen = channel.Version;
+
+            if (seen <= after)
             {
                 next[channel.Kind] = after;
                 continue;
             }
 
             var rows = channel.RowsAfter(after);
-            next[channel.Kind] = rows.Count == 0 ? after : Math.Max(after, rows.Max(static row => row.Sequence));
+
+            // A delete or clear moves the version with no new row; advancing past it keeps later polls on the cheap path.
+            next[channel.Kind] = Math.Max(seen, rows.Count == 0 ? after : rows.Max(static row => row.Sequence));
 
             // Oldest first, so the stream sends captures in the order they arrived.
             for (var i = rows.Count - 1; i >= 0; i--)
