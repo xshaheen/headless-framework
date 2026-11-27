@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Checks;
 using Headless.RateLimiting;
 
@@ -56,7 +57,10 @@ public static class SandboxRateLimits
         return
         [
             $"{lockedOut} {SignIn} locked out until {lockedWindow.WindowEndsAt:O}",
-            $"{partly} {SignIn} 2 of {quota.Limit} until {partlyWindow.WindowEndsAt:O}",
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{partly} {SignIn} 2 of {quota.Limit} until {partlyWindow.WindowEndsAt:O}"
+            ),
         ];
     }
 }

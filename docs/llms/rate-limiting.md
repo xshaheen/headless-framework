@@ -1,6 +1,6 @@
 ---
 domain: Rate Limiting
-packages: RateLimiting
+packages: RateLimiting, RateLimiting.Dashboard
 ---
 
 # Rate Limiting
@@ -30,6 +30,7 @@ The framework ships no edge limiter: which endpoints get which limits, and who c
 - Declare every purpose and its quota in `AttemptLimiterOptions.Purposes`, and read the quota from there when you acquire. An operator screen then lists the same purposes and quotas the flows enforce.
 - To inspect a budget, call `PeekAsync`, never `AcquireAsync`. `AcquireAsync` charges an attempt even when you only want to look.
 - Expose `ResetAsync(purpose, subject, quota)` only behind operator authorization, and audit each call with the purpose and the fingerprint. It lifts brute-force protection for that subject until the window ends. In application flows, reset with `ResetAsync(attempt)` instead.
+- To give operators that screen without writing one, add `dashboard.AddRateLimiting()` from `Headless.RateLimiting.Dashboard`; see [Headless.RateLimiting.Dashboard](#headlessratelimitingdashboard).
 - Show or log a subject's `AttemptSubjectFingerprinter.Compute(purpose, subject)` result, never the subject. Do not reimplement the HMAC: the fingerprinter is the derivation the counter keys use.
 - Load `SubjectKey` from a secret store. Rotating it starts every budget over.
 - At the HTTP edge, call `options.UseHeadlessProblemDetails()` inside `AddRateLimiter`. Without it, a rejection is ASP.NET Core's default 503 with no `Retry-After` header and no `g:rate_limit_exceeded` code.
@@ -276,3 +277,41 @@ public sealed class AttemptBudgetOperator(IAttemptLimiter limiter, IOptions<Atte
 - `AttemptSubjectFingerprinter` is registered as a singleton. `Compute(purpose, subject)` returns the 43-character base64url HMAC-SHA256 that ends every counter key. The same subject has a different fingerprint under each purpose, and rotating `SubjectKey` changes every fingerprint.
 - A cache failure in `AcquireAsync`, `PeekAsync`, or either `ResetAsync` throws `AttemptLimiterUnavailableException` (`Purpose`, and the store's exception as `InnerException`). Its message names only the purpose, never the server or the counter key, so you can return it as is. It derives from `Headless.ServiceUnavailableException`, so with `Headless.Api` problem details registered it maps to 503 with `Cache-Control: no-store` and no `Retry-After`. The caller's own cancellation still surfaces as `OperationCanceledException`.
 - `AttemptResult` is publicly constructible, so a test can stub `IAttemptLimiter` without a cache: `new AttemptResult("otp-delivery", count: 6, limit: 5, retryAfter: TimeSpan.FromSeconds(30))` is a refusal. `ResetToken` is the opaque handle `ResetAsync` needs; a hand-built result has none, and the built-in limiter's `ResetAsync` throws `ArgumentException` for it. Stub `PeekAsync` the same way with `new AttemptSnapshot(...)`. A custom `IAttemptLimiter` implements all four members and puts its own reset state in the token.
+
+## Headless.RateLimiting.Dashboard
+
+The Rate limits module of the unified dashboard: the purposes `AttemptLimiterOptions.Purposes` declares, a lookup of one subject's current window, and a confirmed, reasoned reset of it. Use it instead of writing the operator screen above.
+
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards/rate-limiting-module.md](dashboards/rate-limiting-module.md) lists the endpoints, the Reset command, its outcomes, and what the operator log records.
+
+### Setup
+
+```bash
+dotnet add package Headless.RateLimiting.Dashboard
+```
+
+```csharp
+using Headless.Dashboard;
+using Headless.RateLimiting;
+
+builder.Services.AddAttemptLimiter(builder.Configuration.GetSection("Attempts"));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => { host.ViewPolicy = "ops.view"; host.OperatePolicy = "ops.operate"; })
+    .AddRateLimiting());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+**Verify:** start the host. Without `AddAttemptLimiter(...)` it fails to start naming that call. With it, the Platform tab shows Rate limits with the count of declared purposes, and a signed-in viewer's `GET /headless/api/rate-limiting/catalogue` answers `200` with them.
+
+### Runtime behavior
+
+- The lookup is `POST {base}/api/rate-limiting/lookup`, so the subject never reaches a URL or a request log. It reads through `PeekAsync`, spends no attempt, and answers the fingerprint, never the subject. A failing counter store answers `503` naming only the purpose.
+- A declared purpose always reads and resets with its declared quota; an undeclared one needs the caller's quota. Declare the quota a flow acquires with, or the screen reads another counter and shows zero.
+- Reset is the shell command `rate-limiting.reset` on the target `{purpose}:{fingerprint}`, with the subject as an argument. It needs operate permission, a confirmation, and a reason, and the operator log records the target and the reason, never the subject. A subject that does not hash to the target's fingerprint, or a reason that contains the subject, is refused and changes nothing.
+- The module needs the `AttemptSubjectFingerprinter` that `AddAttemptLimiter` registers, so a custom `IAttemptLimiter` must be registered beside that call. Under a custom limiter the screen leaves the counter store out.
+- The hybrid-cache caveats under [Headless.RateLimiting](#headlessratelimiting) apply to the screen: set `CacheName` to the remote instance before you give operators Reset.
+

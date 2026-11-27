@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup Label="Packages the documented examples call">
     <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
@@ -46,6 +47,7 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.SqlServer\Headless.Messaging.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+    <ProjectReference Include="..\..\src\Headless.RateLimiting.Dashboard\Headless.RateLimiting.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
   </ItemGroup>
   <ItemGroup Label="Generators the examples rely on, run in-process by the test">
