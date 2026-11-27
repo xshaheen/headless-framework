@@ -1,6 +1,6 @@
 ---
 domain: Sequences
-packages: Sequences.Abstractions, Sequences, Sequences.Sql, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
+packages: Sequences.Abstractions, Sequences, Sequences.Dashboard, Sequences.Sql, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
 ---
 
 # Sequences
@@ -78,6 +78,7 @@ SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); //
 - There is no reset, set, or delete API. Start a new period with a new partition.
 - Read a counter's value through `ISequenceInspector`. Never call `NextAsync`, `NextNumberAsync`, or `ReserveAsync` to peek at a counter: each takes a number, and on a gap-free counter that number becomes a real gap. See [Inspecting counters](#inspecting-counters).
 - Put every `ISequenceInspector` call behind operator authorization. Inspection ignores `ICurrentTenant` and reads every tenant's counters unless the query sets `TenantId`.
+- To give operators a counter screen without writing one, add `dashboard.AddSequences()` from `Headless.Sequences.Dashboard`; see [Headless.Sequences.Dashboard](#headlesssequencesdashboard).
 - On SQL Server, the first call on a new counter takes a key-range lock on the gap in the primary key that holds the new key. In gap-free mode that lock is held until the unit commits, so first use of any other new counter whose key sorts into the same gap waits, for any tenant and from either mode. Two units that each first-use several new counters can deadlock on those ranges. Keep a unit that takes a counter's first number short. PostgreSQL locks only the conflicting key.
 
 ## Core Concepts
@@ -95,7 +96,7 @@ The stored key is (tenant id, name, partition). The host tenant and "no partitio
 | Policy member | Default | Effect |
 | --- | --- | --- |
 | `Format` | `null` (the bare value) | Template. `{seq}` is the value and `{seq:D6}` pads it to six digits (widths 1 to 19). `{yyyy}`, `{yy}`, `{MM}`, `{dd}` are the issue date. `{fy}` is the year the fiscal year starts in. `{{` and `}}` write a brace. An unknown token fails options validation at startup, and so does a template that would print one number twice: it must hold exactly one `{seq}`, and the tokens of its reset period (`Year`: `{yyyy}` or `{yy}`; `Month`: also `{MM}`; `Day`: also `{dd}`; `FiscalYear`: `{fy}`). |
-| `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. |
+| `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. Only `NextNumberAsync` picks the period: `NextAsync` and `ReserveAsync` store the partition you pass, or none, under any policy. |
 | `FiscalYearStartMonth` | 1 | The month (1 to 12) the fiscal year starts in, for `Reset = FiscalYear` and `{fy}`. With 7, 8 October 2026 is in `FY2026` and 8 March 2027 too. |
 | `TimeZone` | UTC | The zone the issue date and period are decided in, so a daily counter starts again at the business's local midnight. |
 
@@ -147,7 +148,7 @@ When an allocation would advance a stored counter past `long.MaxValue`, SQLite t
 
 ### Inspecting counters
 
-Inject `ISequenceInspector` to show counters to an operator, for example in a dashboard. Every call is one read-only statement with no transaction: it never takes, reserves, or changes a number, and does not wait on a gap-free unit's row lock (see the engine notes below for the exceptions).
+Inject `ISequenceInspector` to show counters to an operator, for example in a dashboard; the unified dashboard's Sequences module already does (see [Headless.Sequences.Dashboard](#headlesssequencesdashboard)). Every call is one read-only statement with no transaction: it never takes, reserves, or changes a number, and does not wait on a gap-free unit's row lock (see the engine notes below for the exceptions).
 
 ```csharp
 SequenceCounterPage page = await inspector.ListCountersAsync(
@@ -263,6 +264,46 @@ A policy with `Step` of 0 or less, a `BlockSize` below 1 or, on a gap-free or re
 - A gap-free call checks the arguments, the name's mode, the unit's state, and the unit's database and transaction before it writes. A refused call runs no statement and leaves the unit retryable.
 - It registers `ISequenceInspector` as a singleton. Inspection reads through `ISequenceCounterReader`, which each provider registers, and never resolves `ICurrentTenant` or a numbering service.
 - `ISequenceStore` is the numbering provider seam, and `ISequenceCounterReader` the inspection one. Applications call neither.
+
+---
+
+## Headless.Sequences.Dashboard
+
+The Sequences module of the unified dashboard: a read-only view of every stored counter across host and tenant scopes, with its value, last formatted number, partition, policy, and next reset, and the partitions of its name. Use it instead of writing the operator screen [Inspecting counters](#inspecting-counters) describes.
+
+Read [dashboards.md](dashboards.md) for the shell, its authentication modes, and the production security boundary. [dashboards/sequences-module.md](dashboards/sequences-module.md) lists the endpoints, their query parameters, the counter id, and the `400`, `404`, and `503` answers.
+
+### Setup
+
+```bash
+dotnet add package Headless.Sequences.Dashboard
+```
+
+```csharp
+using Headless.Dashboard;
+using Headless.Sequences;
+
+builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(connectionString));
+builder.Services.AddHeadlessDashboard(dashboard => dashboard
+    .WithHostAuthentication(host => host.ViewPolicy = "ops.view")
+    .AddSequences());
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapHeadlessDashboard();
+```
+
+**Verify:** start the host. Without `AddHeadlessSequences(...)` it fails to start naming that call. With it, the Platform tab shows Sequences with the number of stored counters, and a signed-in viewer's `GET /headless/api/sequences/counters` answers `200` with them.
+
+### Runtime behavior
+
+- Every read goes through `ISequenceInspector`, so opening the screen never takes a number. The module has no command and no route that changes a counter.
+- The screen shows every tenant's counters. Give its view policy only to operators who may see every tenant's numbering.
+- The list filters by mode, by scope (every tenant, the host scope, or one exact tenant id), by current partition, and by text in the name or tenant id. The filters live in the URL, and `?open=<id>` opens one counter.
+- A counter whose name has no registered policy reads Default policy, because its mode comes from `SequencesOptions.DefaultPolicy`.
+- A failing counter store answers `503` with `The sequence store is unavailable.` and the screen shows the error, never a zero count.
+- The engine notes under [Inspecting counters](#inspecting-counters) apply: SQL Server skips a counter an open gap-free unit is writing, and SQLite needs WAL mode so reads never wait on a commit.
 
 ---
 

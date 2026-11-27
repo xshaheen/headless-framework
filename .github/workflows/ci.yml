@@ -240,8 +240,10 @@ jobs:
             lockfile: package-lock.json
           - name: Rate limits
             target: dashboard-rate-limiting-test
+            lockfile: package-lock.json
           - name: Cluster
             target: dashboard-cluster-test
+            lockfile: package-lock.json
           - name: Dev inbox
             target: dashboard-dev-inbox-test
             lockfile: package-lock.json
@@ -250,6 +252,9 @@ jobs:
             lockfile: package-lock.json
           - name: Leases
             target: dashboard-leases-test
+            lockfile: package-lock.json
+          - name: Sequences
+            target: dashboard-sequences-test
             lockfile: package-lock.json
     steps:
       - name: "Check out repository"

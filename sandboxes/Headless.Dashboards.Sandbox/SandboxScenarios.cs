@@ -97,6 +97,8 @@ public static class SandboxScenarios
             "Two new sign-in.password subjects: one locked out with 5 of 5 attempts, one with 2 of 5; returns each subject, its purpose, and its window end.",
         ["idempotency"] =
             "Four new idempotency keys: one completed under tenant acme, one in flight with a recovery point, one that stalls after its 1 s lease, and one in flight past its 1 s retention; returns each key, its tenant, its state, and when it reaches it.",
+        ["sequences"] =
+            "Sequence numbers in the host scope and the tenants acme and globex: a gap-free yearly invoice with a closed previous-year partition, monthly fast orders, never-resetting tickets, a reported shipment count, and a quote counter under the default policy; returns each counter and its last number.",
         ["health-healthy"] = "The sandbox-dependency health check reports Healthy from its next probe on.",
         ["health-degraded"] = "The sandbox-dependency health check reports Degraded from its next probe on.",
         ["health-unhealthy"] = "The sandbox-dependency health check reports Unhealthy from its next probe on.",
@@ -202,6 +204,7 @@ public static class SandboxScenarios
             ],
             "attempts" => await SandboxRateLimits.SeedAsync(services.Limiter, cancellationToken),
             "idempotency" => await SandboxIdempotency.SeedAsync(provider, cancellationToken),
+            "sequences" => await SandboxSequences.SeedAsync(provider, cancellationToken),
             "health-healthy" => _SetHealth(provider, HealthStatus.Healthy),
             "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),

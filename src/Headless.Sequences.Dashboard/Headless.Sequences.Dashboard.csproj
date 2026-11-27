@@ -1,0 +1,38 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>The Sequences module of the Headless dashboard: a read-only view of every stored sequence counter, its partitions, policy, last formatted number, and next reset.</Description>
+    <PackageTags>headless;sequences;numbering;dashboard;dotnet</PackageTags>
+    <RootNamespace>Headless.Sequences</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Sequences.Dashboard.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.Sequences\Headless.Sequences.csproj" />
+  </ItemGroup>
+  <!--
+    The front end is the Sequences dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/sequences, which embeds as Headless.Sequences.wwwroot.dist.modules.sequences.*
+    (SequencesAssets), then holds the module to its size budgets and writes .build-complete last, so a build whose
+    budget step failed is not up to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
+</Project>

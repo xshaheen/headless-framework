@@ -182,6 +182,7 @@ Headless.Search.PostgreSql
 Headless.Search.PostgreSql.EntityFramework
 Headless.Sequences
 Headless.Sequences.Abstractions
+Headless.Sequences.Dashboard
 Headless.Sequences.PostgreSql
 Headless.Sequences.Sql
 Headless.Sequences.SqlServer

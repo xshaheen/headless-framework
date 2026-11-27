@@ -1,0 +1,21 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Sequences.Dashboard\Headless.Sequences.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sequences.Sqlite\Headless.Sequences.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>

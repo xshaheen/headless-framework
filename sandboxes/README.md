@@ -5,7 +5,7 @@ wiring favors reaching every state quickly over showing production setup. For co
 
 ## Dashboard sandbox
 
-`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs, Messaging, Rate limits, Idempotency, Cluster, and Leases modules, on loopback. The project CLI owns it:
+`Headless.Dashboards.Sandbox` serves the Headless dashboard, with its Jobs, Messaging, Rate limits, Idempotency, Cluster, Leases, and Sequences modules, on loopback. The project CLI owns it:
 
 ```sh
 make up                                   # build and start; STORE=postgres adds sandboxes/compose.yaml
@@ -21,10 +21,14 @@ and `down` take the same override.
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Headless, with the Jobs, Messaging, Rate limits, Idempotency, Cluster, and Leases modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`, Rate limits at `/headless/rate-limiting`, Idempotency at `/headless/idempotency`, Cluster at `/headless/cluster`, Leases at `/headless/leases`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
+| Headless, with the Jobs, Messaging, Rate limits, Idempotency, Cluster, Leases, and Sequences modules | `http://127.0.0.1:5300/headless/` (Jobs at `/headless/jobs`, Messaging at `/headless/messaging`, Rate limits at `/headless/rate-limiting`, Idempotency at `/headless/idempotency`, Cluster at `/headless/cluster`, Leases at `/headless/leases`, Sequences at `/headless/sequences`) | `admin` / `admin` on the dashboard's sign-in page; `make up AUTH=host` for the host sign-in (below) |
 
 Every module sits behind the same sign-in, so inbox and scheduled operations record the signed-in operator's name.
 `GET /sandbox/usable` answers once the Messaging store does, with its published and received counts.
+
+Sequence counters live in a SQLite file for every `STORE`, because no in-memory sequences provider exists: `make up`
+puts it at `sequences.db` in the checkout's sandbox folder beside `sandbox.env`, and the host creates its table as it
+starts. The file survives `make down`; `make sandbox-reset CONFIRM=1` deletes it.
 
 By default the dashboard signs in with its own Basic mode and the fixed credential `admin` / `admin`, as one operator who
 may run every action. The fixed credential is safe only because the sandbox binds to loopback and holds no real data.
@@ -77,6 +81,7 @@ short cadences (progress writes every 500 ms, a 30 s lease, a 5 s fallback poll)
 | `message-publish-failed` | One message published with a delivery deadline that has already passed when it is sent | A published row that failed for good, with Re-send and Delete |
 | `attempts` | Two new `sign-in.password` subjects: one locked out at 5 of 5, one at 2 of 5; the call returns each subject and its window end | Look up a locked-out subject on Rate limits, and Reset its window |
 | `idempotency` | Four new idempotency keys: one completed under tenant `acme` with an `orders.create/v1` result, one in flight with the recovery point `payment-authorized`, one that stalls after its 1 s lease, and one in flight past its 1 s retention; the call returns each key, its tenant, its state, and when it reaches it | Look each key up on Idempotency: Completed with Tenant `acme` (not found with Tenant blank), In flight, Stalled, and In flight kept past retention. Records follow the sandbox store: in memory by default, the PostgreSQL table under `STORE=postgres` |
+| `sequences` | Numbers in the host scope and the tenants `acme` and `globex`: a gap-free yearly `invoice` (`INV-<year>-000003` for `acme`) with a closed previous-year partition, monthly fast `order` counters, a never-resetting `ticket`, a reported `shipment`, and a `quote` counter under the default policy; the call returns each counter and its last number. Running it again takes the next numbers of the same counters | The Sequences view: mode and scope filters, a closed partition, the Default policy mark, and a counter's policy and partitions in its panel |
 | `health-healthy`, `health-degraded`, `health-unhealthy` | The `sandbox-dependency` health check reports that status from its next probe on | The Cluster module's Health view: Probe now and Probe all, Needs you health-check items, and the Degraded and Unhealthy counts |
 | `cluster-peers` | Three peer incarnations in the membership store (`STORE=postgres` only; the memory store answers `409`): `orders-api-1` keeps beating, `orders-worker-1` beats once more and then stops, and `orders-worker-2` never beats again; `orders-worker-1` carries `app.version` `4.2.0` against `4.2.1` | The Cluster view with Alive, Suspected, and Dead nodes, the metadata disagreement, and a node that leaves the snapshot once the store prunes it |
 | `leases` | Fenced leases in every state, with a per-call suffix on each resource: live leases in the kinds `ledger-export`, `invoice-batch`, and `search-reindex` across the host scope and the tenants `acme` and `globex` (one with 1,229 bytes of progress under `export-cursor/v1` and no holder), two expired, one settled, one released, one revoked, one taken over after expiry, and one abandoned by a sweep | The Leases module's Fenced leases view: the state, kind, tenant, and prefix filters, the counts, and a lease's panel with its holder, takeovers, and progress size and contract |
