@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using AwesomeAssertions.Execution;
 using Headless.Search;
 using Headless.Testing.Tests;
 
@@ -106,8 +107,32 @@ public sealed class ArabicSearchNormalizerTests : TestBase
         {
             var key = ArabicSearchNormalizer.Normalize(input, ArabicSearchVersion.V1);
 
-            key.Should().NotStartWith(" ").And.NotEndWith(" ").And.NotContain("  ", "input {0}", _Escape(input));
-            key.Where(c => c != ' ').Should().OnlyContain(c => alphabet.Contains(c), "input {0}", _Escape(input));
+            if (key.StartsWith(' ') || key.EndsWith(' ') || key.Contains("  ", StringComparison.Ordinal))
+            {
+                AssertionChain
+                    .GetOrCreate()
+                    .ForCondition(false)
+                    .FailWith(
+                        "Expected only single interior spaces in output {0} for input {1}.",
+                        _Escape(key),
+                        _Escape(input)
+                    );
+            }
+
+            foreach (var character in key)
+            {
+                if (character != ' ' && !alphabet.Contains(character))
+                {
+                    AssertionChain
+                        .GetOrCreate()
+                        .ForCondition(false)
+                        .FailWith(
+                            "Output {0} contains a character outside the alphabet for input {1}.",
+                            _Escape(key),
+                            _Escape(input)
+                        );
+                }
+            }
         }
     }
 
