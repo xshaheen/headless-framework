@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -123,6 +124,48 @@ public sealed class PipelineProbe
     }
 }
 
+/// <summary>Counts the circuit changes the breaker reports, so a test waits for one instead of polling the breaker.</summary>
+internal sealed class PipelineCircuitChanges : ICircuitStateObserver
+{
+    private readonly Lock _gate = new();
+    private long _changes;
+    private TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Gets how many changes the breaker has reported so far.</summary>
+    public long Mark
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _changes;
+            }
+        }
+    }
+
+    /// <summary>Completes once a change is reported after <paramref name="mark"/>.</summary>
+    public Task WhenChangedAsync(long mark, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            return _changes > mark ? Task.CompletedTask : _next.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    public void OnCircuitChanged(string circuitKey)
+    {
+        TaskCompletionSource reached;
+        lock (_gate)
+        {
+            _changes++;
+            reached = _next;
+            _next = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        reached.TrySetResult();
+    }
+}
+
 /// <summary>Starts simulation hosts that run <see cref="PipelineOrderConsumer"/> through the real pipeline.</summary>
 internal static class PipelineHosts
 {
@@ -178,6 +221,10 @@ internal static class PipelineHosts
     )
     {
         services.AddSingleton(probe);
+        services.AddSingleton<PipelineCircuitChanges>();
+        services.AddSingleton<ICircuitStateObserver>(static provider =>
+            provider.GetRequiredService<PipelineCircuitChanges>()
+        );
         services.ConfigureMessaging(messaging => messaging.Message<PipelineOrder>(PipelineOrder.Name));
         configureServices?.Invoke(services);
     }
@@ -385,6 +432,35 @@ internal static class PipelineHosts
         return host.GetRequiredService<ICircuitBreakerMonitor>()
                 .GetSnapshot(MessageLane.Queue, PipelineOrderConsumer.Identity)
             ?? throw new InvalidOperationException($"{PipelineOrderConsumer.Identity} has no circuit.");
+    }
+
+    /// <summary>
+    /// Waits, without moving time, until the circuit of <see cref="PipelineOrderConsumer"/> matches
+    /// <paramref name="predicate"/>, checking it after each change the breaker reports.
+    /// </summary>
+    /// <remarks>
+    /// A stored outcome is not the breaker's: the pipeline writes the row first and reports the attempt to the breaker
+    /// after, so a test that asserts the circuit after a row waits for it here.
+    /// </remarks>
+    public static async Task<CircuitBreakerSnapshot> WaitForConsumerCircuitAsync(
+        this SimulationHost host,
+        Func<CircuitBreakerSnapshot, bool> predicate,
+        CancellationToken cancellationToken
+    )
+    {
+        var changes = host.GetRequiredService<PipelineCircuitChanges>();
+        while (true)
+        {
+            var mark = changes.Mark;
+            var circuit = host.ConsumerCircuit();
+            if (predicate(circuit))
+            {
+                return circuit;
+            }
+
+            await host.WithinBoundAsync(changes.WhenChangedAsync(mark, cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     /// <summary>Waits, without moving time, until a wait due within <paramref name="due"/> is armed after <paramref name="mark"/>.</summary>
