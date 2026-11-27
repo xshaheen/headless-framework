@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-221 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+222 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,13 +53,13 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 7 transports.
 
-**هتركّب 3 packages، مش 221.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 222.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
 **الحاجات الصعبة متكتوبة خلاص.** الـ background jobs بتعمل claim للشغل بشكل atomic عن طريق `FOR UPDATE SKIP LOCKED` في PostgreSQL و `UPDLOCK, READPAST, ROWLOCK` في SQL Server. والـ messaging بتكتب في transactional outbox جوه نفس الـ save بتاع EF Core. والـ distributed locks بتستخدم advisory locks في PostgreSQL و application locks في SQL Server، مش `SET NX` مرتجل. والـ node membership بتقرا الـ liveness من ساعة الـ server، مش من ساعة الـ node نفسها. كل نقطة من دول مكان بتضيع فيه messages أو بيتنفّذ فيه job مرتين بسبب implementation شكله سليم وهو مش سليم.
 
-**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` بيضيف الـ Messaging module، للـ messages من كل outbox والـ failures متجمعة حسب السبب، والـ nodes اللي بتتكشف عن طريق Kubernetes أو Consul.
+**Dashboards جايين معاه.** `Headless.Dashboard` بيعرض الـ feature modules تحت base path واحد، بـ sign-in واحد وlive updates بتوصل لكل الـ nodes. و `Headless.Jobs.Dashboard` بيضيف له الـ Jobs module، تتابع بيه الـ runs والـ failures متجمعة حسب السبب والـ cron schedules، و `Headless.Messaging.Dashboard` بيضيف الـ Messaging module، للـ messages من كل outbox والـ failures متجمعة حسب السبب، والـ nodes اللي بتتكشف عن طريق Kubernetes أو Consul. و `Headless.Cluster.Dashboard` بيضيف الـ Cluster module، تشوف بيه حالة الـ nodes والـ metadata اللي مختلفة بينهم، والـ health checks بتاعة الـ host وتعمل لها probe وقت ما تحب.
 
 **توثيق مظبوط لوكلاء الـ AI.** [`docs/llms/`](docs/llms/) فيه docs لكل domain، متكتوبة عشان الـ agents تجيبها وقت الحاجة. شوف [استخدام Headless مع وكلاء الـ AI](#استخدام-headless-مع-وكلاء-الـ-ai).
 
@@ -294,7 +294,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 221 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 222 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -627,6 +627,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Membership على Redis عن طريق Lua وساعة Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | Membership في SQL Server بـ writes محروسة |
 | [Headless.Coordination.Sqlite](src/Headless.Coordination.Sqlite/README.md) | Membership في SQLite للـ processes اللي على نفس الـ host |
+| [Headless.Cluster.Dashboard](src/Headless.Cluster.Dashboard/README.md) | الـ Cluster module في الـ dashboard: حالة الـ nodes، واتفاق الـ metadata، والـ health checks |
 
 ### Sequences
 

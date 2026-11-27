@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Cluster.Dashboard\Headless.Cluster.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />

@@ -528,6 +528,8 @@ If your `/alive` endpoint filters on another tag, pass that tag (`AddHeadlessHea
 
 Display code reads `GetSnapshot()`. Do not call a probe method on every page refresh: each probe reaches the real dependency, and some checks write to their store, such as the opt-in data-protection key-ring check (`AddDataProtectionKeyRing()`), which uploads and deletes a sentinel blob.
 
+To show this history to operators, add the dashboard's Cluster module (`AddCluster()`, [Headless.Cluster.Dashboard](coordination.md#headlessclusterdashboard)). Register your health checks before `AddCluster()` and it registers the monitor for you; register them after, and call `AddHeadlessHealthCheckMonitor()` yourself, or its Health view names this call as the missing step.
+
 Observed behavior:
 
 - The monitor runs no check on its own. It adds no publisher, no startup probe, and no hosted service beyond the inert one `AddHealthChecks()` registers. History fills only from `ProbeAllAsync` and `ProbeAsync`, so its spacing follows when callers probe, and a node nobody probes has none.
