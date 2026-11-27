@@ -15,7 +15,11 @@ export default defineModule({
       ],
     },
   ],
-  routes: [],
+  routes: [
+    { path: 'emails', lazy: () => import('./views/emails-view.tsx') },
+    { path: 'sms', lazy: () => import('./views/sms-view.tsx') },
+    { path: 'push', lazy: () => import('./views/push-view.tsx') },
+  ],
   objectKinds: {
     email: { route: (id: string) => `emails?open=${encodeURIComponent(id)}` },
     sms: { route: (id: string) => `sms?open=${encodeURIComponent(id)}` },
