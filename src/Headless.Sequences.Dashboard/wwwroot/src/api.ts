@@ -2,7 +2,8 @@ import { useDashboard } from '@headless/dashboard-sdk'
 import { listKey, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
 import { useQuery, type QueryClient } from '@headless/dashboard-sdk/query'
 
-export const sequenceModes = ['Fast', 'GapFree', 'Reported'] as const
+// In the order the screen lists the modes, so the mode chips read as the stat strip does.
+export const sequenceModes = ['GapFree', 'Fast', 'Reported'] as const
 export type SequenceMode = (typeof sequenceModes)[number]
 
 export const sequenceResets = ['Never', 'Year', 'Month', 'Day', 'FiscalYear'] as const

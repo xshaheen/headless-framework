@@ -6,6 +6,8 @@ import {
   DetailPanel,
   EmptyState,
   FieldGrid,
+  FieldGroup,
+  Fields,
   FilterChip,
   FilterChips,
   FilterToolbar,
@@ -16,7 +18,6 @@ import {
   PageFrame,
   PageHeader,
   QueryState,
-  Section,
   SegmentedControl,
   StatCard,
   StatStrip,
@@ -549,12 +550,6 @@ function CounterPanel({ id, listed }: { id: string; listed: SequenceCounter | un
 }
 
 function CounterDetail({ counter, notice }: { counter: SequenceCounter; notice?: ReactNode }) {
-  const format = useFormat()
-  const { policy } = counter
-  // A policy may name a Windows zone id, which the browser's Intl API does not know: the exact time then reads in the
-  // display zone, and the configured id stays visible in the policy's Time zone field.
-  const zone = isTimeZone(policy.timeZone) ? policy.timeZone : undefined
-
   return (
     <DetailPanel
       label={`Sequence counter ${counter.name}`}
@@ -562,7 +557,30 @@ function CounterDetail({ counter, notice }: { counter: SequenceCounter; notice?:
       id={counter.id}
       status={partitionMark(counter)}
     >
-      {notice}
+      {/* The panel body gives each direct child its own column that scrolls by itself, so everything but the
+          partitions shares the first column: a third child would split the body into rows of clipped boxes. */}
+      <FieldGroup>
+        {notice}
+        <CounterFields counter={counter} />
+        <PolicyFields counter={counter} />
+        <Callout title="Read-only.">
+          Editing a counter risks duplicate document numbers; reading never issues a number.
+        </Callout>
+      </FieldGroup>
+      <Partitions counter={counter} />
+    </DetailPanel>
+  )
+}
+
+function CounterFields({ counter }: { counter: SequenceCounter }) {
+  const format = useFormat()
+  const { policy } = counter
+  // A policy may name a Windows zone id, which the browser's Intl API does not know: the exact time then reads in the
+  // display zone, and the configured id stays visible in the policy's Time zone field.
+  const zone = isTimeZone(policy.timeZone) ? policy.timeZone : undefined
+
+  return (
+    <>
       <FieldGrid label="Counter">
         <GridField label="Scope">
           <TenantText counter={counter} />
@@ -584,28 +602,30 @@ function CounterDetail({ counter, notice }: { counter: SequenceCounter; notice?:
           {`This name reserves ${format.number(policy.blockSize)} values at a time, so the value is the end of the last reserved block, not the last number handed out.`}
         </Text>
       ) : null}
-      <Section
-        label="Policy"
-        caption={counter.policySource === 'default' ? 'Default policy' : 'Registered for this name'}
-      >
-        <FieldGrid>
-          <GridField label="Start">{format.number(policy.start)}</GridField>
-          <GridField label="Step">{format.number(policy.step)}</GridField>
-          <GridField label="Mode">{modeLabels[policy.mode]}</GridField>
-          <GridField label="Block size">{format.number(policy.blockSize)}</GridField>
-          <GridField label="Reset">{resetLabels[policy.reset]}</GridField>
-          <GridField label="Format">{policy.format ? <Mono>{policy.format}</Mono> : 'None'}</GridField>
-          <GridField label="Fiscal-year start month">{format.number(policy.fiscalYearStartMonth)}</GridField>
-          <GridField label="Time zone">
-            <Mono>{policy.timeZone}</Mono>
-          </GridField>
-        </FieldGrid>
-      </Section>
-      <Callout title="Read-only.">
-        Editing a counter risks duplicate document numbers; reading never issues a number.
-      </Callout>
-      <Partitions counter={counter} />
-    </DetailPanel>
+    </>
+  )
+}
+
+function PolicyFields({ counter }: { counter: SequenceCounter }) {
+  const format = useFormat()
+  const { policy } = counter
+
+  return (
+    <FieldGrid
+      label="Policy"
+      footnote={counter.policySource === 'default' ? 'Default policy' : 'Registered for this name'}
+    >
+      <GridField label="Start">{format.number(policy.start)}</GridField>
+      <GridField label="Step">{format.number(policy.step)}</GridField>
+      <GridField label="Mode">{modeLabels[policy.mode]}</GridField>
+      <GridField label="Block size">{format.number(policy.blockSize)}</GridField>
+      <GridField label="Reset">{resetLabels[policy.reset]}</GridField>
+      <GridField label="Format">{policy.format ? <Mono>{policy.format}</Mono> : 'None'}</GridField>
+      <GridField label="Fiscal-year start month">{format.number(policy.fiscalYearStartMonth)}</GridField>
+      <GridField label="Time zone">
+        <Mono>{policy.timeZone}</Mono>
+      </GridField>
+    </FieldGrid>
   )
 }
 
@@ -619,10 +639,13 @@ function Partitions({ counter }: { counter: SequenceCounter }) {
   })
 
   return (
-    <Section
-      label="Partitions"
-      description={`Every partition of ${counter.name} in ${scopeName(counter)}, newest first.`}
-    >
+    // A page `Section` pads its heading to the page gutter, which inside the panel's padded column sets it in from the
+    // rows it heads; the panel's own heading style lines up with them.
+    <Fields label="Partitions">
+      <Text as="h3" tone="label">
+        Partitions
+      </Text>
+      <Text as="p" tone="hint">{`Every partition of ${counter.name} in ${scopeName(counter)}, newest first.`}</Text>
       <QueryState query={partitions.query} label="Loading the partitions" rows={3}>
         {() => (
           <>
@@ -641,6 +664,6 @@ function Partitions({ counter }: { counter: SequenceCounter }) {
           </>
         )}
       </QueryState>
-    </Section>
+    </Fields>
   )
 }

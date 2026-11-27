@@ -149,6 +149,18 @@ describe('the counter list', () => {
     expect(chips.getByRole('button', { name: /All/ }).textContent).toContain('4')
   })
 
+  it('lists the mode chips in the stat strip order', async () => {
+    open(fake)
+    const chips = within(await screen.findByRole('group', { name: 'Filter by mode' }))
+
+    expect(chips.getAllByRole('button').map((chip) => chip.textContent?.replace(/[\d,]+$/, ''))).toEqual([
+      'All',
+      'Gap-free',
+      'Fast',
+      'Reported',
+    ])
+  })
+
   it('starts filtered when the URL holds a mode', async () => {
     const view = open(fake, { path: '?mode=Fast' })
 
