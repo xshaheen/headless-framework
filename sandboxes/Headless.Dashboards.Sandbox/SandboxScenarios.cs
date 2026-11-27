@@ -18,7 +18,7 @@ namespace Headless.Dashboards.Sandbox;
 /// <param name="Storage">The Messaging store, for the operator actions a scenario applies to a received row.</param>
 /// <param name="Clock">Times the wait for a consumer to finish.</param>
 /// <param name="Limiter">Spends attempts for the rate-limit fixtures.</param>
-/// <param name="Provider">Resolves what only some stores register, such as the Coordination membership store.</param>
+/// <param name="Provider">Resolves what only some stores register, such as the Coordination membership store and the Dev inbox senders.</param>
 public sealed record SandboxScenarioServices(
     IJobScheduler Jobs,
     ICronJobManager<CronJobEntity> CronJobs,
@@ -95,11 +95,19 @@ public static class SandboxScenarios
             "Time job that publishes a message to sandbox.invoices and sandbox.fulfilment, which schedules a follow-up job: one correlation id, the run's id, opens all of it on the trace page.",
         ["attempts"] =
             "Two new sign-in.password subjects: one locked out with 5 of 5 attempts, one with 2 of 5; returns each subject, its purpose, and its window end.",
+        ["idempotency"] =
+            "Four new idempotency keys: one completed under tenant acme, one in flight with a recovery point, one that stalls after its 1 s lease, and one in flight past its 1 s retention; returns each key, its tenant, its state, and when it reaches it.",
         ["health-healthy"] = "The sandbox-dependency health check reports Healthy from its next probe on.",
         ["health-degraded"] = "The sandbox-dependency health check reports Degraded from its next probe on.",
         ["health-unhealthy"] = "The sandbox-dependency health check reports Unhealthy from its next probe on.",
         ["cluster-peers"] =
             "Three peer nodes in the membership store (STORE=postgres only): orders-api-1 keeps beating, orders-worker-1 beats once then turns Suspected and Dead, and orders-worker-2 never beats and leaves once pruned; orders-worker-1 carries app.version 4.2.0 against 4.2.1.",
+        ["dev-inbox"] = SandboxDevInbox.Descriptions["dev-inbox"],
+        ["dev-inbox-send"] = SandboxDevInbox.Descriptions["dev-inbox-send"],
+        ["leases"] =
+            "Fenced leases in every state across the host scope and the tenants acme and globex, in the kinds ledger-export, invoice-batch, and search-reindex: live (two with progress), two expired, settled, released, revoked, one taken over after expiry, and one abandoned by a sweep.",
+        ["locks"] =
+            "Four held distributed locks: three with a two-minute TTL that the sandbox renews while it runs, and one with no expiry.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -193,10 +201,14 @@ public static class SandboxScenarios
                 _Id(await jobs.EnqueueAsync(new TraceCheckoutArgs(OrderId: 9501), _NoRetries, cancellationToken)),
             ],
             "attempts" => await SandboxRateLimits.SeedAsync(services.Limiter, cancellationToken),
+            "idempotency" => await SandboxIdempotency.SeedAsync(provider, cancellationToken),
             "health-healthy" => _SetHealth(provider, HealthStatus.Healthy),
             "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),
             "cluster-peers" => await SandboxCluster.AddPeersAsync(provider, cancellationToken),
+            "dev-inbox" or "dev-inbox-send" => await SandboxDevInbox.RunAsync(name, provider, cancellationToken),
+            "leases" => await SandboxLeases.SeedLeasesAsync(provider, cancellationToken),
+            "locks" => await SandboxLeases.HoldLocksAsync(provider, cancellationToken),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."

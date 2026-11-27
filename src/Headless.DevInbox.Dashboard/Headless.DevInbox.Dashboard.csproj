@@ -1,0 +1,40 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <Description>The Dev inbox module of the Headless dashboard: the emails, SMS, and push notifications a Development host captured instead of sending.</Description>
+    <PackageTags>headless;dashboard;development;emails;sms;push-notifications;dotnet</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.DevInbox.Dashboard.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Dashboard\Headless.Dashboard.csproj" />
+    <ProjectReference Include="..\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
+    <ProjectReference Include="..\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
+  </ItemGroup>
+  <!--
+    The front end is the Dev inbox dashboard module, a member of the repository-root npm workspace. Its build writes
+    wwwroot/dist/modules/dev-inbox, which embeds under the Headless.DevInbox.Dashboard.wwwroot.dist.modules prefix
+    (DevInboxAssets), then holds the module to its size budgets and writes .build-complete last, so a build whose budget
+    step failed is not up to date. The stamp itself is not embedded.
+  -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(MSBuildProjectDirectory)/wwwroot/budget.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DashboardSpaBuildStamp>$(MSBuildProjectDirectory)/wwwroot/dist/.build-complete</DashboardSpaBuildStamp>
+  </PropertyGroup>
+  <Target Name="_ExcludeDashboardSpaBuildStamp" AfterTargets="_EmbedDashboardSpa">
+    <ItemGroup>
+      <EmbeddedResource Remove="wwwroot/dist/.build-complete" />
+    </ItemGroup>
+  </Target>
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
+</Project>

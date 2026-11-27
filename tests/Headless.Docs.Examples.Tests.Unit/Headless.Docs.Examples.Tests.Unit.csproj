@@ -21,11 +21,17 @@
     <ProjectReference Include="..\..\src\Headless.Cluster.Dashboard\Headless.Cluster.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.Dashboard\Headless.Idempotency.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.PostgreSql\Headless.DistributedLocks.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DevInbox.Dashboard\Headless.DevInbox.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.PostgreSql\Headless.Jobs.EntityFramework.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.SqlServer\Headless.Jobs.EntityFramework.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Leases.Dashboard\Headless.Leases.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Aws\Headless.Messaging.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />

@@ -504,18 +504,24 @@ def is_documentation(file: str) -> bool:
 
 SPA_PROJECTS = (
     "src/Headless.Dashboard/Headless.Dashboard.csproj",
+    "src/Headless.DevInbox.Dashboard/Headless.DevInbox.Dashboard.csproj",
     "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
     "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
     "src/Headless.RateLimiting.Dashboard/Headless.RateLimiting.Dashboard.csproj",
     "src/Headless.Cluster.Dashboard/Headless.Cluster.Dashboard.csproj",
+    "src/Headless.Idempotency.Dashboard/Headless.Idempotency.Dashboard.csproj",
+    "src/Headless.Leases.Dashboard/Headless.Leases.Dashboard.csproj",
 )
 # The dashboard projects whose front end is a member of the repository-root npm workspace, and that workspace's files.
 NPM_WORKSPACE_PROJECTS = (
     "src/Headless.Dashboard/Headless.Dashboard.csproj",
+    "src/Headless.DevInbox.Dashboard/Headless.DevInbox.Dashboard.csproj",
     "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
     "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
     "src/Headless.RateLimiting.Dashboard/Headless.RateLimiting.Dashboard.csproj",
     "src/Headless.Cluster.Dashboard/Headless.Cluster.Dashboard.csproj",
+    "src/Headless.Idempotency.Dashboard/Headless.Idempotency.Dashboard.csproj",
+    "src/Headless.Leases.Dashboard/Headless.Leases.Dashboard.csproj",
 )
 NPM_WORKSPACE_FILES = ("package.json", "package-lock.json", ".npmrc")
 

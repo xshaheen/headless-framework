@@ -51,6 +51,7 @@ Headless.Coordination.Sqlite
 Headless.Couchbase
 Headless.Dashboard
 Headless.DataProtection.Blobs
+Headless.DevInbox.Dashboard
 Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions
 Headless.DistributedLocks.Database
@@ -102,6 +103,7 @@ Headless.Http.Resilience
 Headless.Idempotency
 Headless.Idempotency.Abstractions
 Headless.Idempotency.Caching
+Headless.Idempotency.Dashboard
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
 Headless.Idempotency.ResponseReplay
@@ -121,6 +123,7 @@ Headless.Jobs.EntityFramework
 Headless.Jobs.EntityFramework.PostgreSql
 Headless.Jobs.EntityFramework.SqlServer
 Headless.Jobs.SourceGenerator
+Headless.Leases.Dashboard
 Headless.Logging
 Headless.Logging.Redaction
 Headless.Logging.Redaction.AspNetCore

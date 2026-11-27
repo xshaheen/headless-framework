@@ -1,0 +1,4 @@
+# The module build is generated and embedded at .NET build time (see eng/DashboardSpa.targets).
+/dist
+coverage
+*.tsbuildinfo

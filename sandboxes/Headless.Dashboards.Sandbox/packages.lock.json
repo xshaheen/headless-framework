@@ -126,6 +126,40 @@
         "resolved": "10.0.15",
         "contentHash": "13C007jEmO1JVsoJ+Vvn0AzOaR5bpGsDsaOB9nQt6denQR8hmv1eWmQ0qGarvz+1Zu5b511uF74A90BQigdYHA=="
       },
+      "Microsoft.Extensions.AmbientMetadata.Application": {
+        "type": "Transitive",
+        "resolved": "10.11.0",
+        "contentHash": "aMCm7C6CexZT8W/p8zRp4BoxSnqRs3MmkBF7FvPIXC92b7vqs2SL0J+mVJi5W2Mk9Vb4ZRFWe9sdzFew6zUl1w=="
+      },
+      "Microsoft.Extensions.DependencyInjection.AutoActivation": {
+        "type": "Transitive",
+        "resolved": "10.11.0",
+        "contentHash": "h/sovspxVmT2DTIbWORMG0Gi3zVcPQzNl3kbwtpo0LoUXYbe2+66wQqZYwaF2ZWKN8HDdHv5yoc7d0DbDBBlnA=="
+      },
+      "Microsoft.Extensions.Diagnostics.ExceptionSummarization": {
+        "type": "Transitive",
+        "resolved": "10.11.0",
+        "contentHash": "Dp/FaAPo3U9h3HsWT1dcdRRV//rm+MQF5iKpY/WxL5swwV+wZNE5eyJZ0kgy9Upl/kHz4ejpiLMloxDIuJaoJQ=="
+      },
+      "Microsoft.Extensions.Http.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "10.11.0",
+        "contentHash": "iFcxcuMF/21LO+tDqDyzYVvokJUH03cNalmOJhmjyQSMV3dR4JAgcUBTV1iVH/yruC8wG2RNjvW0xcUgYqmrGg==",
+        "dependencies": {
+          "Microsoft.Extensions.Telemetry": "10.11.0"
+        }
+      },
+      "Microsoft.Extensions.Resilience": {
+        "type": "Transitive",
+        "resolved": "10.11.0",
+        "contentHash": "GbN7R2BOoZf3F7aK02nz9kWf6ttbvVzpw1orGG30VmrKTmRV6pasQOCfF2fjKXyHIMC/lAiBEYHCKjgf0OiGvQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics.ExceptionSummarization": "10.11.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.11.0",
+          "Polly.Extensions": "8.4.2",
+          "Polly.RateLimiting": "8.4.2"
+        }
+      },
       "Microsoft.IdentityModel.Logging": {
         "type": "Transitive",
         "resolved": "8.23.0",
@@ -340,6 +374,27 @@
           "Headless.Hosting": "[1.0.0, )"
         }
       },
+      "headless.devinbox.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.Emails.Dev": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.PushNotifications.Dev": "[1.0.0, )",
+          "Headless.Sms.Dev": "[1.0.0, )"
+        }
+      },
+      "headless.distributedlocks": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.11.0, )",
+          "OpenTelemetry.Api": "[1.21.0, )",
+          "Polly.Core": "[8.9.1, )"
+        }
+      },
       "headless.distributedlocks.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -347,11 +402,41 @@
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.distributedlocks.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.DistributedLocks": "[1.0.0, )"
+        }
+      },
       "headless.domain": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.emails": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "MimeKit.Core": "[5.0.0, )"
+        }
+      },
+      "headless.emails.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.emails.dev": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Emails": "[1.0.0, )",
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.entityframework.primitives": {
@@ -404,6 +489,15 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, )"
         }
       },
+      "headless.fencing.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Fencing": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )"
+        }
+      },
       "headless.fencing.sql": {
         "type": "Project",
         "dependencies": {
@@ -433,6 +527,63 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.21.0, )"
+        }
+      },
+      "headless.http.resilience": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.11.0, )"
+        }
+      },
+      "headless.idempotency": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Fencing.Sql": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Idempotency.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.idempotency.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.idempotency.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.Idempotency": "[1.0.0, )"
+        }
+      },
+      "headless.idempotency.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Idempotency": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )"
+        }
+      },
+      "headless.idempotency.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Idempotency": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )",
+          "Npgsql": "[10.0.4, )"
         }
       },
       "headless.jobs": {
@@ -486,6 +637,18 @@
           "Headless.Sql.Sqlite": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.15, )",
           "Polly.Core": "[8.9.1, )"
+        }
+      },
+      "headless.leases.dashboard": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.2.0, )",
+          "Headless.Dashboard": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Fencing": "[1.0.0, )",
+          "Headless.Fencing.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.messaging": {
@@ -572,6 +735,27 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
+      "headless.pushnotifications": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.PushNotifications.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.pushnotifications.dev": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.PushNotifications": "[1.0.0, )"
+        }
+      },
       "headless.ratelimiting": {
         "type": "Project",
         "dependencies": {
@@ -602,6 +786,31 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.sms": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Sms.Abstractions": "[1.0.0, )",
+          "Polly.Core": "[8.9.1, )",
+          "Polly.RateLimiting": "[8.9.1, )"
+        }
+      },
+      "headless.sms.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.sms.dev": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sms": "[1.0.0, )"
         }
       },
       "headless.sql": {
@@ -719,6 +928,42 @@
           "Microsoft.EntityFrameworkCore": "10.0.15"
         }
       },
+      "Microsoft.Extensions.Compliance.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "2mjAb3Sm5k6uNeI+IyXpggYMpfdDDGgZSwUm9QQsm5QgZboJWbm2eU+6wNMrlfFEao11yq6JS1zXI7SVQQ0NuQ=="
+      },
+      "Microsoft.Extensions.Http.Resilience": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "6/YEoPCcQLzExm4x4FH5c38JffbhkMaTtXsrDmYNozt9KRtdXK3TsDeuKSBZJno+41oIDGBONb2up0zCsuEERw==",
+        "dependencies": {
+          "Microsoft.Extensions.Http.Diagnostics": "10.11.0",
+          "Microsoft.Extensions.Resilience": "10.11.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "2meCfABvkLPtEBBwGzItIGnhrex1AEn2N+dHvxB5UoozeX/xTtBuUz5BRdjNI5oNgd5T31kC69WWw3BHDc9iZA==",
+        "dependencies": {
+          "Microsoft.Extensions.AmbientMetadata.Application": "10.11.0",
+          "Microsoft.Extensions.DependencyInjection.AutoActivation": "10.11.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.11.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.11.0, )",
+        "resolved": "10.11.0",
+        "contentHash": "FzcHRan/C2g5X5KD0kPlL4tTROFRpM8sqcXfOIi6FGLsw/d2yoOYMbLJ5hyb8N5QgOVW7e1TdwEN4zVUfcwfdw==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "10.11.0"
+        }
+      },
       "Microsoft.IdentityModel.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[8.23.0, )",
@@ -752,6 +997,12 @@
           "Microsoft.IdentityModel.Protocols": "8.23.0",
           "System.IdentityModel.Tokens.Jwt": "8.23.0"
         }
+      },
+      "MimeKit.Core": {
+        "type": "CentralTransitive",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "0RLaVyex/BjUGqiw9xtGwzyCMaBcsu33Rth61bDCeVeQaaQK7tjcy4TA+nHKTqwUdp4OGd+gnhuq2fuR+c20qA=="
       },
       "NCrontab.Signed": {
         "type": "CentralTransitive",
@@ -799,6 +1050,24 @@
         "requested": "[8.9.1, )",
         "resolved": "8.9.1",
         "contentHash": "L0vfggkkI2nDAW9lCFYSqX9g/+3TkVXhAq+sh6owBq656X9XW0kE2NG+dPYGNQGeK66HS1rKHRPWMm1bMv91kw=="
+      },
+      "Polly.Extensions": {
+        "type": "CentralTransitive",
+        "requested": "[8.9.1, )",
+        "resolved": "8.9.1",
+        "contentHash": "nOYbFNl+2h34AW9WGkaO2USpgmywD5F+bFHLY//SeJjU1mwtrOOL5V55wMlv9SHbkezt03J9QZsVgyK39DmU0Q==",
+        "dependencies": {
+          "Polly.Core": "8.9.1"
+        }
+      },
+      "Polly.RateLimiting": {
+        "type": "CentralTransitive",
+        "requested": "[8.9.1, )",
+        "resolved": "8.9.1",
+        "contentHash": "apHsnyvi0LZUGhg33i/63d3atMUPdNkWnXbnWDvSlifMl5HRZid93cLn5+brvJiiRb+tGJWJEwir/0YjEZFYyQ==",
+        "dependencies": {
+          "Polly.Core": "8.9.1"
+        }
       },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "CentralTransitive",

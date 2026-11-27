@@ -385,6 +385,8 @@ An invalid value fails the start with `OptionsValidationException`.
 
 ### Read the captured emails
 
+To read them in the dashboard, add the Dev inbox module: see [Dev inbox module](dashboards/dev-inbox-module.md).
+
 Resolve `IEmailCaptureStore` from the container. It is registered only when a `UseDevelopment` sender is, so `GetService<IEmailCaptureStore>()` returning `null` means no development sender is in use.
 
 ```csharp
