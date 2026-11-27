@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Cluster;
 using Headless.Coordination;
 using Headless.Dashboard;
 using Headless.Dashboards.Sandbox;
@@ -28,13 +29,29 @@ var postgres =
 if (postgres is not null)
 {
     // The durable Jobs store coordinates node membership, so a coordination provider must be registered first.
-    builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(postgres));
+    // The cluster scenarios' peers join this cluster, and the version key is what they disagree on.
+    builder.Services.AddHeadlessCoordination(setup =>
+        setup
+            .Configure(options =>
+            {
+                options.ClusterName = "orders";
+                options.Role = "api";
+                options.Metadata["app.version"] = "4.2.1";
+            })
+            .UsePostgreSql(postgres)
+    );
 }
 
 if (sandbox.Auth == SandboxAuth.Host)
 {
     SandboxHostAuthentication.Add(builder.Services, sandbox.ResolveHostSecret());
 }
+
+// Registered before the dashboard, so AddCluster() sees health checks and registers the monitor in the same call; the
+// Jobs and Messaging checks added after it still appear, because the monitor reads every registration when it starts.
+var healthToggle = new SandboxHealthToggle();
+builder.Services.AddSingleton(healthToggle);
+builder.Services.AddHealthChecks().AddCheck(SandboxHealthToggle.CheckName, healthToggle.Check, tags: ["ready"]);
 
 builder.Services.AddHeadlessDashboard(dashboard =>
 {
@@ -58,6 +75,8 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     // above; its inbox and scheduled operations take the signed-in operator's name for the ledger.
     dashboard.AddMessaging();
     dashboard.AddRateLimiting();
+    // The Cluster module shows Coordination membership (STORE=postgres only) and this host's health checks.
+    dashboard.AddCluster();
 });
 
 // One loopback process, so the in-memory cache counts every attempt the sandbox makes. An app with more than one
@@ -192,6 +211,7 @@ app.MapGet(
                 jobsModule = "/headless/jobs",
                 messagingModule = "/headless/messaging",
                 rateLimitingModule = "/headless/rate-limiting",
+                clusterModule = "/headless/cluster",
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }
@@ -211,8 +231,15 @@ app.MapPost(
             );
         }
 
-        var created = await SandboxScenarios.RunAsync(name, services, cancellationToken);
-        return Results.Json(new { scenario = name, created });
+        try
+        {
+            var created = await SandboxScenarios.RunAsync(name, services, cancellationToken);
+            return Results.Json(new { scenario = name, created });
+        }
+        catch (SandboxScenarioUnavailableException exception)
+        {
+            return Results.Conflict(new { error = exception.Message });
+        }
     }
 );
 

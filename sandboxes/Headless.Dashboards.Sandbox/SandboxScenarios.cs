@@ -6,6 +6,7 @@ using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Dashboards.Sandbox;
 
@@ -17,6 +18,7 @@ namespace Headless.Dashboards.Sandbox;
 /// <param name="Storage">The Messaging store, for the operator actions a scenario applies to a received row.</param>
 /// <param name="Clock">Times the wait for a consumer to finish.</param>
 /// <param name="Limiter">Spends attempts for the rate-limit fixtures.</param>
+/// <param name="Provider">Resolves what only some stores register, such as the Coordination membership store.</param>
 public sealed record SandboxScenarioServices(
     IJobScheduler Jobs,
     ICronJobManager<CronJobEntity> CronJobs,
@@ -24,7 +26,8 @@ public sealed record SandboxScenarioServices(
     IQueue Queue,
     IDataStorage Storage,
     TimeProvider Clock,
-    IAttemptLimiter Limiter
+    IAttemptLimiter Limiter,
+    IServiceProvider Provider
 );
 
 /// <summary>
@@ -92,6 +95,11 @@ public static class SandboxScenarios
             "Time job that publishes a message to sandbox.invoices and sandbox.fulfilment, which schedules a follow-up job: one correlation id, the run's id, opens all of it on the trace page.",
         ["attempts"] =
             "Two new sign-in.password subjects: one locked out with 5 of 5 attempts, one with 2 of 5; returns each subject, its purpose, and its window end.",
+        ["health-healthy"] = "The sandbox-dependency health check reports Healthy from its next probe on.",
+        ["health-degraded"] = "The sandbox-dependency health check reports Degraded from its next probe on.",
+        ["health-unhealthy"] = "The sandbox-dependency health check reports Unhealthy from its next probe on.",
+        ["cluster-peers"] =
+            "Three peer nodes in the membership store (STORE=postgres only): orders-api-1 keeps beating, orders-worker-1 beats once then turns Suspected and Dead, and orders-worker-2 never beats and leaves once pruned; orders-worker-1 carries app.version 4.2.0 against 4.2.1.",
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -101,7 +109,7 @@ public static class SandboxScenarios
     )
     {
         Argument.IsNotNull(services);
-        var (jobs, cronJobs, bus, queue, _, _, _) = services;
+        var (jobs, cronJobs, bus, queue, _, _, _, provider) = services;
 
         return name switch
         {
@@ -185,11 +193,22 @@ public static class SandboxScenarios
                 _Id(await jobs.EnqueueAsync(new TraceCheckoutArgs(OrderId: 9501), _NoRetries, cancellationToken)),
             ],
             "attempts" => await SandboxRateLimits.SeedAsync(services.Limiter, cancellationToken),
+            "health-healthy" => _SetHealth(provider, HealthStatus.Healthy),
+            "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
+            "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),
+            "cluster-peers" => await SandboxCluster.AddPeersAsync(provider, cancellationToken),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."
             ),
         };
+    }
+
+    private static IReadOnlyList<string> _SetHealth(IServiceProvider provider, HealthStatus status)
+    {
+        provider.GetRequiredService<SandboxHealthToggle>().Status = status;
+
+        return [SandboxHealthToggle.CheckName];
     }
 
     private static async Task<IReadOnlyList<string>> _RunAllAsync(
@@ -200,7 +219,14 @@ public static class SandboxScenarios
         var created = new List<string>();
         foreach (var scenario in Descriptions.Keys)
         {
-            created.AddRange(await RunAsync(scenario, services, cancellationToken));
+            try
+            {
+                created.AddRange(await RunAsync(scenario, services, cancellationToken));
+            }
+            catch (SandboxScenarioUnavailableException)
+            {
+                // A scenario this store cannot run, such as the cluster peers on the memory store, is left out of all.
+            }
         }
 
         return created;
