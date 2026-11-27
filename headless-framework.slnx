@@ -155,6 +155,7 @@
         <Project Path="tests/Headless.Cluster.Dashboard.Tests.Unit/Headless.Cluster.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Dashboard.Tests.Unit/Headless.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.DevInbox.Dashboard.Tests.Unit/Headless.DevInbox.Dashboard.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Leases.Dashboard.Tests.Unit/Headless.Leases.Dashboard.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Docs/Tests/">
         <Project Path="tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj" />
@@ -327,6 +328,7 @@
         <Project Path="src/Headless.Cluster.Dashboard/Headless.Cluster.Dashboard.csproj" />
         <Project Path="src/Headless.Dashboard/Headless.Dashboard.csproj" />
         <Project Path="src/Headless.DevInbox.Dashboard/Headless.DevInbox.Dashboard.csproj" />
+        <Project Path="src/Headless.Leases.Dashboard/Headless.Leases.Dashboard.csproj" />
     </Folder>
     <Folder Name="/Imaging/Tests/">
         <Project Path="tests\Headless.Imaging.NetVips.Tests.Unit\Headless.Imaging.NetVips.Tests.Unit.csproj" />

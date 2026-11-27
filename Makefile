@@ -59,6 +59,7 @@ MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 RATE_LIMITING_DASHBOARD_DIR ?= src/Headless.RateLimiting.Dashboard/wwwroot
 CLUSTER_DASHBOARD_DIR ?= src/Headless.Cluster.Dashboard/wwwroot
 IDEMPOTENCY_DASHBOARD_DIR ?= src/Headless.Idempotency.Dashboard/wwwroot
+LEASES_DASHBOARD_DIR ?= src/Headless.Leases.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
 CONFIGURATION ?= Release
 TARGET_FRAMEWORK ?= net10.0
@@ -835,7 +836,7 @@ quality-fix-project: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS in PROJECT,
 	$(DOTNET) csharpier format .
 
 .PHONY: dashboards
-dashboards: dashboard-shell dashboard-jobs dashboard-messaging dashboard-rate-limiting dashboard-cluster dashboard-dev-inbox dashboard-idempotency ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
+dashboards: dashboard-shell dashboard-jobs dashboard-messaging dashboard-rate-limiting dashboard-cluster dashboard-dev-inbox dashboard-idempotency dashboard-leases ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
 
 # Internal: fail early with a clear message when Node/npm is missing.
 .PHONY: _node-check
@@ -872,6 +873,9 @@ dashboard-dev-inbox: _npm-workspace ## Rebuild the Dev inbox dashboard module (n
 .PHONY: dashboard-idempotency
 dashboard-idempotency: _npm-workspace ## Rebuild the Idempotency dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
 	cd "$(IDEMPOTENCY_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+.PHONY: dashboard-leases
+dashboard-leases: _npm-workspace ## Rebuild the Leases dashboard module (npm ci at the root workspace + its Vite and budget build into wwwroot/dist).
+	cd "$(LEASES_DASHBOARD_DIR)" && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
 # The SPA gates CI's dashboard job runs, through each SPA's own package scripts. `type-check` plus `build-only` is
 # what `npm run build` runs in parallel; they run apart here so a failure names its stage. The other scripts stay
@@ -889,6 +893,7 @@ dashboard-idempotency: _npm-workspace ## Rebuild the Idempotency dashboard modul
 # cli-exclude: script:@headless/dashboard-module-cluster/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-dev-inbox/lint -- eslint --fix writes files; the gate runs lint:check
 # cli-exclude: script:@headless/dashboard-module-idempotency/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:@headless/dashboard-module-leases/lint -- eslint --fix writes files; the gate runs lint:check
 # dashboard_check <name> <dir>: install from the nearest lockfile at or above <dir> (the root workspace's for the
 # shell, the SPA's own otherwise) only when the node_modules beside it is missing or older than it (the rule
 # eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
@@ -943,9 +948,12 @@ dashboard-dev-inbox-test: ## Lint, type-check, unit-test, and build the Dev inbo
 .PHONY: dashboard-idempotency-test
 dashboard-idempotency-test: ## Lint, type-check, unit-test, and build the Idempotency dashboard module, size budgets included (CI's Idempotency dashboard job).
 	@$(DASHBOARD_CHECK_FN); dashboard_check idempotency "$(IDEMPOTENCY_DASHBOARD_DIR)"
+.PHONY: dashboard-leases-test
+dashboard-leases-test: ## Lint, type-check, unit-test, and build the Leases dashboard module, size budgets included (CI's Leases dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check leases "$(LEASES_DASHBOARD_DIR)"
 
 .PHONY: dashboards-test
-dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, dashboard-jobs-test, dashboard-messaging-test, dashboard-rate-limiting-test, dashboard-cluster-test, dashboard-dev-inbox-test, dashboard-idempotency-test); all run, every failure is reported.
+dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, dashboard-jobs-test, dashboard-messaging-test, dashboard-rate-limiting-test, dashboard-cluster-test, dashboard-dev-inbox-test, dashboard-idempotency-test, dashboard-leases-test); all run, every failure is reported.
 	@$(DASHBOARD_CHECK_FN); rc=0; \
 	dashboard_check shell "$(SHELL_DASHBOARD_DIR)" || rc=$$?; \
 	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
@@ -954,6 +962,7 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 	dashboard_check cluster "$(CLUSTER_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	dashboard_check dev-inbox "$(DEV_INBOX_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	dashboard_check idempotency "$(IDEMPOTENCY_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	dashboard_check leases "$(LEASES_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
 	exit $$rc
 
 # changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
@@ -962,7 +971,7 @@ dashboards-test: ## Run every dashboard SPA's CI gates (dashboard-shell-test, da
 # each also answers for its files.
 CHANGED_DASHBOARDS_FN = changed_dashboards() { \
 	local base spa dir file paths; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)" "rate-limiting $(RATE_LIMITING_DASHBOARD_DIR)" "cluster $(CLUSTER_DASHBOARD_DIR)" "dev-inbox $(DEV_INBOX_DASHBOARD_DIR)" "idempotency $(IDEMPOTENCY_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
+	for spa in "shell $(SHELL_DASHBOARD_DIR)" "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)" "rate-limiting $(RATE_LIMITING_DASHBOARD_DIR)" "cluster $(CLUSTER_DASHBOARD_DIR)" "dev-inbox $(DEV_INBOX_DASHBOARD_DIR)" "idempotency $(IDEMPOTENCY_DASHBOARD_DIR)" "leases $(LEASES_DASHBOARD_DIR)"; do dir="$${spa\#* }"; paths=("$$dir"); \
 		for file in $(NPM_WORKSPACE_FILES); do paths+=("$(NPM_WORKSPACE_DIR)/$$file"); done; \
 		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$${paths[@]}"; git ls-files --others --exclude-standard -- "$${paths[@]}")" ]; then echo "$$spa"; fi; \
 	done; }
