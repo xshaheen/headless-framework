@@ -224,7 +224,9 @@ function ConfiguredChannel<TRow extends CaptureRow, TDetail extends CaptureRow>(
     : undefined
   const matches = (row: TRow) => !searched || searched.has(row.id)
   const frame = usePageFrame({ viewId: `dev-inbox.${kind}`, rows: list.rows, matches })
-  const newRows = useNewRows<TRow>(topic, matches)
+  // Do not gate newRows on `searched`: a newly captured message is never in the already-fetched page set, so passing
+  // `matches` would hide the `N new` notice for every live arrival while a search is active.
+  const newRows = useNewRows<TRow>(topic)
 
   function setSearch(text: string) {
     setParams(

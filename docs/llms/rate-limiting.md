@@ -309,7 +309,7 @@ app.MapHeadlessDashboard();
 
 ### Runtime behavior
 
-- The lookup is `POST {base}/api/rate-limiting/lookup`, so the subject never reaches a URL or a request log. It reads through `PeekAsync`, spends no attempt, and answers the fingerprint, never the subject. A failing counter store answers `503` naming only the purpose.
+- The lookup is `POST {base}/api/rate-limiting/lookup`, so the subject never reaches a URL or a standard access log. Exclude `{base}/api/rate-limiting/lookup` and `{base}/api/rate-limiting/commands/*` from any HTTP request-body logging (or redact `subject`), because both endpoints receive the raw subject in the JSON body. It reads through `PeekAsync`, spends no attempt, and answers the fingerprint, never the subject. A failing counter store answers `503` naming only the purpose.
 - A declared purpose always reads and resets with its declared quota; an undeclared one needs the caller's quota. Declare the quota a flow acquires with, or the screen reads another counter and shows zero.
 - Reset is the shell command `rate-limiting.reset` on the target `{purpose}:{fingerprint}`, with the subject as an argument. It needs operate permission, a confirmation, and a reason, and the operator log records the target and the reason, never the subject. A subject that does not hash to the target's fingerprint, or a reason that contains the subject, is refused and changes nothing.
 - The module needs the `AttemptSubjectFingerprinter` that `AddAttemptLimiter` registers, so a custom `IAttemptLimiter` must be registered beside that call. Under a custom limiter the screen leaves the counter store out.

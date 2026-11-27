@@ -8,3 +8,14 @@ export type { DashboardListOptions, DashboardObjectOptions } from './hooks.ts'
 export { useDashboardKeysetList, type DashboardKeysetListOptions } from './keyset.ts'
 export { applyChange, compareVersions, getNewRows, isNewerVersion, refetchTopics, showNewRows } from './patch.ts'
 export type { ChangeOutcome, DashboardListPage, ListItem } from './patch.ts'
+export {
+  isRecord,
+  readBoolean,
+  readList,
+  readNumber,
+  readOneOf,
+  readOptionalString,
+  readRecord,
+  readString,
+  shapeError,
+} from './shape.ts'

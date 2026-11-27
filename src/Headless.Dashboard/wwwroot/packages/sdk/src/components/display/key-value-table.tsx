@@ -16,6 +16,11 @@ export interface KeyValueTableProps {
   rows: readonly KeyValueRow[]
   /** What a `null` value reads as; `No value` by default. */
   emptyValue?: string
+  /**
+   * `panel`, the default, sits flush inside a padded panel column; `page` pads horizontally to the page gutter so it
+   * aligns with a `Section` heading and a `DataTable` above it.
+   */
+  placement?: 'panel' | 'page'
 }
 
 /**
@@ -23,11 +28,11 @@ export interface KeyValueTableProps {
  * longest name, the value wrapping beside it with its copy control right after it. The header row is for assistive
  * technology only; the columns read as what they hold.
  */
-export function KeyValueTable({ label, rows, emptyValue = 'No value' }: KeyValueTableProps) {
+export function KeyValueTable({ label, rows, emptyValue = 'No value', placement = 'panel' }: KeyValueTableProps) {
   return (
     // Container queries, not the viewport: the table is narrow in a side panel on a wide screen, where each row
     // stacks its name over its value instead of squeezing the value into a sliver.
-    <div className="@container">
+    <div className={placement === 'page' ? '@container px-4' : '@container'}>
       <table aria-label={label} className="w-full border-collapse type-mono-small">
         <thead className="sr-only">
           <tr>

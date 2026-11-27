@@ -4,6 +4,7 @@ using System.Net;
 using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Tests;
@@ -101,6 +102,12 @@ public sealed class HealthEndpointsTests : TestBase
             cookie,
             AbortToken
         );
+        using var combined = await ClusterDashboardHost.GetAsync(
+            client,
+            _Api + "/health/checks?status=Healthy,Degraded",
+            cookie,
+            AbortToken
+        );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -110,6 +117,7 @@ public sealed class HealthEndpointsTests : TestBase
             .GetString()
             .Should()
             .Be("enum");
+        combined.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -180,7 +188,11 @@ public sealed class HealthEndpointsTests : TestBase
         // given
         await using var app = await ClusterDashboardHost.StartAsync(
             AbortToken,
-            after: services => _dependency.AddTo(services.AddHealthChecks(), "sandbox-dependency")
+            after: services =>
+            {
+                _dependency.AddTo(services.AddHealthChecks(), "sandbox-dependency");
+                services.RemoveAll<IHealthCheckMonitor>();
+            }
         );
         using var client = ClusterDashboardHost.Client(app);
         var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);

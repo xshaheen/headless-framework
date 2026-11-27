@@ -315,12 +315,7 @@ internal sealed class FencedLeaseEndpoints(LeasesServices services, LeaseKindsCa
     {
         state = FencedLeaseStateFilter.All;
 
-        // A declared name only, ignoring case: Enum.TryParse also accepts numbers and comma-joined names.
-        return string.IsNullOrEmpty(value)
-            || (
-                Enum.GetNames<FencedLeaseStateFilter>().Contains(value, StringComparer.OrdinalIgnoreCase)
-                && Enum.TryParse(value, ignoreCase: true, out state)
-            );
+        return string.IsNullOrEmpty(value) || DashboardValidation.TryParseEnumName(value, out state);
     }
 
     internal static ProblemHttpResult NotRegistered() =>

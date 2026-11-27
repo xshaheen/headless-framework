@@ -8,6 +8,7 @@ import {
   Callout,
   EmptyState,
   FieldGrid,
+  Fields,
   GridField,
   LoadError,
   LookupForm,
@@ -16,6 +17,7 @@ import {
   PageFrame,
   PageHeader,
   QueryState,
+  Section,
   SelectField,
   StatCard,
   StatStrip,
@@ -427,17 +429,19 @@ function RateLimitStats({ catalogue }: { catalogue: Catalogue }) {
 
 function PurposesTable({ catalogue }: { catalogue: Catalogue }) {
   return (
-    <DataTable
-      label="Purposes the app declares"
-      rows={catalogue.purposes.map((purpose) => ({ ...purpose, id: purpose.name }))}
-      emptyTitle="No purposes declared"
-      emptyState="Declare each flow in AttemptLimiterOptions.Purposes."
-      columns={[
-        { id: 'purpose', header: 'Purpose', cell: (row) => <Mono>{row.name}</Mono>, isRowHeader: true, kind: 'id' },
-        { id: 'limit', header: 'Limit', cell: (row) => row.limit, kind: 'number', align: 'end' },
-        { id: 'window', header: 'Window', cell: (row) => formatWindow(row.windowSeconds), align: 'end' },
-      ]}
-    />
+    <Section label="Purposes the app declares">
+      <DataTable
+        label="Purposes the app declares"
+        rows={catalogue.purposes.map((purpose) => ({ ...purpose, id: purpose.name }))}
+        emptyTitle="No purposes declared"
+        emptyState="Declare each flow in AttemptLimiterOptions.Purposes."
+        columns={[
+          { id: 'purpose', header: 'Purpose', cell: (row) => <Mono>{row.name}</Mono>, isRowHeader: true, kind: 'id' },
+          { id: 'limit', header: 'Limit', cell: (row) => row.limit, kind: 'number', align: 'end' },
+          { id: 'window', header: 'Window', cell: (row) => formatWindow(row.windowSeconds), align: 'end' },
+        ]}
+      />
+    </Section>
   )
 }
 
@@ -472,14 +476,14 @@ function LookupResult({
     case 'failed':
       // A failure never shows a count: a zero here would read as a subject with no attempts.
       return (
-        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+        <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
           {notice ? (
             <Banner tone="warn" role="status">
               {notice}
             </Banner>
           ) : null}
           <LoadError message={lookup.message} onRetry={onRetry} />
-        </section>
+        </Fields>
       )
     case 'found': {
       const { view } = lookup
@@ -493,7 +497,7 @@ function LookupResult({
       const status = view.isLockedOut ? lockedOut : withinLimit
 
       return (
-        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+        <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
           {notice ? (
             <Banner tone="warn" role="status">
               {notice}
@@ -541,7 +545,7 @@ function LookupResult({
               Reset this window
             </Button>
           </Actions>
-        </section>
+        </Fields>
       )
     }
   }

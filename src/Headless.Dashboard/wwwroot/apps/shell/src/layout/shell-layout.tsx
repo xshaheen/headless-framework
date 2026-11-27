@@ -129,7 +129,7 @@ export function ShellLayout() {
     // The bar spans the top row, and the sidebar and the view fill the second in order. Off every product (Not found,
     // no module registered), and below 768 px where the sidebar opens over the view, there is no sidebar column.
     <div
-      className={`grid h-dvh grid-cols-1 grid-rows-[var(--topbar-height)_minmax(0,1fr)] ${product ? 'md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]' : ''}`}
+      className={`grid h-dvh grid-cols-1 grid-rows-[var(--topbar-height)_minmax(0,1fr)] overflow-x-clip ${product ? 'md:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]' : ''}`}
     >
       <a
         className="absolute start-2 top-[-100vh] z-(--z-palette) rounded-md bg-card px-3 py-2 focus:top-2"

@@ -5,6 +5,7 @@ import type { DashboardStream, StreamEventMap, StreamEventName, StreamStatus } f
 export interface FakeStream extends DashboardStream {
   push<K extends StreamEventName>(type: K, data: StreamEventMap[K]): void
   setStatus(status: StreamStatus): void
+  setPaused(paused: boolean): void
   /** The topics the mounted views hold now. */
   topics(): string[]
 }
@@ -13,8 +14,10 @@ export function createFakeStream(): FakeStream {
   const topics = new Map<string, number>()
   const handlers = new Map<StreamEventName, Set<(data: never) => void>>()
   const statusListeners = new Set<() => void>()
+  const pauseListeners = new Set<() => void>()
   let status: StreamStatus = 'live'
   let staleSince: number | null = null
+  let paused = false
 
   return {
     subscribe(list) {
@@ -50,6 +53,14 @@ export function createFakeStream(): FakeStream {
       }
     },
     reconnect() {},
+    isPaused: () => paused,
+    onPauseChange(listener) {
+      pauseListeners.add(listener)
+
+      return () => {
+        pauseListeners.delete(listener)
+      }
+    },
     push(type, data) {
       act(() => {
         for (const handler of [...(handlers.get(type) ?? [])]) {
@@ -62,6 +73,16 @@ export function createFakeStream(): FakeStream {
         status = next
         staleSince = next === 'stale' ? Date.now() : null
         statusListeners.forEach((listener) => listener())
+      })
+    },
+    setPaused(next) {
+      if (paused === next) {
+        return
+      }
+
+      act(() => {
+        paused = next
+        pauseListeners.forEach((listener) => listener())
       })
     },
     topics: () => [...topics.keys()].sort(),

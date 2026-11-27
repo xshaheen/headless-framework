@@ -168,7 +168,9 @@ describe('cluster nodes', () => {
     open({ ...fake, goneNodes: ['orders-worker-2@3'] }, { path: '?open=orders-worker-2%403' })
 
     const panel = await screen.findByRole('region', { name: 'Node orders-worker-2@3' })
-    await waitFor(() => expect(panel.textContent).toContain('This node is no longer in the membership store.'))
+    await waitFor(() =>
+      expect(within(panel).getByRole('alert').textContent).toContain('This node is no longer in the membership store.'),
+    )
   })
 
   it('reads the nodes and the open panel again on a node change', async () => {
@@ -202,6 +204,34 @@ describe('cluster nodes', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000)
     })
+
+    await waitFor(() => expect(reads(view, 'cluster/nodes')).toBe(before + 1))
+  })
+
+  it('pauses heartbeat polling while the stream is paused and resumes when unpaused', async () => {
+    const view = open(fake)
+    await screen.findByRole('grid', { name: 'Nodes' })
+    view.stream.setPaused(true)
+    const pausedReads = reads(view, 'cluster/nodes')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+    expect(reads(view, 'cluster/nodes')).toBe(pausedReads)
+
+    view.stream.setPaused(false)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    await waitFor(() => expect(reads(view, 'cluster/nodes')).toBeGreaterThan(pausedReads))
+  })
+
+  it('refetches nodes when cluster.node is added on a subscribed stream event', async () => {
+    const view = open(fake)
+    await screen.findByRole('grid', { name: 'Nodes' })
+    const before = reads(view, 'cluster/nodes')
+
+    act(() => view.stream.push('subscribed', { topics: ['cluster.node'], added: ['cluster.node'] }))
 
     await waitFor(() => expect(reads(view, 'cluster/nodes')).toBe(before + 1))
   })

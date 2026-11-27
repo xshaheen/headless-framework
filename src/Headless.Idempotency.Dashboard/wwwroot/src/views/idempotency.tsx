@@ -8,6 +8,7 @@ import {
   CopyButton,
   EmptyState,
   FieldGrid,
+  Fields,
   GridField,
   LookupForm,
   Mono,
@@ -117,7 +118,6 @@ export default function IdempotencyView() {
 
       if (error instanceof DashboardApiError && error.status === 400) {
         setLookup({ state: 'invalid', call, message: error.message })
-        announce(error.message)
       } else {
         const message =
           error instanceof DashboardApiError && error.status === 503
@@ -126,7 +126,6 @@ export default function IdempotencyView() {
               ? error.message
               : 'The lookup failed. Try again.'
         setLookup({ state: 'failed', call, message })
-        announce(message)
       }
     }
   }
@@ -185,6 +184,8 @@ export default function IdempotencyView() {
             >
               <TextInputField
                 label="Tenant"
+                description="Leave blank for the host scope (no tenant)."
+                descriptionHidden
                 width="medium"
                 maxLength={128}
                 value={tenant}
@@ -252,7 +253,7 @@ function StoreStats({ store }: { store: StoreView }) {
   )
 }
 
-/** `Headless.Idempotency.PostgreSql` reads `PostgreSql`; the full package name is the caption's hover text. */
+/** `Headless.Idempotency.PostgreSql` reads `PostgreSql`; any other provider name stays as served. */
 function providerName(provider: string): string {
   return provider.startsWith('Headless.Idempotency.') ? provider.slice('Headless.Idempotency.'.length) : provider
 }
@@ -274,27 +275,27 @@ function LookupResult({ lookup, resultRef, onAgain }: LookupResultProps) {
       return null
     case 'invalid':
       return (
-        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+        <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
           <Banner tone="error">
             <AttentionIcon />
             <span role="alert">{lookup.message}</span>
           </Banner>
-        </section>
+        </Fields>
       )
     case 'failed':
       // A failure never shows a previous answer or a not-found: either would read as the store's answer.
       return (
-        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+        <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
           <Banner tone="error">
             <AttentionIcon />
             <span role="alert">{lookup.message}</span>
             <Button onPress={onAgain}>Retry</Button>
           </Banner>
-        </section>
+        </Fields>
       )
     case 'not-found':
       return (
-        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+        <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
           <EmptyState
             icon={SearchIcon}
             title={`No record for this key in ${scopeName(lookup.call)}`}
@@ -303,7 +304,7 @@ function LookupResult({ lookup, resultRef, onAgain }: LookupResultProps) {
             The key was never admitted there, or its retention ended and no live attempt holds it. A record admitted
             under another tenant is found only with that tenant.
           </EmptyState>
-        </section>
+        </Fields>
       )
     case 'found':
       return <FoundRecord call={lookup.call} record={lookup.record} resultRef={resultRef} onAgain={onAgain} />
@@ -322,7 +323,7 @@ function FoundRecord({ call, record, resultRef, onAgain }: FoundRecordProps) {
   const status = recordState(record)
 
   return (
-    <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+    <Fields ref={resultRef} tabIndex={-1} label="Lookup result">
       <Text tone="title" as="h3">
         <StatusMark tone={status.tone} label={status.label} />
       </Text>
@@ -377,6 +378,6 @@ function FoundRecord({ call, record, resultRef, onAgain }: FoundRecordProps) {
         </Text>
         <Button onPress={onAgain}>Look up again</Button>
       </Actions>
-    </section>
+    </Fields>
   )
 }

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.Dashboard;
@@ -63,7 +62,7 @@ internal sealed class ClusterEndpoints(ClusterServices services)
 
         if (!string.IsNullOrEmpty(state))
         {
-            if (!TryParseName<NodeLivenessState>(state, out var parsed))
+            if (!DashboardValidation.TryParseEnumName<NodeLivenessState>(state, out var parsed))
             {
                 return DashboardValidation.Problem(
                     "state",
@@ -214,13 +213,6 @@ internal sealed class ClusterEndpoints(ClusterServices services)
 
         return agreement;
     }
-
-    /// <summary>Parses a declared member name of <typeparamref name="TEnum"/>, ignoring case and refusing numbers.</summary>
-    internal static bool TryParseName<TEnum>(string value, out TEnum result)
-        where TEnum : struct, Enum =>
-        Enum.TryParse(value, ignoreCase: true, out result)
-        && Enum.IsDefined(result)
-        && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
 
     private static ProblemHttpResult _NotRegistered() =>
         TypedResults.Problem(

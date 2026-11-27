@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Dashboard;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -255,11 +256,15 @@ public sealed class ClusterCommandsTests : TestBase
     [Fact]
     public async Task should_disable_both_commands_and_refuse_a_run_when_the_monitor_is_missing()
     {
-        // given a host that registers its checks after the module, so no monitor is registered
+        // given a host whose health checks have no monitor registered
         await using var app = await ClusterDashboardHost.StartAsync(
             AbortToken,
             log: _log,
-            after: services => _dependency.AddTo(services.AddHealthChecks(), "sandbox-dependency")
+            after: services =>
+            {
+                _dependency.AddTo(services.AddHealthChecks(), "sandbox-dependency");
+                services.RemoveAll<IHealthCheckMonitor>();
+            }
         );
         using var client = ClusterDashboardHost.Client(app);
         var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);

@@ -68,6 +68,29 @@ public sealed class DashboardValidationTests : TestBase
         DashboardValidation.ParseEnum<DayOfWeek>(value).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("Friday", true, DayOfWeek.Friday)]
+    [InlineData("friday", true, DayOfWeek.Friday)]
+    [InlineData("FRIDAY", true, DayOfWeek.Friday)]
+    [InlineData("5", false, default(DayOfWeek))]
+    [InlineData("7", false, default(DayOfWeek))]
+    [InlineData("Monday,Tuesday", false, default(DayOfWeek))]
+    [InlineData(" Friday", false, default(DayOfWeek))]
+    [InlineData("Fri", false, default(DayOfWeek))]
+    [InlineData("", false, default(DayOfWeek))]
+    [InlineData(null, false, default(DayOfWeek))]
+    public void should_parse_only_declared_enum_names_ignoring_case_and_refuse_numbers_and_combinations(
+        string? value,
+        bool expectedParsed,
+        DayOfWeek expectedValue
+    )
+    {
+        var parsed = DashboardValidation.TryParseEnumName<DayOfWeek>(value, out var result);
+
+        parsed.Should().Be(expectedParsed);
+        result.Should().Be(expectedValue);
+    }
+
     private sealed record Step(string Function, int Retries, IReadOnlyList<Step> Children);
 
     private sealed class StepValidator : AbstractValidator<Step>

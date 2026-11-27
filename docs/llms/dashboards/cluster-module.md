@@ -13,7 +13,7 @@ packages:
 dotnet add package Headless.Cluster.Dashboard
 ```
 
-`AddCluster()` adds the Cluster module under the id `cluster`, in the `Cluster` product tab. It shows two halves, and serves whichever the host registers: Coordination membership (`AddHeadlessCoordination(...)` with a provider) and the host's health checks (`AddHealthChecks()`). Register the health checks before `AddCluster()`: the call then registers the health check monitor (`AddHeadlessHealthCheckMonitor()`) that the Health view and the probe commands read.
+`AddCluster()` adds the Cluster module under the id `cluster`, in the `Cluster` product tab. It shows two halves, and serves whichever the host registers: Coordination membership (`AddHeadlessCoordination(...)` with a provider) and the host's health checks (`AddHealthChecks()`). Both may be registered before or after `AddCluster()`: when health checks are registered anywhere in the host, `AddCluster()` resolves the health check monitor (`IHealthCheckMonitor`) automatically. Call `AddHeadlessHealthCheckMonitor(aliveTag)` explicitly only when you need a custom liveness tag.
 
 ```csharp
 using Headless.Cluster;
@@ -32,13 +32,12 @@ app.MapHeadlessDashboard();
 
 | Host shape | Cluster view | Health view | Commands |
 | --- | --- | --- | --- |
-| Coordination and health checks registered before `AddCluster()` | Live | Live | Allowed for operators |
+| Coordination and health checks (in any order) | Live | Live | Allowed for operators |
 | Coordination only | Live | `Health checks are not registered`, naming `AddHealthChecks()` | Disabled |
 | Health checks only | `Coordination is not registered`, naming `AddHeadlessCoordination(...)` | Live | Allowed for operators |
-| Health checks registered after `AddCluster()`, no monitor | As above | A banner naming `AddHeadlessHealthCheckMonitor()`; health routes answer `409` | Disabled with that remedy |
 | Neither | Startup fails | | |
 
-A feature that registers its own health checks, such as Jobs or Messaging, adds them when its `AddHeadless…` call runs. Their checks still appear when the monitor is registered, because the monitor reads every registration when it starts; only the decision to register the monitor reads what is registered at the `AddCluster()` call. Call `AddHeadlessHealthCheckMonitor()` yourself when you cannot register a check first.
+A feature that registers its own health checks, such as Jobs or Messaging, adds them when its `AddHeadless…` call runs. Their checks still appear in the monitor regardless of registration order. Call `AddHeadlessHealthCheckMonitor(aliveTag)` explicitly when you use a liveness tag other than `live`.
 
 | `ClusterDashboardOptions` member | Default | Description |
 | --- | --- | --- |

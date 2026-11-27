@@ -118,6 +118,7 @@ public sealed class SequencesCountersTests : TestBase
     [Theory]
     [InlineData("/counters?mode=1", "mode")]
     [InlineData("/counters?mode=Slow", "mode")]
+    [InlineData("/counters?mode=Fast,GapFree", "mode")]
     [InlineData("/counters?scope=tenant", "tenant")]
     [InlineData("/counters?tenant=acme", "tenant")]
     [InlineData("/counters?scope=host&tenant=acme", "tenant")]

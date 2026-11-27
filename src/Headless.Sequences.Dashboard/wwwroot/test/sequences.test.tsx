@@ -1,7 +1,10 @@
+import { defineModule } from '@headless/dashboard-sdk'
 import { DashboardApiError } from '@headless/dashboard-sdk/data'
-import { cleanup, screen, waitFor, within } from '@testing-library/react'
+import { renderModule } from '@headless/dashboard-sdk/testing'
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react'
 import { restoreRealTimers } from '@headless/dashboard-sdk/testing/timers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import sequencesModule from '../src/module.ts'
 import {
   acmeInvoice,
   acmeInvoiceLastYear,
@@ -11,6 +14,7 @@ import {
   invoicePolicy,
   now,
   open,
+  server,
   summaryOf,
   user,
   type FakeServer,
@@ -218,15 +222,40 @@ describe('the counter list', () => {
     expect(view.location().search).not.toContain('tenant')
   })
 
-  it('searches with the text as typed', async () => {
+  it('searches with the text as typed without dropping keyboard focus, and clears on Clear filters', async () => {
     const actor = user()
     const view = open(fake)
     await findRow(/INV-2026/)
 
-    await actor.type(screen.getByRole('searchbox', { name: 'Search counters' }), 'INV')
+    const search = screen.getByRole('searchbox', { name: 'Search counters' })
+    await actor.type(search, 'INV')
     await vi.advanceTimersByTimeAsync(400)
 
     await waitFor(() => expect(counterRequests(view).at(-1)?.query?.q).toBe('INV'))
+    expect(document.activeElement).toBe(search)
+
+    await actor.type(search, '-NO-MATCH')
+    await vi.advanceTimersByTimeAsync(400)
+    await screen.findByText('No counters match')
+    await actor.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect((search as HTMLInputElement).value).toBe(''))
+  })
+
+  it('reads summary again on remount so fresh counts are not masked by cache', async () => {
+    const withAway = defineModule({
+      ...sequencesModule,
+      routes: [...(sequencesModule.routes ?? []), { path: 'away', lazy: async () => ({ default: () => null }) }],
+    })
+    const view = renderModule(withAway, { api: server(fake) })
+    await findRow(/INV-2026/)
+    const initialSummaries = requestsTo(view, 'sequences/summary').length
+
+    await act(() => view.navigate('away'))
+    await waitFor(() => expect(queryRow(/INV-2026/)).toBeNull())
+    await act(() => view.navigate(''))
+    await findRow(/INV-2026/)
+
+    await waitFor(() => expect(requestsTo(view, 'sequences/summary').length).toBeGreaterThan(initialSummaries))
   })
 
   it('lists only current partitions when asked', async () => {

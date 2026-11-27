@@ -801,4 +801,47 @@ describe('shell layout', () => {
 
     expect(await screen.findByRole('button', { name: 'Display time zone: Africa/Cairo' })).toBeTruthy()
   })
+
+  it('merges same-label sidebar sections across modules under one heading while keeping each entry module permission', async () => {
+    const rateLimits = moduleManifest('rate-limiting', { displayName: 'Rate limits', canOperate: true })
+    const leases = moduleManifest('leases', { displayName: 'Leases', canOperate: false })
+    const state: BootstrapState = {
+      ...shellState([rateLimits, leases]),
+      products: [
+        {
+          id: 'platform',
+          label: 'Platform',
+          modules: ['rate-limiting', 'leases'],
+          sections: [
+            {
+              module: 'rate-limiting',
+              label: 'Operations',
+              entries: [{ id: 'rl.nav', label: 'Rate limits', route: '', icon: 'gauge' }],
+            },
+            {
+              module: 'leases',
+              label: 'Operations',
+              entries: [{ id: 'leases.nav', label: 'Leases', route: '', icon: 'lock', requires: 'operate' }],
+            },
+          ],
+        },
+      ],
+    }
+
+    renderShell(state, { path: '/rate-limiting', files: moduleFiles([rateLimits, leases]) })
+
+    const sidebar = await screen.findByRole('navigation', { name: 'Platform' })
+    expect(within(sidebar).getAllByRole('heading', { name: 'Operations' })).toHaveLength(1)
+    expect(within(sidebar).getByRole('link', { name: 'Rate limits' }).getAttribute('aria-disabled')).toBeNull()
+    expect(within(sidebar).getByRole('link', { name: 'Leases' }).getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('renders Attention as an icon button on phone when zero items need attention', async () => {
+    atWidth(400)
+    const modules = [moduleManifest('jobs')]
+    renderShell(shellState(modules), { path: '/jobs/runs', files: moduleFiles(modules) })
+
+    const attention = await screen.findByRole('button', { name: 'Attention' })
+    expect(attention.className).toContain('hd-icon')
+  })
 })

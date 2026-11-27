@@ -1,5 +1,16 @@
 import { useDashboard } from '@headless/dashboard-sdk'
-import { listKey, type DashboardApi, type DashboardListPage } from '@headless/dashboard-sdk/data'
+import {
+  listKey,
+  readBoolean as flag,
+  readNumber as count,
+  readOneOf as oneOf,
+  readOptionalString as optionalText,
+  readRecord as record,
+  readString as text,
+  shapeError,
+  type DashboardApi,
+  type DashboardListPage,
+} from '@headless/dashboard-sdk/data'
 import { useQuery, type QueryClient } from '@headless/dashboard-sdk/query'
 
 // In the order the screen lists the modes, so the mode chips read as the stat strip does.
@@ -72,61 +83,6 @@ export interface CounterFilter {
   tenant?: string
   current?: boolean
   q?: string
-}
-
-/** The server answered a shape this module does not read, so the view shows the read as failed. */
-function shapeError(what: string) {
-  return new Error(`The server answered an unexpected ${what}.`)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function record(value: unknown, what: string): Record<string, unknown> {
-  if (!isRecord(value)) {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function text(value: unknown, what: string): string {
-  if (typeof value !== 'string') {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function optionalText(value: unknown, what: string): string | null {
-  return value == null ? null : text(value, what)
-}
-
-function count(value: unknown, what: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function flag(value: unknown, what: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw shapeError(what)
-  }
-
-  return value
-}
-
-function oneOf<const T extends readonly string[]>(values: T, value: unknown, what: string): T[number] {
-  const found = values.find((candidate) => candidate === value)
-
-  if (found === undefined) {
-    throw shapeError(what)
-  }
-
-  return found
 }
 
 export function readSummary(value: unknown): SequencesSummary {
@@ -238,6 +194,7 @@ export function useSummary(filter: CounterFilter) {
     queryKey: [...queryKeys.summary, query],
     queryFn: async () => readSummary(await api.request<unknown>({ method: 'GET', path: 'sequences/summary', query })),
     enabled: isReadable(filter),
+    refetchOnMount: 'always',
   })
 }
 
@@ -279,6 +236,7 @@ export function useCounter(id: string | undefined) {
       readCounter(await api.request<unknown>({ method: 'GET', path: 'sequences/counter', query: { id: id ?? '' } })),
     enabled: id !== undefined,
     retry: false,
+    refetchOnMount: 'always',
   })
 }
 

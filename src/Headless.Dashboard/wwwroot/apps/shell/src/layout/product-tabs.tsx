@@ -36,7 +36,7 @@ export function ProductTabs({ current, attention }: ProductTabsProps) {
             key={product.id}
             to={productHome(product)}
             // The fill alone is too faint a cue, so the active tab also carries an accent bottom edge.
-            className={`inline-flex h-(--field-height) flex-none items-center gap-2 rounded-md px-3.5 font-medium text-muted-foreground no-underline hover:text-foreground current:bg-muted current:text-foreground current:accent-bar-bottom hd-tone-${role}`}
+            className={`relative inline-flex h-(--field-height) flex-none items-center gap-2 rounded-md px-3.5 font-medium text-muted-foreground no-underline hover:text-foreground current:bg-muted current:text-foreground current:accent-bar-bottom max-md:px-2.5 hd-tone-${role}`}
             aria-current={product.id === current?.id ? 'page' : undefined}
             title={product.developmentOnly ? 'Development only' : undefined}
           >

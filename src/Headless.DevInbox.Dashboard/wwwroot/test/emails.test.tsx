@@ -145,6 +145,15 @@ describe('emails view', () => {
     expect(screen.queryByRole('link', { name: 'Download scan.tiff' })).toBeNull()
   })
 
+  it('shows an empty state on the Attachments tab when an email has no attachments', async () => {
+    const actor = user()
+    const message = email({ attachments: [] })
+    open({ emails: [message] }, { path: `emails?open=${message.id}` })
+
+    await actor.click(await screen.findByRole('tab', { name: 'Attachments' }))
+    expect(await screen.findByText('This email has no attachments.')).toBeTruthy()
+  })
+
   it('offers the .eml download of the open email', async () => {
     const message = email()
     open({ emails: [message] }, { path: `emails?open=${message.id}` })
@@ -215,6 +224,25 @@ describe('emails view', () => {
     )
     expect(await screen.findByRole('button', { name: '1 new' })).toBeTruthy()
     expect(view.requests.filter((request) => request.path === 'dev-inbox/emails').length).toBe(lists)
+  })
+
+  it('still shows the new-rows control when a live email arrives while a search is active', async () => {
+    const view = open({ emails: [email({ subject: 'Your invoice' })] }, { path: 'emails?search=invoice' })
+    await screen.findByRole('row', { name: /Your invoice/ })
+    const arrived = email({ subject: 'Invoice reminder' })
+
+    act(() =>
+      view.stream.push('change', {
+        module: 'dev-inbox',
+        kind: 'email',
+        id: arrived.id,
+        topic: 'dev-inbox.email',
+        version: String(arrived.sequence),
+        projection: emailRow(arrived),
+      }),
+    )
+
+    expect(await screen.findByRole('button', { name: '1 new' })).toBeTruthy()
   })
 
   it('says an email that is gone no longer exists', async () => {

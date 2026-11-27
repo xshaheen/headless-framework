@@ -261,6 +261,36 @@ public sealed class ClusterSourcesTests : TestBase
             .Equal(expected);
     }
 
+    [Fact]
+    public async Task should_still_resolve_a_health_check_when_the_membership_store_does_not_answer()
+    {
+        // given
+        await using var app = await _StartAsync();
+        _membership.IsUnreachable = true;
+        using var client = ClusterDashboardHost.Client(app);
+        var cookie = await ClusterDashboardHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await ClusterDashboardHost.PostAsync(
+            client,
+            "/headless/api/resolve",
+            new { query = "jobs" },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        var body = await ClusterDashboardHost.ReadAsync(response, AbortToken);
+        _Items(body)
+            .Select(static item =>
+                item.GetProperty("target").GetProperty("kind").GetString()
+                + ":"
+                + item.GetProperty("target").GetProperty("id").GetString()
+            )
+            .Should()
+            .Equal("check:jobs");
+    }
+
     private Task<WebApplication> _StartAsync() =>
         ClusterDashboardHost.StartAsync(
             AbortToken,

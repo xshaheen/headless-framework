@@ -18,7 +18,7 @@ internal sealed class DevInboxEndpoints(DevInboxChannels channels)
 
     internal const int MaxListLimit = 200;
 
-    internal const string UnconfiguredCode = "channel_unconfigured";
+    internal const string UnconfiguredCode = "dev_inbox:channel_unconfigured";
 
     internal static readonly (string Messages, string Setup) EmailSetup = ("emails", "AddHeadlessEmails");
 

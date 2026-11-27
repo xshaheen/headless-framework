@@ -116,7 +116,7 @@ internal sealed class SequencesEndpoints(
 
         if (!string.IsNullOrEmpty(mode))
         {
-            if (!TryParseName<SequenceMode>(mode, out var parsedMode))
+            if (!DashboardValidation.TryParseEnumName<SequenceMode>(mode, out var parsedMode))
             {
                 return DashboardValidation.Problem(
                     "mode",
@@ -326,13 +326,6 @@ internal sealed class SequencesEndpoints(
 
         return null;
     }
-
-    /// <summary>Parses a declared member name of <typeparamref name="TEnum"/>, ignoring case and refusing numbers.</summary>
-    internal static bool TryParseName<TEnum>(string value, out TEnum result)
-        where TEnum : struct, Enum =>
-        Enum.TryParse(value, ignoreCase: true, out result)
-        && Enum.IsDefined(result)
-        && !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
 
     /// <summary>
     /// Reads the tenant filter a scope names into <paramref name="tenantId"/>: every tenant (<see langword="null"/>),

@@ -53,7 +53,7 @@ public sealed class ClusterRegistrationTests : TestBase
     }
 
     [Fact]
-    public async Task should_start_without_a_monitor_when_health_checks_come_after_add_cluster()
+    public async Task should_start_and_register_the_monitor_when_health_checks_come_after_add_cluster()
     {
         // given a host that registers its health checks only after the module
         await using var app = await ClusterDashboardHost.StartAsync(
@@ -64,7 +64,27 @@ public sealed class ClusterRegistrationTests : TestBase
 
         // then
         app.Services.GetService<HealthCheckService>().Should().NotBeNull();
-        app.Services.GetService<IHealthCheckMonitor>().Should().BeNull();
+        app.Services.GetService<IHealthCheckMonitor>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_let_an_explicit_monitor_registration_after_add_cluster_keep_its_alive_tag()
+    {
+        // given
+        await using var app = await ClusterDashboardHost.StartAsync(
+            AbortToken,
+            after: static services =>
+            {
+                services
+                    .AddHealthChecks()
+                    .AddCheck("custom-live", static () => HealthCheckResult.Healthy(), tags: ["heartbeat"]);
+                services.AddHeadlessHealthCheckMonitor(aliveTag: "heartbeat");
+            }
+        );
+
+        // then
+        var monitor = app.Services.GetRequiredService<IHealthCheckMonitor>();
+        monitor.GetChecks().Should().ContainSingle(static c => c.Name == "custom-live" && c.IsLiveness);
     }
 
     public static TheoryData<string> Overloads => ["action", "action-with-provider", "configuration"];
