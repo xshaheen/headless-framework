@@ -18,7 +18,7 @@ namespace Headless.Dashboards.Sandbox;
 /// <param name="Storage">The Messaging store, for the operator actions a scenario applies to a received row.</param>
 /// <param name="Clock">Times the wait for a consumer to finish.</param>
 /// <param name="Limiter">Spends attempts for the rate-limit fixtures.</param>
-/// <param name="Provider">Resolves what only some stores register, such as the Coordination membership store.</param>
+/// <param name="Provider">Resolves what only some stores register, such as the Coordination membership store and the Dev inbox senders.</param>
 public sealed record SandboxScenarioServices(
     IJobScheduler Jobs,
     ICronJobManager<CronJobEntity> CronJobs,
@@ -100,6 +100,8 @@ public static class SandboxScenarios
         ["health-unhealthy"] = "The sandbox-dependency health check reports Unhealthy from its next probe on.",
         ["cluster-peers"] =
             "Three peer nodes in the membership store (STORE=postgres only): orders-api-1 keeps beating, orders-worker-1 beats once then turns Suspected and Dead, and orders-worker-2 never beats and leaves once pruned; orders-worker-1 carries app.version 4.2.0 against 4.2.1.",
+        ["dev-inbox"] = SandboxDevInbox.Descriptions["dev-inbox"],
+        ["dev-inbox-send"] = SandboxDevInbox.Descriptions["dev-inbox-send"],
     };
 
     public static async Task<IReadOnlyList<string>> RunAsync(
@@ -197,6 +199,11 @@ public static class SandboxScenarios
             "health-degraded" => _SetHealth(provider, HealthStatus.Degraded),
             "health-unhealthy" => _SetHealth(provider, HealthStatus.Unhealthy),
             "cluster-peers" => await SandboxCluster.AddPeersAsync(provider, cancellationToken),
+            "dev-inbox" or "dev-inbox-send" => await SandboxDevInbox.RunAsync(
+                name,
+                provider,
+                cancellationToken
+            ),
             "all" => await _RunAllAsync(services, cancellationToken),
             _ => throw new KeyNotFoundException(
                 $"Unknown scenario '{name}'. Known: all, {string.Join(", ", Descriptions.Keys)}."

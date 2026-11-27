@@ -13,7 +13,7 @@ using Headless.Messaging.Persistence;
 using Headless.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
-// A local test host for the Headless dashboard, with its Jobs and Messaging modules, started and stopped by the
+// A local test host for the Headless dashboard, with its Jobs, Messaging, and (in Development) Dev inbox modules, started and stopped by the
 // project CLI (`make up`, `make down`). It binds to loopback only and exists so a person or
 // an agent can drive every dashboard state on demand; it is not a sample of production wiring. See sandboxes/README.md.
 var builder = WebApplication.CreateBuilder(args);
@@ -77,6 +77,8 @@ builder.Services.AddHeadlessDashboard(dashboard =>
     dashboard.AddRateLimiting();
     // The Cluster module shows Coordination membership (STORE=postgres only) and this host's health checks.
     dashboard.AddCluster();
+    // The Dev inbox module and the senders it reads, registered only in Development, which `make up` sets.
+    SandboxDevInbox.Add(builder, dashboard);
 });
 
 // One loopback process, so the in-memory cache counts every attempt the sandbox makes. An app with more than one
@@ -212,6 +214,7 @@ app.MapGet(
                 messagingModule = "/headless/messaging",
                 rateLimitingModule = "/headless/rate-limiting",
                 clusterModule = "/headless/cluster",
+                devInboxModule = builder.Environment.IsDevelopment() ? "/headless/dev-inbox" : null,
                 headlessAuth = "host",
                 scenarios = SandboxScenarios.Descriptions,
             }
