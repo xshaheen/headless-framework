@@ -74,4 +74,17 @@ describe('sms view', () => {
       false,
     )
   })
+  it('clears only the searched SMS: the button reads Clear matching and the count request carries the search', async () => {
+    const actor = user()
+    const view = open({ sms: [sms(), sms({ text: 'hello' })] }, { path: 'sms?search=code' })
+    await screen.findAllByRole('row', { name: /\+201000000001/ })
+
+    await actor.click(screen.getByRole('button', { name: 'Clear matching' }))
+    await actor.type(await screen.findByRole('textbox', { name: /Reason/ }), 'tidy up')
+    await actor.click(screen.getByRole('button', { name: 'Count rows' }))
+
+    await vi.waitFor(() => expect(view.requests.some((request) => request.path.endsWith('/confirm'))).toBe(true))
+    const confirm = view.requests.find((request) => request.path.endsWith('/confirm'))!
+    expect((confirm.body as { filter: { search: string | null } }).filter.search).toBe('code')
+  })
 })
