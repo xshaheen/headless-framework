@@ -335,6 +335,20 @@ describe('rate limits', () => {
     expect(described(resetButton())).toContain('Refresh to read the current window')
   })
 
+  it('keeps keyboard focus on the result when the window closes under the open confirmation', async () => {
+    const actor = user()
+    open({ lookups: [window(5)] })
+
+    await lookUp(actor)
+    await actor.click(await screen.findByRole('button', { name: 'Reset this window' }))
+    act(() => {
+      vi.advanceTimersByTime(10 * 60 * 1000)
+    })
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Lookup result' }))
+  })
+
   it('announces once, in a status notice, that the window shown has closed', async () => {
     const actor = user()
     open({ lookups: [window(5)] })

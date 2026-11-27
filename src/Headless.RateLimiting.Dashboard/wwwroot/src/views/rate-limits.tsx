@@ -1,6 +1,7 @@
 import { useDashboard, useModule } from '@headless/dashboard-sdk'
 import { ActionConfirm, createCommandsApi, type ConfirmedAction } from '@headless/dashboard-sdk/commands'
 import {
+  Actions,
   Announcer,
   Banner,
   Button,
@@ -95,6 +96,9 @@ export default function RateLimitsView() {
   const [resetNotice, setResetNotice] = useState<string>()
   const [focusResult, setFocusResult] = useState(false)
   const resultRef = useRef<HTMLElement>(null)
+  // The window timer runs outside render, so it reads whether the confirmation is open from this mirror.
+  const isConfirmingRef = useRef(false)
+  isConfirmingRef.current = isConfirming
   // Each lookup's generation: an answer commits only while its lookup is still the latest, so a slow answer for an
   // edited or replaced subject never lands as the result a Reset acts on.
   const latest = useRef(0)
@@ -121,6 +125,10 @@ export default function RateLimitsView() {
 
     function close() {
       setIsStale(true)
+      // Closing the confirmation under the operator would otherwise drop keyboard focus to the page.
+      if (isConfirmingRef.current) {
+        setFocusResult(true)
+      }
       setIsConfirming(false)
     }
 
@@ -343,7 +351,6 @@ export default function RateLimitsView() {
               ) : null}
               <TextInputField
                 label="Subject"
-                width="medium"
                 isRequired
                 maxLength={512}
                 value={subject}
@@ -493,9 +500,8 @@ function LookupResult({
             </Banner>
           ) : null}
           <Text tone="title" as="h3">
-            {status.label}
+            <StatusMark tone={status.tone} label={status.label} />
           </Text>
-          <StatusMark tone={status.tone} label={status.label} />
           <Meter
             label="Attempts in this window"
             value={Math.min(view.count, view.limit)}
@@ -529,10 +535,12 @@ function LookupResult({
               The window shown has closed. Refresh to read the current one.
             </Banner>
           ) : null}
-          <Button onPress={onRefresh}>Refresh</Button>
-          <Button variant="danger" icon={DeleteIcon} disabledReason={resetRefusal} onPress={onReset}>
-            Reset this window
-          </Button>
+          <Actions>
+            <Button onPress={onRefresh}>Refresh</Button>
+            <Button variant="danger" icon={DeleteIcon} disabledReason={resetRefusal} onPress={onReset}>
+              Reset this window
+            </Button>
+          </Actions>
         </section>
       )
     }
