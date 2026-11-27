@@ -456,6 +456,37 @@ def empty_selection_stage(affected: dict) -> Stage | None:
     return Stage("affected-selection", [], 1, 0.0, "", note)
 
 
+def unreported_modules(directory: Path, stages: list[Stage]) -> tuple[Stage | None, dict[str, list[str]]]:
+    """Fail a bundle whose test stage ran but left modules without a result.
+
+    A module that never wrote a TRX crashed, or never started because the session's time budget ran out first: a
+    whole-solution integration run once stopped at its 15 min `--timeout` with 12 of 81 modules unreported, and the
+    summary still read as a short failure list. Each suite stage's own solution filter names the modules it was asked to
+    run, so the modules missing from its results are named here instead of silently dropping out of the totals.
+    """
+    missing: dict[str, list[str]] = {}
+    for stage in stages:
+        if stage.name not in TEST_SUITES or stage.exit_code < 0 or "--solution" not in stage.command:
+            continue
+        listing = (REPO_ROOT / stage.command[stage.command.index("--solution") + 1]).with_suffix(".txt")
+        if not listing.is_file():
+            continue
+        expected = [PurePosixPath(line).stem for line in listing.read_text(encoding="utf-8").split()]
+        reported = {trx_module(trx) for trx in (directory / stage.name).rglob("*.trx")}
+        absent = [module for module in expected if module not in reported]
+        if absent:
+            missing[stage.name] = absent
+    if not missing:
+        return None, missing
+    count = sum(len(modules) for modules in missing.values())
+    listed = "; ".join(f"{suite}: {', '.join(modules)}" for suite, modules in missing.items())
+    note = (
+        f"{count} test module(s) never reported a result (a crash, or the session stopped before they ran): {listed}; "
+        "read the suite's log, then re-run them with make test-failed"
+    )
+    return Stage("unreported-modules", [], 1, 0.0, "", note), missing
+
+
 def summarize(
     directory: Path,
     gate_scope: str = "none",
@@ -497,6 +528,9 @@ def summarize(
     selection_stage = empty_selection_stage(affected)
     if selection_stage is not None:
         stages.append(selection_stage)
+    unreported_stage, unreported = unreported_modules(directory, stages)
+    if unreported_stage is not None:
+        stages.append(unreported_stage)
     failed_stages = [stage.name for stage in stages if stage.exit_code > 0]
     write_module_results(directory, modules)
     reused_modules = read_json(directory / REUSED_MODULES)
@@ -515,6 +549,8 @@ def summarize(
             "failed": sum(m.failed for m in modules),
             "skipped": sum(m.skipped for m in modules),
             "modules": [asdict(m) for m in modules],
+            # Modules a suite stage was asked to run that left no result, by stage; they count in no total above.
+            "unreported": unreported,
         },
         "compiler_diagnostics": diagnostics,
         "analyzer_findings": findings,
@@ -606,6 +642,10 @@ def render_markdown(summary: dict) -> str:
         lines += [f"- `{m['module']}`: {m['passed']} passed, {m['failed']} failed, {m['skipped']} skipped" for m in noteworthy]
         if clean:
             lines.append(f"- {clean} other module{'s' if clean != 1 else ''} passed with no skips.")
+    unreported = tests.get("unreported") or {}
+    if unreported:
+        lines += ["", "Test modules that never reported a result (counted in no total above):", ""]
+        lines += [f"- `{module}` ({suite})" for suite, modules in unreported.items() for module in modules]
     failures = [(m["module"], f) for m in tests["modules"] for f in m["failures"]]
     if failures:
         lines += ["", "Failed tests:", ""]
@@ -929,11 +969,16 @@ def failed_projects(bundle: Path | None, root: Path) -> int:
             print(f"[proof] {name} failed, but no test project was found for it at {project}", file=sys.stderr)
             return 1
         projects.append(project)
+    # A module that never reported has no failed result to select, but it proved nothing either.
+    for name in (module for modules in (summary["tests"].get("unreported") or {}).values() for module in modules):
+        project = by_module.get(name, f"tests/{name}/{name}.csproj")
+        if (REPO_ROOT / project).is_file() and project not in projects:
+            projects.append(project)
 
     stages = {stage["name"]: stage["exit_code"] for stage in summary["stages"]}
-    test_stages = ("unit-tests", "integration-tests")
+    test_stages = ("unit-tests", "integration-tests", "unreported-modules")
     others = [name for name, code in stages.items() if code > 0 and name not in test_stages]
-    print(f"[proof] {bundle}: verdict {summary['verdict']}, {len(projects)} failed test module(s)", file=sys.stderr)
+    print(f"[proof] {bundle}: verdict {summary['verdict']}, {len(projects)} failed or unreported test module(s)", file=sys.stderr)
     for name in others:
         rerun = STAGE_RERUN.get(name, f"make {name}-test" if name.startswith("dashboard-") else "make verify-affected")
         print(f"[proof]   stage {name} failed; re-run it with: {rerun}", file=sys.stderr)
