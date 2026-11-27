@@ -39,8 +39,11 @@ export function window(count: number, overrides: Partial<LookupView> = {}): Look
 
 export interface FakeServer {
   catalogue?: Catalogue
-  /** The answers to successive lookups; the last one repeats. An `Error` answers as a failure. */
-  lookups?: (LookupView | DashboardApiError)[]
+  /**
+   * The answers to successive lookups; the last one repeats. An `Error` answers as a failure, and a promise holds the
+   * answer until the test settles it (see `held`).
+   */
+  lookups?: (LookupView | DashboardApiError | Promise<LookupView>)[]
   /** The answer to a reset: its rows, or an error such as a refusal. */
   reset?: { outcome: 'done' | 'skipped' | 'failed'; reason?: string } | DashboardApiError
 }
@@ -84,6 +87,16 @@ export function server(fake: FakeServer) {
 
     throw new DashboardApiError(404, `No fake for ${request.method} ${request.path}`)
   }
+}
+
+/** A lookup answer the server holds until the test calls `release`. */
+export function held() {
+  let release: (view: LookupView) => void = () => undefined
+  const answer = new Promise<LookupView>((resolve) => {
+    release = resolve
+  })
+
+  return { answer, release: (view: LookupView) => release(view) }
 }
 
 export function open(fake: FakeServer = {}, options: RenderModuleOptions = {}) {

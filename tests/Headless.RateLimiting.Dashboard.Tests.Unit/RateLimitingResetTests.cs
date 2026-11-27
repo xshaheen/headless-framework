@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Text;
 using Headless.Dashboard;
 using Headless.RateLimiting;
 using Headless.Testing.Tests;
@@ -16,6 +17,9 @@ public sealed class RateLimitingResetTests : TestBase
     private const string _Reset = RateLimitingHost.Commands + "/rate-limiting.reset";
     private const string _Subject = "someone@example.com";
     private const string _Reason = "Verified by phone";
+    private const string _CustomPurpose = "export.request";
+
+    private static readonly AttemptQuota _CustomQuota = new(3, TimeSpan.FromMinutes(10));
 
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 26, 14, 20, 0, TimeSpan.Zero));
     private readonly RecordingOperatorLog _log = new();
@@ -213,9 +217,13 @@ public sealed class RateLimitingResetTests : TestBase
     }
 
     [Theory]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    public async Task should_reject_a_reset_without_a_reason_or_a_confirmation(bool hasReason, bool confirmed)
+    [InlineData(false, true, "reason")]
+    [InlineData(true, false, "confirmed")]
+    public async Task should_reject_a_reset_without_a_reason_or_a_confirmation(
+        bool hasReason,
+        bool confirmed,
+        string field
+    )
     {
         // given
         await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
@@ -239,7 +247,158 @@ public sealed class RateLimitingResetTests : TestBase
         );
 
         // then
-        response.IsSuccessStatusCode.Should().BeFalse();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await RateLimitingHost.ReadAsync(response, AbortToken))
+            .GetProperty("errors")
+            .TryGetProperty(field, out _)
+            .Should()
+            .BeTrue();
+        (await _PeekAsync(app)).Count.Should().Be(5);
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_a_declared_purpose_with_a_quota_other_than_the_declared_one()
+    {
+        // given
+        await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
+        await _AcquireAsync(app, 5);
+        using var client = RateLimitingHost.Client(app);
+        var cookie = await RateLimitingHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await RateLimitingHost.PostAsync(
+            client,
+            _Reset,
+            new
+            {
+                ids = new[] { _Id(app, RateLimitingHost.Purpose, _Subject) },
+                arguments = new
+                {
+                    subject = _Subject,
+                    limit = 3,
+                    windowSeconds = 900,
+                },
+                reason = _Reason,
+                confirmed = true,
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Contain("declared with 5 per 900 seconds");
+        (await _PeekAsync(app)).Count.Should().Be(5);
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_refuse_an_undeclared_purpose_without_a_quota()
+    {
+        // given
+        await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
+        var limiter = app.Services.GetRequiredService<IAttemptLimiter>();
+        await limiter.AcquireAsync(_CustomPurpose, _Subject, _CustomQuota, AbortToken);
+        using var client = RateLimitingHost.Client(app);
+        var cookie = await RateLimitingHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await _ResetAsync(client, cookie, _Id(app, _CustomPurpose, _Subject), _Subject, _Reason);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Contain("is not declared");
+        (await limiter.PeekAsync(_CustomPurpose, _Subject, _CustomQuota, AbortToken)).Count.Should().Be(1);
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reset_an_undeclared_purpose_with_the_quota_the_caller_names()
+    {
+        // given
+        await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
+        var limiter = app.Services.GetRequiredService<IAttemptLimiter>();
+        await limiter.AcquireAsync(_CustomPurpose, _Subject, _CustomQuota, AbortToken);
+        using var client = RateLimitingHost.Client(app);
+        var cookie = await RateLimitingHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await RateLimitingHost.PostAsync(
+            client,
+            _Reset,
+            new
+            {
+                ids = new[] { _Id(app, _CustomPurpose, _Subject) },
+                arguments = new
+                {
+                    subject = _Subject,
+                    limit = _CustomQuota.Limit,
+                    windowSeconds = (long)_CustomQuota.Window.TotalSeconds,
+                },
+                reason = _Reason,
+                confirmed = true,
+            },
+            cookie,
+            AbortToken
+        );
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await limiter.PeekAsync(_CustomPurpose, _Subject, _CustomQuota, AbortToken)).Count.Should().Be(0);
+        _log.Entries.Should().ContainSingle().Which.Done.Should().Be(1);
+    }
+
+    public static TheoryData<string, HttpStatusCode> SubjectRefusals =>
+        new()
+        {
+            { "{}", HttpStatusCode.BadRequest },
+            { """{"subject":42}""", HttpStatusCode.BadRequest },
+            { """{"subject":""}""", HttpStatusCode.Conflict },
+        };
+
+    [Theory]
+    [MemberData(nameof(SubjectRefusals))]
+    public async Task should_refuse_a_missing_non_string_or_empty_subject(string arguments, HttpStatusCode status)
+    {
+        // given
+        await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
+        await _AcquireAsync(app, 5);
+        using var client = RateLimitingHost.Client(app);
+        var cookie = await RateLimitingHost.SignInAsync(client, "ops", AbortToken);
+        var id = _Id(app, RateLimitingHost.Purpose, _Subject);
+        using var content = new StringContent(
+            $$"""{"ids":["{{id}}"],"arguments":{{arguments}},"reason":"{{_Reason}}","confirmed":true}""",
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        // when
+        using var response = await RateLimitingHost.PostAsync(client, _Reset, content, cookie, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(status);
+        (await _PeekAsync(app)).Count.Should().Be(5);
+        _log.Entries.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("sign-in.password")]
+    [InlineData("sign-in.password:too-short")]
+    public async Task should_refuse_a_target_that_is_not_a_purpose_and_a_fingerprint(string id)
+    {
+        // given
+        await using var app = await RateLimitingHost.StartAsync(_time, _log, AbortToken);
+        await _AcquireAsync(app, 5);
+        using var client = RateLimitingHost.Client(app);
+        var cookie = await RateLimitingHost.SignInAsync(client, "ops", AbortToken);
+
+        // when
+        using var response = await _ResetAsync(client, cookie, id, _Subject, _Reason);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().Contain("{purpose}:{fingerprint}");
         (await _PeekAsync(app)).Count.Should().Be(5);
         _log.Entries.Should().BeEmpty();
     }
@@ -299,7 +458,7 @@ public sealed class RateLimitingResetTests : TestBase
     }
 
     [Fact]
-    public async Task should_answer_a_failed_row_naming_only_the_purpose_when_the_counter_store_fails()
+    public async Task should_answer_a_failed_row_with_an_unknown_outcome_naming_only_the_purpose_when_the_store_fails()
     {
         // given
         var limiter = Substitute.For<IAttemptLimiter>();
@@ -330,7 +489,13 @@ public sealed class RateLimitingResetTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var row = (await RateLimitingHost.ReadAsync(response, AbortToken)).GetProperty("rows")[0];
         row.GetProperty("outcome").GetString().Should().BeEquivalentTo("failed");
-        row.GetProperty("reason").GetString().Should().Be("The attempt limiter for 'sign-in.password' is unavailable.");
+        row.GetProperty("reason")
+            .GetString()
+            .Should()
+            .Be(
+                "The attempt limiter for 'sign-in.password' failed, so the reset's outcome is unknown: the store may "
+                    + "have removed the counter. Look the subject up again before you retry."
+            );
         _log.Entries.Should().ContainSingle().Which.Failed.Should().Be(1);
     }
 

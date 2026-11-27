@@ -150,11 +150,12 @@ internal sealed class RateLimitingCommands(
         {
             removed = await _limiter.ResetAsync(purpose, subject, quota, cancellationToken).ConfigureAwait(false);
         }
-        catch (AttemptLimiterUnavailableException exception)
+        catch (AttemptLimiterUnavailableException)
         {
-            // A failed row, not a throw: the shell logs a failed attempt instead of answering 500, and the message
-            // names the purpose only.
-            return _Row(id, DashboardRowOutcome.Failed, exception.Message);
+            // A failed row, not a throw: the shell logs a failed attempt instead of answering 500. The store's answer
+            // can be lost after it removed the counter, so the reason says the outcome is unknown rather than that
+            // nothing changed, and names the purpose only.
+            return _Row(id, DashboardRowOutcome.Failed, _UnknownOutcome(purpose));
         }
 
         return removed
@@ -210,6 +211,10 @@ internal sealed class RateLimitingCommands(
 
         return (id[..^(_FingerprintLength + 1)], id[^_FingerprintLength..]);
     }
+
+    private static string _UnknownOutcome(string purpose) =>
+        $"The attempt limiter for '{purpose}' failed, so the reset's outcome is unknown: the store may have removed the "
+        + "counter. Look the subject up again before you retry.";
 
     private static int? _ReadInt32(DashboardCommandRequest request, string name) =>
         request.Arguments.TryGetValue(name, out var value) && value.TryGetInt32(out var number) ? number : null;

@@ -74,7 +74,7 @@ The target id is `{purpose}:{fingerprint}`, and the subject is the `subject` arg
 | --- | --- | --- |
 | `done` | the window had attempts and its counter was removed | one entry, `Done = 1` |
 | `skipped`, `No attempts in the current window` | the window had no attempts | one entry, `Skipped = 1` |
-| `failed`, `The attempt limiter for '<purpose>' is unavailable.` | the counter store failed | one entry, `Failed = 1` |
+| `failed`, `The attempt limiter for '<purpose>' failed, so the reset's outcome is unknown: the store may have removed the counter. Look the subject up again before you retry.` | the counter store failed; the counter may or may not be gone | one entry, `Failed = 1` |
 | `409` refusal | the subject does not hash to the target's fingerprint, the reason contains the subject (any case), the quota differs from the declared one, or more than one target | none; the counter is unchanged |
 
 The shell writes the target id and the reason to the operator log as they are and never writes arguments, so the log names the subject only by its fingerprint. That is why a reason that repeats the subject is refused: write `Verified by phone`, not the address.
@@ -83,6 +83,6 @@ A viewer's `GET {base}/api/rate-limiting/commands/allowed?kind=rate-limit-subjec
 
 ## The screen
 
-Rate limits lists the declared purposes with their limit and window, states how many are declared and the shortest window, and shows the counter store when the catalogue serves it. A lookup shows Locked out or Within limit, the count against the limit, the remaining attempts, the window's start and end, the countdown as read with its time, and the fingerprint. Once the window ends, a note replaces the countdown and Refresh reads the current one. Editing the purpose, the quota, or the subject clears the result, so Reset acts only on the subject the result shows. The looked-up subject has no URL by design.
+Rate limits lists the declared purposes with their limit and window, states how many are declared and the shortest window, and shows the counter store when the catalogue serves it. A lookup shows Locked out or Within limit, the count against the limit, the remaining attempts, the window's start and end, the countdown as read with its time, and the fingerprint. Once the window ends, a note replaces the countdown, Reset is refused until Refresh reads the current window, and an open reset confirmation closes. Editing the purpose, the quota, or the subject clears the result and drops a pending lookup's answer, so Reset acts only on the subject the result shows. A failed reset reads the window again and says the outcome is unknown, because the store may have removed the counter. The looked-up subject has no URL by design.
 
 Counts cannot be browsed: the cache has no enumeration, so the screen looks up one subject at a time. Through a hybrid cache a lookup can read a stale local copy and a reset can report done before every instance sees it; point the limiter at the remote cache (`AttemptLimiterOptions.CacheName`, or a registered remote tier) before you rely on the screen.

@@ -49,6 +49,11 @@ import {
 
 const customPurpose = '__custom'
 const noAttempts = 'No attempts in the current window'
+const staleWindow = 'Refresh to read the current window'
+const unknownReset = "The reset's outcome is unknown. Look the subject up again before you retry."
+
+// setTimeout fires at once for a delay above 2^31 - 1 ms (about 24.8 days), so a longer window re-arms at the cap.
+const maxTimerDelay = 2_147_483_647
 
 /**
  * A lookup and what it answered. The subject lives only here, in component state: never in a URL, a route state, or
@@ -87,8 +92,12 @@ export default function RateLimitsView() {
   const [isResetting, setIsResetting] = useState(false)
   const [resetError, setResetError] = useState<string>()
   const [isStale, setIsStale] = useState(false)
-  const [focusAfterReset, setFocusAfterReset] = useState(false)
+  const [resetNotice, setResetNotice] = useState<string>()
+  const [focusResult, setFocusResult] = useState(false)
   const resultRef = useRef<HTMLElement>(null)
+  // Each lookup's generation: an answer commits only while its lookup is still the latest, so a slow answer for an
+  // edited or replaced subject never lands as the result a Reset acts on.
+  const latest = useRef(0)
 
   // The first declared purpose is picked once the catalogue arrives, so the form opens ready to look up.
   const selected = purpose || purposes[0]?.name || customPurpose
@@ -98,6 +107,8 @@ export default function RateLimitsView() {
 
   // The countdown is the one the server read at lookup time; once the window has closed it no longer says anything
   // true, so a note replaces it rather than a countdown past zero.
+  // A closed window also closes the reset confirmation: a reset now would remove the next window's counter, which the
+  // operator never saw.
   useEffect(() => {
     setIsStale(false)
 
@@ -105,22 +116,41 @@ export default function RateLimitsView() {
       return undefined
     }
 
-    const timer = setTimeout(() => setIsStale(true), Math.max(0, Date.parse(windowEndsAt) - Date.now()))
+    const endsAt = Date.parse(windowEndsAt)
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    function close() {
+      setIsStale(true)
+      setIsConfirming(false)
+    }
+
+    function arm() {
+      const delay = endsAt - Date.now()
+      timer = delay > maxTimerDelay ? setTimeout(arm, maxTimerDelay) : setTimeout(close, Math.max(0, delay))
+    }
+
+    arm()
 
     return () => clearTimeout(timer)
   }, [windowEndsAt])
 
+  // Refresh, Retry, and Reset unmount the control that started them while the lookup is pending, so focus returns to
+  // the answer once it settles instead of falling to the page.
   useEffect(() => {
-    if (focusAfterReset && lookup.state === 'found') {
+    if (focusResult && (lookup.state === 'found' || lookup.state === 'failed')) {
       resultRef.current?.focus()
-      setFocusAfterReset(false)
+      setFocusResult(false)
     }
-  }, [focusAfterReset, lookup.state])
+  }, [focusResult, lookup.state])
 
-  // Any edit to what was looked up clears the answer, so a Reset never acts on a subject other than the one shown.
+  // Any edit to what was looked up clears the answer and drops a pending one, so a Reset never acts on a subject other
+  // than the one shown.
   function edit(apply: () => void) {
     apply()
+    latest.current += 1
     setFormError(undefined)
+    setResetNotice(undefined)
+    setFocusResult(false)
     setLookup({ state: 'idle' })
   }
 
@@ -129,21 +159,34 @@ export default function RateLimitsView() {
   }
 
   async function run(call: LookupCall) {
+    const id = ++latest.current
     setLookup({ state: 'pending', call })
 
     try {
       const view = await lookUp(api, call)
-      setLookup({ state: 'found', call, view, readAt: Date.now() })
-      announce(`${(view.isLockedOut ? lockedOut : withinLimit).label}: ${view.count} of ${view.limit} attempts used.`)
+
+      if (id === latest.current) {
+        setLookup({ state: 'found', call, view, readAt: Date.now() })
+        announce(`${(view.isLockedOut ? lockedOut : withinLimit).label}: ${view.count} of ${view.limit} attempts used.`)
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'The lookup failed. Try again.'
-      setLookup({ state: 'failed', call, message })
-      announce(message)
+      if (id === latest.current) {
+        const message = error instanceof Error ? error.message : 'The lookup failed. Try again.'
+        setLookup({ state: 'failed', call, message })
+        announce(message)
+      }
     }
+  }
+
+  function lookUpAgain(call: LookupCall) {
+    setResetNotice(undefined)
+    setFocusResult(true)
+    void run(call)
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setResetNotice(undefined)
 
     if (!subject) {
       setFormError('Type the subject to look up.')
@@ -172,6 +215,7 @@ export default function RateLimitsView() {
     }
 
     const { call, view } = lookup
+    const generation = latest.current
     setIsResetting(true)
     setResetError(undefined)
 
@@ -183,13 +227,16 @@ export default function RateLimitsView() {
         confirmed: true,
       })
 
-      if (row?.outcome === 'failed') {
-        setResetError(row.reason ?? 'The reset failed. Try again.')
+      setIsConfirming(false)
+
+      if (generation !== latest.current) {
         return
       }
 
-      setIsConfirming(false)
-      setFocusAfterReset(true)
+      // A failed reset may still have removed the counter (the store's answer can be lost after it applied), so the
+      // window is read again and the notice says the outcome is unknown rather than that nothing changed.
+      setResetNotice(row?.outcome === 'failed' ? (row.reason ?? unknownReset) : undefined)
+      setFocusResult(true)
       await run(call)
     } catch (error) {
       setResetError(error instanceof DashboardApiError ? error.message : 'The reset failed. Try again.')
@@ -224,14 +271,15 @@ export default function RateLimitsView() {
                 <LookupResult
                   lookup={lookup}
                   isStale={isStale}
+                  notice={resetNotice}
                   resultRef={resultRef}
                   canOperate={module.canOperate}
                   onReset={() => {
                     setResetError(undefined)
                     setIsConfirming(true)
                   }}
-                  onRetry={() => lookup.state === 'failed' && void run(lookup.call)}
-                  onRefresh={() => lookup.state === 'found' && void run(lookup.call)}
+                  onRetry={() => lookup.state === 'failed' && lookUpAgain(lookup.call)}
+                  onRefresh={() => lookup.state === 'found' && lookUpAgain(lookup.call)}
                   asOf={lookup.state === 'found' ? format.exactTime(lookup.readAt) : ''}
                 />
               }
@@ -303,7 +351,7 @@ export default function RateLimitsView() {
                 onChange={(value) => edit(() => setSubject(value))}
               />
             </LookupForm>
-            <PurposesTable catalogue={data} />
+            {data.purposes.length > 0 ? <PurposesTable catalogue={data} /> : null}
             <Callout title="How it works">
               <p>
                 The server turns the subject into a fingerprint with HMAC-SHA256 and the app's SubjectKey, the same way
@@ -389,6 +437,8 @@ function PurposesTable({ catalogue }: { catalogue: Catalogue }) {
 interface LookupResultProps {
   lookup: Lookup
   isStale: boolean
+  /** Why the window was read again after a reset, such as a reset whose outcome is unknown. */
+  notice: string | undefined
   resultRef: RefObject<HTMLElement | null>
   canOperate: boolean
   asOf: string
@@ -400,6 +450,7 @@ interface LookupResultProps {
 function LookupResult({
   lookup,
   isStale,
+  notice,
   resultRef,
   canOperate,
   asOf,
@@ -413,14 +464,34 @@ function LookupResult({
       return null
     case 'failed':
       // A failure never shows a count: a zero here would read as a subject with no attempts.
-      return <LoadError message={lookup.message} onRetry={onRetry} />
+      return (
+        <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+          {notice ? (
+            <Banner tone="warn" role="status">
+              {notice}
+            </Banner>
+          ) : null}
+          <LoadError message={lookup.message} onRetry={onRetry} />
+        </section>
+      )
     case 'found': {
       const { view } = lookup
-      const resetRefusal = !canOperate ? 'Needs operate permission' : view.count === 0 ? noAttempts : undefined
+      const resetRefusal = !canOperate
+        ? 'Needs operate permission'
+        : isStale
+          ? staleWindow
+          : view.count === 0
+            ? noAttempts
+            : undefined
       const status = view.isLockedOut ? lockedOut : withinLimit
 
       return (
         <section ref={resultRef} tabIndex={-1} aria-label="Lookup result">
+          {notice ? (
+            <Banner tone="warn" role="status">
+              {notice}
+            </Banner>
+          ) : null}
           <Text tone="title" as="h3">
             {status.label}
           </Text>
@@ -450,12 +521,14 @@ function LookupResult({
               <Timestamp value={view.windowEndsAt} />
             </GridField>
             <GridField label="Closes in">
-              {isStale
-                ? 'This window has closed; refresh to read the current one.'
-                : `${formatCountdown(view.closesInSeconds)} as of ${asOf}`}
+              {isStale ? 'Closed' : `${formatCountdown(view.closesInSeconds)} as of ${asOf}`}
             </GridField>
           </FieldGrid>
-          {isStale ? <Banner tone="warn">The window shown has closed. Refresh to read the current one.</Banner> : null}
+          {isStale ? (
+            <Banner tone="warn" role="status">
+              The window shown has closed. Refresh to read the current one.
+            </Banner>
+          ) : null}
           <Button onPress={onRefresh}>Refresh</Button>
           <Button variant="danger" icon={DeleteIcon} disabledReason={resetRefusal} onPress={onReset}>
             Reset this window
