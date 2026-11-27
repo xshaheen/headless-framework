@@ -70,10 +70,13 @@ public static class SetupRedisBlob
         _AddBlobsCoreShared(services);
         services.AddOptions<RedisBlobStorageOptions>().PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
 
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddSingleton(new BlobNamingNormalizerRegistration(normalizer));
+
         services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
             serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
             serviceProvider.GetRequiredService<IJsonSerializer>(),
-            new CrossOsNamingNormalizer(),
+            normalizer,
             serviceProvider.GetRequiredService<TimeProvider>()
         ));
 
@@ -84,7 +87,7 @@ public static class SetupRedisBlob
         {
             var options = serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>().Value;
 
-            return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+            return new RedisBlobContainerManager(options.ConnectionMultiplexer, normalizer);
         });
 
         return services;
@@ -95,6 +98,9 @@ public static class SetupRedisBlob
         _AddBlobsCoreShared(services);
         services.AddOptions<RedisBlobStorageOptions>(name).PostConfigure<IServiceProvider>(_UseRegisteredMultiplexer);
 
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddKeyedSingleton(name, new BlobNamingNormalizerRegistration(normalizer));
+
         services.AddKeyedSingleton<IBlobStorage>(
             name,
             (serviceProvider, _) =>
@@ -103,7 +109,7 @@ public static class SetupRedisBlob
                         serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name)
                     ),
                     serviceProvider.GetRequiredService<IJsonSerializer>(),
-                    new CrossOsNamingNormalizer(),
+                    normalizer,
                     serviceProvider.GetRequiredService<TimeProvider>()
                 )
         );
@@ -117,7 +123,7 @@ public static class SetupRedisBlob
             {
                 var options = serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>().Get(name);
 
-                return new RedisBlobContainerManager(options.ConnectionMultiplexer, new CrossOsNamingNormalizer());
+                return new RedisBlobContainerManager(options.ConnectionMultiplexer, normalizer);
             }
         );
 

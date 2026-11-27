@@ -114,11 +114,14 @@ public sealed class HeadlessBlobsTenancyBuilder
             return inner;
         }
 
+        var naming = store is null
+            ? provider.GetService<BlobNamingNormalizerRegistration>()
+            : provider.GetKeyedService<BlobNamingNormalizerRegistration>(store);
         var scope = new TenantBlobScope(
             options.Strategy,
             options.ContainerPrefix,
             provider.GetRequiredService<ICurrentTenant>(),
-            (inner as IBlobNamingNormalizerSource)?.NamingNormalizer
+            naming?.Normalizer
         );
 
         return inner is IPresignedUrlBlobStorage

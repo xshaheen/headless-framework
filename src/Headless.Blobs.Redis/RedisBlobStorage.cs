@@ -38,7 +38,7 @@ namespace Headless.Blobs.Redis;
 /// <see cref="RedisBlobStorageOptions.MaxBlobSizeBytes"/> throw <see cref="ArgumentException"/>.
 /// </para>
 /// </remarks>
-internal sealed class RedisBlobStorage : IBlobStorage, IBlobNamingNormalizerSource
+internal sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
@@ -140,8 +140,6 @@ internal sealed class RedisBlobStorage : IBlobStorage, IBlobNamingNormalizerSour
 
     // Redis has no physical container: the backing hash is created lazily by the first write (see type remarks).
     public bool RequiresContainerProvisioning => false;
-
-    IBlobNamingNormalizer IBlobNamingNormalizerSource.NamingNormalizer => _normalizer;
 
     public RedisBlobStorage(
         IOptions<RedisBlobStorageOptions> optionsAccessor,

@@ -15,15 +15,11 @@ namespace Headless.Blobs;
 /// </remarks>
 internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, BlobSignedUrlSigner signer)
     : IBlobStorage,
-        IPresignedUrlBlobStorage,
-        IBlobNamingNormalizerSource
+        IPresignedUrlBlobStorage
 {
     private bool _disposed;
 
     public bool RequiresContainerProvisioning => inner.RequiresContainerProvisioning;
-
-    IBlobNamingNormalizer? IBlobNamingNormalizerSource.NamingNormalizer =>
-        (inner as IBlobNamingNormalizerSource)?.NamingNormalizer;
 
     public PresignedUploadConstraintKinds SupportedUploadConstraints =>
         PresignedUploadConstraintKinds.ContentType | PresignedUploadConstraintKinds.MaxLength;

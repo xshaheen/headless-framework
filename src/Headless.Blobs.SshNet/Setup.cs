@@ -66,6 +66,9 @@ public static class SetupSsh
     {
         _AddSshSharedServices(services);
 
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddSingleton(new BlobNamingNormalizerRegistration(normalizer));
+
         // Pool is registered as a DI singleton so the container owns its disposal. Built via a factory so a
         // missing ILogger (host without AddLogging) falls back to NullLogger instead of failing activation.
         services.AddSingleton(serviceProvider => new SftpClientPool(
@@ -75,7 +78,7 @@ public static class SetupSsh
 
         services.AddSingleton<IBlobStorage>(serviceProvider => new SshBlobStorage(
             serviceProvider.GetRequiredService<SftpClientPool>(),
-            new CrossOsNamingNormalizer(),
+            normalizer,
             serviceProvider.GetRequiredService<IJsonSerializer>(),
             serviceProvider.GetRequiredService<IOptionsMonitor<SshBlobStorageOptions>>(),
             serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
@@ -86,7 +89,7 @@ public static class SetupSsh
         // provider registers a dedicated manager that shares the DI-owned pool with the storage.
         services.AddSingleton<IBlobContainerManager>(serviceProvider => new SshBlobContainerManager(
             serviceProvider.GetRequiredService<SftpClientPool>(),
-            new CrossOsNamingNormalizer(),
+            normalizer,
             serviceProvider.GetService<ILogger<SshBlobContainerManager>>()
                 ?? NullLogger<SshBlobContainerManager>.Instance
         ));
@@ -97,6 +100,9 @@ public static class SetupSsh
     internal static IServiceCollection AddBlobsNamedCore(IServiceCollection services, string name)
     {
         _AddSshSharedServices(services);
+
+        var normalizer = new CrossOsNamingNormalizer();
+        services.AddKeyedSingleton(name, new BlobNamingNormalizerRegistration(normalizer));
 
         // Each named store gets its own pool bound to its named options. The pool is registered as a keyed
         // singleton so the DI container owns its lifecycle and calls Dispose when the provider is disposed.
@@ -123,7 +129,7 @@ public static class SetupSsh
 
                 return new SshBlobStorage(
                     pool,
-                    new CrossOsNamingNormalizer(),
+                    normalizer,
                     serviceProvider.GetRequiredService<IJsonSerializer>(),
                     namedMonitor,
                     serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
@@ -139,7 +145,7 @@ public static class SetupSsh
             (serviceProvider, _) =>
                 new SshBlobContainerManager(
                     serviceProvider.GetRequiredKeyedService<SftpClientPool>(name),
-                    new CrossOsNamingNormalizer(),
+                    normalizer,
                     serviceProvider.GetService<ILogger<SshBlobContainerManager>>()
                         ?? NullLogger<SshBlobContainerManager>.Instance
                 )
