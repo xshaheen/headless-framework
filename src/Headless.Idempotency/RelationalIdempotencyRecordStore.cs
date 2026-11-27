@@ -812,9 +812,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 {
                     return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
-                catch (DbException ex) when (ct.IsCancellationRequested)
+                catch (Exception ex) when (SqlCancellation.IsCancellation(ex, ct))
                 {
-                    throw new OperationCanceledException(ex.Message, ex, ct);
+                    throw SqlCancellation.ToOperationCanceled(ex, ct);
                 }
             },
             cancellationToken
@@ -924,9 +924,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             return await operation(cancellationToken).ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 
@@ -950,9 +950,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 .ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 
@@ -962,9 +962,9 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         {
             return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 

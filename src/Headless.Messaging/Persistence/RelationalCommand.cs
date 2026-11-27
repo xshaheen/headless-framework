@@ -2,15 +2,102 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Sql;
 
 namespace Headless.Messaging.Persistence;
 
 #pragma warning disable CA2100 // SQL text is rendered by the storage from dialect output and fixed fragments; every value is a parameter.
 
 /// <summary>Runs one command on a connection, opening it first when it is closed.</summary>
+/// <remarks>
+/// Every Messaging storage command runs through here, on its own connection or the caller's transaction, so a cancel
+/// that interrupts a running statement surfaces as <see cref="OperationCanceledException" /> on every engine
+/// (<see cref="SqlCancellation" />), not as SqlClient's <c>SqlException</c>.
+/// </remarks>
 internal static class RelationalCommand
 {
-    public static async Task<int> ExecuteNonQueryAsync(
+    public static Task<int> ExecuteNonQueryAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        int timeoutSeconds,
+        Action<DbCommand>? bind,
+        CancellationToken cancellationToken
+    )
+    {
+        return SqlCancellation.ObserveAsync(
+            _ExecuteNonQueryAsync(connection, transaction, sql, timeoutSeconds, bind, cancellationToken),
+            cancellationToken
+        );
+    }
+
+    public static Task<T> ExecuteReaderAsync<T>(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        int timeoutSeconds,
+        Action<DbCommand>? bind,
+        Func<DbDataReader, CancellationToken, Task<T>> read,
+        CancellationToken cancellationToken
+    )
+    {
+        return SqlCancellation.ObserveAsync(
+            _ExecuteReaderAsync(connection, transaction, sql, timeoutSeconds, bind, read, cancellationToken),
+            cancellationToken
+        );
+    }
+
+    public static Task<object?> ExecuteScalarAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        int timeoutSeconds,
+        Action<DbCommand>? bind,
+        CancellationToken cancellationToken
+    )
+    {
+        return SqlCancellation.ObserveAsync(
+            _ExecuteScalarAsync(connection, transaction, sql, timeoutSeconds, bind, cancellationToken),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Runs <paramref name="sql"/> once per entry of <paramref name="binds"/>, in order, sending the statements together
+    /// as a <see cref="DbBatch"/> where the provider supports one, and reads each statement's result set with
+    /// <paramref name="read"/> and the entry's index.
+    /// </summary>
+    /// <remarks>
+    /// A batch never carries more than <paramref name="maxParameters"/> parameters, so a long run is split into as
+    /// many batches as that takes. A provider without batching (SQLite), or a run of one entry, runs one command per entry instead.
+    /// </remarks>
+    public static Task ExecuteBatchReaderAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string sql,
+        int timeoutSeconds,
+        IReadOnlyList<Action<DbCommand>> binds,
+        int maxParameters,
+        Func<DbDataReader, int, CancellationToken, Task> read,
+        CancellationToken cancellationToken
+    )
+    {
+        return SqlCancellation.ObserveAsync(
+            _ExecuteBatchReaderAsync(
+                connection,
+                transaction,
+                sql,
+                timeoutSeconds,
+                binds,
+                maxParameters,
+                read,
+                cancellationToken
+            ),
+            cancellationToken
+        );
+    }
+
+    private static async Task<int> _ExecuteNonQueryAsync(
         DbConnection connection,
         DbTransaction? transaction,
         string sql,
@@ -32,7 +119,7 @@ internal static class RelationalCommand
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<T> ExecuteReaderAsync<T>(
+    private static async Task<T> _ExecuteReaderAsync<T>(
         DbConnection connection,
         DbTransaction? transaction,
         string sql,
@@ -56,7 +143,7 @@ internal static class RelationalCommand
         return await read(reader, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async Task<object?> ExecuteScalarAsync(
+    private static async Task<object?> _ExecuteScalarAsync(
         DbConnection connection,
         DbTransaction? transaction,
         string sql,
@@ -93,16 +180,7 @@ internal static class RelationalCommand
         }
     }
 
-    /// <summary>
-    /// Runs <paramref name="sql"/> once per entry of <paramref name="binds"/>, in order, sending the statements together
-    /// as a <see cref="DbBatch"/> where the provider supports one, and reads each statement's result set with
-    /// <paramref name="read"/> and the entry's index.
-    /// </summary>
-    /// <remarks>
-    /// A batch never carries more than <paramref name="maxParameters"/> parameters, so a long run is split into as
-    /// many batches as that takes. A provider without batching (SQLite), or a run of one entry, runs one command per entry instead.
-    /// </remarks>
-    public static async Task ExecuteBatchReaderAsync(
+    private static async Task _ExecuteBatchReaderAsync(
         DbConnection connection,
         DbTransaction? transaction,
         string sql,
@@ -119,7 +197,7 @@ internal static class RelationalCommand
             for (var i = 0; i < binds.Count; i++)
             {
                 var index = i;
-                await ExecuteReaderAsync(
+                await _ExecuteReaderAsync(
                         connection,
                         transaction,
                         sql,

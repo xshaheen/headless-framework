@@ -232,7 +232,9 @@ internal static class JobsSubtreeLeaseWalk
                 set.ToWrite().Bind?.Invoke(command);
 
                 var slid = new List<Guid>();
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var reader = await SqlCancellation
+                    .ObserveAsync(command.ExecuteReaderAsync(cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
 
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {

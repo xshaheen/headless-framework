@@ -144,7 +144,9 @@ internal static class JobsLeaseGrant
             extra.Bind?.Invoke(command);
 
             var granted = new List<JobsGrantedRow>(ids.Count);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var reader = await SqlCancellation
+                .ObserveAsync(command.ExecuteReaderAsync(cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

@@ -51,19 +51,6 @@ internal sealed class RelationalSequenceStore(
         CancellationToken cancellationToken = default
     )
     {
-        return RelationalCancellation.ObserveAsync(
-            _IncrementAsync(key, insertValue, delta, cancellationToken),
-            cancellationToken
-        );
-    }
-
-    private ValueTask<long> _IncrementAsync(
-        SequenceKey key,
-        long insertValue,
-        long delta,
-        CancellationToken cancellationToken
-    )
-    {
         if (_autocommitIncrementSql is { } sql)
         {
             // The command commits on its own (one atomic statement, or a batch that opens and commits its own
@@ -137,11 +124,9 @@ internal sealed class RelationalSequenceStore(
         // settings stay as the caller set them.
         var (connection, transaction) = _RequireLive(unitOfWork);
 
-        return await RelationalCancellation
+        return await SqlCancellation
             .ObserveAsync(
-                new ValueTask<long>(
-                    _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken)
-                ),
+                _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -157,7 +142,7 @@ internal sealed class RelationalSequenceStore(
     {
         var (connection, transaction) = _RequireLive(unitOfWork);
 
-        return await RelationalCancellation
+        return await SqlCancellation
             .ObserveAsync(
                 _AdvanceAsync(connection, transaction, key, value, baseline, cancellationToken),
                 cancellationToken

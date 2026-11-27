@@ -152,7 +152,7 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
             ) capped;
             """;
 
-        var read = SqlAutonomousRead.RunAsync(
+        return SqlAutonomousRead.RunAsync(
             "sequences.inspect.summary",
             () => _dialect.CreateConnection(_options.ConnectionString),
             async (connection, ct) =>
@@ -179,8 +179,6 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
             _timeProvider,
             cancellationToken
         );
-
-        return RelationalCancellation.ObserveAsync(read, cancellationToken);
     }
 
     /// <summary>Adds the filter's predicates and returns the binding of their parameters.</summary>
@@ -313,7 +311,7 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
         CancellationToken cancellationToken
     )
     {
-        var read = SqlAutonomousRead.RunAsync<IReadOnlyList<SequenceCounterRecord>>(
+        return SqlAutonomousRead.RunAsync<IReadOnlyList<SequenceCounterRecord>>(
             operation,
             () => _dialect.CreateConnection(_options.ConnectionString),
             async (connection, ct) =>
@@ -341,8 +339,6 @@ internal sealed class RelationalSequenceCounterReader : ISequenceCounterReader
             _timeProvider,
             cancellationToken
         );
-
-        return RelationalCancellation.ObserveAsync(read, cancellationToken);
     }
 
     private DbCommand _Command(DbConnection connection, string sql)

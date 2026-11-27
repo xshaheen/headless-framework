@@ -1544,9 +1544,9 @@ public static class FencedRows
                 .ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 
@@ -1556,9 +1556,9 @@ public static class FencedRows
         {
             return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 

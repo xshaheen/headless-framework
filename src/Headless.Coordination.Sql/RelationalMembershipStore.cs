@@ -655,9 +655,9 @@ internal sealed class RelationalMembershipStore : IMembershipStore
             return await execute().ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 

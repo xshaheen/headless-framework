@@ -151,7 +151,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_retry_a_transient_fault_observed_after_the_caller_cancelled()
+    public async Task should_report_a_fault_observed_after_the_caller_cancelled_as_the_cancellation_without_a_retry()
     {
         using var cancellation = new CancellationTokenSource();
         var connections = new List<FakeConnection>();
@@ -171,8 +171,60 @@ public sealed class SqlAutonomousTransactionTests : TestBase
                 cancellation.Token
             );
 
-        (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(fault);
+        // SqlClient reports a cancel that interrupts a running command as a SqlException; the caller sees the cancel it
+        // asked for on every engine, with the driver's fault kept as the inner exception.
+        var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+        thrown.Which.InnerException.Should().BeSameAs(fault);
+        thrown.Which.CancellationToken.Should().Be(cancellation.Token);
         connections.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_pass_a_driver_cancellation_through_without_wrapping_it_again()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var canceled = new OperationCanceledException("driver cancel");
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RetryAsync<int>(
+                "test.call",
+                async (_, _) =>
+                {
+                    await cancellation.CancelAsync();
+
+                    throw canceled;
+                },
+                TimeProvider.System,
+                cancellationToken: cancellation.Token
+            );
+
+        (await act.Should().ThrowAsync<OperationCanceledException>()).Which.Should().BeSameAs(canceled);
+    }
+
+    [Fact]
+    public async Task should_surface_a_commit_fault_unchanged_even_after_the_caller_cancelled()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var fault = new FakeDbException(isTransient: false);
+
+        var act = async () =>
+            await SqlAutonomousTransaction.RetryAsync<int>(
+                "test.call",
+                async (attempt, _) =>
+                {
+                    attempt.MarkCommitStarted();
+                    await cancellation.CancelAsync();
+
+                    throw fault;
+                },
+                TimeProvider.System,
+                cancellationToken: cancellation.Token
+            );
+
+        // The commit may have landed, so reporting a cancel would tell the caller the write did not happen.
+        (await act.Should().ThrowAsync<FakeDbException>())
+            .Which.Should()
+            .BeSameAs(fault);
     }
 
     [Fact]
