@@ -140,7 +140,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
     private sealed class MonitorBucket
     {
         private readonly Lock _syncRoot = new();
-        private readonly Dictionary<string, WeakReference<LeaseMonitor>> _monitors = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, WeakReference<LeaseMonitor>> _monitors = [with(StringComparer.Ordinal)];
         private bool _isRemoved;
 
         public bool TryRegister(string leaseId, LeaseMonitor monitor)

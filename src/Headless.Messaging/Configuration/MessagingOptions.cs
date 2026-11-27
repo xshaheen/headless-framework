@@ -475,6 +475,7 @@ public sealed class MessagingOptions
         target.IncludeFields = source.IncludeFields;
         target.IndentCharacter = source.IndentCharacter;
         target.IndentSize = source.IndentSize;
+        target.InferClosedTypePolymorphism = source.InferClosedTypePolymorphism;
         target.MaxDepth = source.MaxDepth;
         target.NewLine = source.NewLine;
         target.NumberHandling = source.NumberHandling;
@@ -496,6 +497,13 @@ public sealed class MessagingOptions
         foreach (var converter in source.Converters)
         {
             target.Converters.Add(converter);
+        }
+
+        target.TypeClassifiers.Clear();
+
+        foreach (var classifier in source.TypeClassifiers)
+        {
+            target.TypeClassifiers.Add(classifier);
         }
 
         foreach (var modifier in source.TypeInfoResolverChain)

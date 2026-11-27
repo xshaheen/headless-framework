@@ -13,7 +13,7 @@ namespace Headless.Hosting;
 [PublicAPI]
 public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
 {
-    private readonly Dictionary<string, object?> _state = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, object?> _state = [with(StringComparer.Ordinal)];
 
     /// <summary>Gets the number of properties currently held in this log state.</summary>
     public int Count => _state.Count;

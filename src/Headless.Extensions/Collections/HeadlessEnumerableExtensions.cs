@@ -159,7 +159,7 @@ public static partial class HeadlessEnumerableExtensions
 
         // The IDictionary copy constructor pre-sizes the backing store and copies pairs directly, avoiding the
         // two key/value selector delegate invocations per element that ToDictionary performs.
-        return new Dictionary<TKey, TValue>(dict);
+        return [with(dict)];
     }
 
     /// <summary>

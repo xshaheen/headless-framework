@@ -121,7 +121,7 @@ public sealed class SignedUrlAccessLogTests : TestBase
         const string marker = "token ";
         var start = entry.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
 
-        return entry[start..entry.IndexOf(',', start)];
+        return entry[start..entry.IndexOf(',', start, StringComparison.Ordinal)];
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider

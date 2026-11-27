@@ -39,5 +39,5 @@ public sealed class TestCurrentUser : ICurrentUser
     /// Mutable role set. Add or remove roles here to control what <see cref="Roles"/> returns.
     /// Uses ordinal string comparison.
     /// </summary>
-    public HashSet<string> WritableRoles { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> WritableRoles { get; } = [with(StringComparer.Ordinal)];
 }

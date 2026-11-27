@@ -123,6 +123,26 @@ public sealed class RunHeadlessCheckTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_the_check_failure_when_the_run_is_already_cancelled()
+    {
+        // given
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder =>
+                builder.Services.AddStartupValidator(_ => new FailingValidator("The cache provider is missing.")),
+            ["check"],
+            cancelled.Token
+        );
+
+        // then
+        run.ExitCode.Should().Be(1);
+        run.StandardError.Should().Contain("Host check failed:");
+    }
+
+    [Fact]
     public async Task should_never_start_a_hosted_service_while_checking()
     {
         // given

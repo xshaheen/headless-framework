@@ -176,7 +176,7 @@ internal static class JobsViews
     /// </summary>
     public static (string? Type, string? Message, string? Stack) ReadException(string? stored)
     {
-        if (string.IsNullOrEmpty(stored) || !stored.StartsWith('{'))
+        if (string.IsNullOrEmpty(stored) || !stored.StartsWith('{', StringComparison.Ordinal))
         {
             return (null, stored, null);
         }

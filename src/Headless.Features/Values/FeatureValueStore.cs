@@ -638,7 +638,7 @@ public sealed class FeatureValueStore(
         var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken)
             .ConfigureAwait(false);
 
-        Dictionary<string, FeatureValueCacheItem> cacheItems = new(StringComparer.Ordinal);
+        Dictionary<string, FeatureValueCacheItem> cacheItems = [with(StringComparer.Ordinal)];
         string? featureValueToFind = null;
 
         foreach (var featureDefinition in definitions)

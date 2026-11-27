@@ -32,7 +32,7 @@ internal static class DashboardSpaHelper
             return "/";
         }
 
-        if (!basePath.StartsWith('/'))
+        if (!basePath.StartsWith('/', StringComparison.Ordinal))
         {
             basePath = "/" + basePath;
         }

@@ -253,7 +253,7 @@ public sealed class RequestLogEnricherTests : TestBase
 
     private sealed class Collector : IEnrichmentTagCollector
     {
-        public Dictionary<string, object> Tags { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, object> Tags { get; } = [with(StringComparer.Ordinal)];
 
         public void Add(string tagName, object tagValue) => Tags[tagName] = tagValue;
     }

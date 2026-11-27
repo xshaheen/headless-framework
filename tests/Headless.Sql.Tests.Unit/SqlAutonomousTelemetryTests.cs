@@ -241,7 +241,9 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
                 cancellationToken: cancellation.Token
             );
 
-        await act.Should().ThrowAsync<FakeDbException>();
+        (await act.Should().ThrowAsync<OperationCanceledException>())
+            .Which.InnerException.Should()
+            .BeOfType<FakeDbException>();
 
         _ShouldEndWith(recorder, "canceled", attempts: 1);
         recorder.Of(_Retries).Should().BeEmpty();

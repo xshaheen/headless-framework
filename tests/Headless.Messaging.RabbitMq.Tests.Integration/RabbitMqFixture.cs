@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
+using DotNet.Testcontainers.Containers;
 using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
@@ -20,7 +22,52 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixture<RabbitMqFixture>
 {
+    // A rabbitmqctl process occasionally stalls at startup and never reaches the node, and a container exec waits for
+    // the process with no bound of its own, so an unbounded call holds the module until the runner's hang timeout.
+    private static readonly TimeSpan _RabbitMqCtlTimeout = TimeSpan.FromSeconds(30);
+
+    // A stalled read-only list_* call is asked again, since asking again cannot change broker state. A command that
+    // changes state gets one attempt, so a stall fails it.
+    private const int _ReadOnlyAttempts = 3;
+
     private IConnection? _connection;
+
+    /// <summary>
+    /// Runs <c>rabbitmqctl</c> in the broker container, failing with <see cref="TimeoutException"/> when the call
+    /// stalls instead of waiting for it forever.
+    /// </summary>
+    public async Task<ExecResult> RabbitMqCtlAsync(IList<string> arguments, CancellationToken cancellationToken)
+    {
+        var attempts =
+            arguments.Count > 0 && arguments[0].StartsWith("list_", StringComparison.Ordinal) ? _ReadOnlyAttempts : 1;
+        var perAttempt = _RabbitMqCtlTimeout / attempts;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            bounded.CancelAfter(perAttempt);
+
+            try
+            {
+                return await Container.ExecAsync(["rabbitmqctl", .. arguments], bounded.Token);
+            }
+            catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+            {
+                if (attempt < attempts)
+                {
+                    continue;
+                }
+
+                throw new TimeoutException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"rabbitmqctl {string.Join(' ', arguments)} did not finish within {_RabbitMqCtlTimeout} ({attempts} attempt(s))."
+                    ),
+                    e
+                );
+            }
+        }
+    }
 
     /// <summary>
     /// Deletes <paramref name="queueName"/> the way an operator does, from the broker node rather than an AMQP
@@ -28,10 +75,7 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     /// </summary>
     public async Task DeleteQueueAsOperatorAsync(string queueName, CancellationToken cancellationToken)
     {
-        var result = await Container.ExecAsync(
-            ["rabbitmqctl", "delete_queue", "-p", VirtualHost, queueName],
-            cancellationToken
-        );
+        var result = await RabbitMqCtlAsync(["delete_queue", "-p", VirtualHost, queueName], cancellationToken);
 
         if (result.ExitCode != 0)
         {
@@ -47,18 +91,8 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
     /// </summary>
     public async Task<IReadOnlyList<RabbitMqBrokerQueue>> ListQueuesAsOperatorAsync(CancellationToken cancellationToken)
     {
-        var result = await Container.ExecAsync(
-            [
-                "rabbitmqctl",
-                "list_queues",
-                "-p",
-                VirtualHost,
-                "-q",
-                "--no-table-headers",
-                "name",
-                "durable",
-                "exclusive",
-            ],
+        var result = await RabbitMqCtlAsync(
+            ["list_queues", "-p", VirtualHost, "-q", "--no-table-headers", "name", "durable", "exclusive"],
             cancellationToken
         );
 

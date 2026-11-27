@@ -378,7 +378,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
     {
         var messagingTagScope = tag.Key.Replace(_TagPrefix, "", StringComparison.OrdinalIgnoreCase);
 
-        if (messagingTagScope.StartsWith('.'))
+        if (messagingTagScope.StartsWith('.', StringComparison.Ordinal))
         {
             messagingTagScope = messagingTagScope[1..];
         }

@@ -638,7 +638,8 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         }
 
         // Backing fields are never public, but a compiler-generated field is not data the type declared.
-        return !member.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false) && !member.Name.StartsWith('<');
+        return !member.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false)
+            && !member.Name.StartsWith('<', StringComparison.Ordinal);
     }
 
     private static Type _MemberType(MemberInfo member) =>
@@ -938,7 +939,7 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
         /// <summary>The elements read, or <see langword="null"/> when the enumerator threw.</summary>
         public List<object?>? Read(IEnumerable sequence)
         {
-            _reads ??= new Dictionary<object, SequenceRead>(ReferenceEqualityComparer.Instance);
+            _reads ??= [with(ReferenceEqualityComparer.Instance)];
 
             if (_reads.TryGetValue(sequence, out var read))
             {
@@ -998,9 +999,9 @@ internal sealed class ClassifiedObjectProjection(IRedactorProvider redactorProvi
 
         // Reference equality: a record's own Equals and GetHashCode walk its members, and on a cyclic graph never
         // return.
-        public HashSet<object> Seen { get; } = new(ReferenceEqualityComparer.Instance);
+        public HashSet<object> Seen { get; } = [with(ReferenceEqualityComparer.Instance)];
 
-        public HashSet<object> Projecting { get; } = new(ReferenceEqualityComparer.Instance);
+        public HashSet<object> Projecting { get; } = [with(ReferenceEqualityComparer.Instance)];
 
         public SequenceReads Reads { get; } = new();
 

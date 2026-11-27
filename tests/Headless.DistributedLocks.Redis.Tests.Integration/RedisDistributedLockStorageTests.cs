@@ -519,7 +519,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
     {
         var value = key.ToString();
         var start = value.IndexOf('{', StringComparison.Ordinal);
-        var end = value.IndexOf('}', start + 1);
+        var end = value.IndexOf('}', start + 1, StringComparison.Ordinal);
 
         return value[(start + 1)..end];
     }

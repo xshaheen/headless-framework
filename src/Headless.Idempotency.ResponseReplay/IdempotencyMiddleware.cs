@@ -693,7 +693,7 @@ internal sealed partial class IdempotencyMiddleware(
         var serializerOptions = context
             .RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>()
             .Value.SerializerOptions;
-        var body = JsonSerializer.SerializeToUtf8Bytes(problem, serializerOptions.GetTypeInfo(typeof(ProblemDetails)));
+        var body = JsonSerializer.SerializeToUtf8Bytes(problem, serializerOptions.GetTypeInfo<ProblemDetails>());
         var headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             [Microsoft.Net.Http.Headers.HeaderNames.ContentType] = ["application/problem+json"],

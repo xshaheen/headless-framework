@@ -32,7 +32,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 {
     private static readonly TimeSpan _MinimumSnapshotReadTimeout = TimeSpan.FromSeconds(5);
     private readonly Lock _gate = new();
-    private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _reclaimed = [with(StringComparer.Ordinal)];
 
     /// <summary>Gets the effective reconcile cadence after the dead-retention clamp.</summary>
     /// <remarks>

@@ -189,6 +189,21 @@ public sealed class RunHeadlessResourcesTests : TestBase
     }
 
     [Fact]
+    public async Task should_print_the_usage_error_when_the_run_is_already_cancelled()
+    {
+        // given
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var run = await HostConsoleRun.RunAsync(_ => { }, ["resources"], cancelled.Token);
+
+        // then
+        run.ExitCode.Should().Be(2);
+        run.StandardError.Should().Contain("A subcommand is required.").And.Contain("Usage: resources");
+    }
+
+    [Fact]
     public async Task should_note_in_the_list_a_resource_that_cannot_purge_or_delete()
     {
         // given

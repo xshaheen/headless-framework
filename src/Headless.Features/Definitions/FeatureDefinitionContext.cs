@@ -11,7 +11,7 @@ namespace Headless.Features;
 public sealed class FeatureDefinitionContext : IFeatureDefinitionContext
 {
     /// <summary>All registered feature groups, keyed by name using ordinal comparison.</summary>
-    internal Dictionary<string, FeatureGroupDefinition> Groups { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, FeatureGroupDefinition> Groups { get; } = [with(StringComparer.Ordinal)];
 
     /// <summary>Adds a new feature group with the given <paramref name="name"/> and optional <paramref name="displayName"/>.</summary>
     /// <param name="name">The unique name for the feature group.</param>

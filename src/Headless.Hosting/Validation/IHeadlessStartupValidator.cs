@@ -22,7 +22,7 @@ namespace Headless.Hosting;
 /// with a mode, not here.
 /// </para>
 /// <para>
-/// The <c>Headless</c> prefix keeps the name distinct from <c>Microsoft.Extensions.Options.IStartupValidator</c>, which
+/// The <c>Headless</c> prefix keeps the name distinct from <c>Microsoft.Extensions.Options.IAsyncStartupValidator</c>, which
 /// most files that register services also import.
 /// </para>
 /// </remarks>

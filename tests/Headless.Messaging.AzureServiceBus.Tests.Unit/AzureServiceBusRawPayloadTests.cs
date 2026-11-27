@@ -369,7 +369,7 @@ public sealed class AzureServiceBusRawPayloadTests : TestBase
             body: new BinaryData("{\"ok\":true}"u8.ToArray()),
             messageId: messageId,
             subject: subject,
-            properties: properties ?? new Dictionary<string, object>(StringComparer.Ordinal),
+            properties: properties ?? [with(StringComparer.Ordinal)],
             lockTokenGuid: Guid.NewGuid(),
             deliveryCount: deliveryCount,
             sequenceNumber: _SequenceNumber,

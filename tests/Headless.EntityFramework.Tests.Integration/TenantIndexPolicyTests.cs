@@ -85,6 +85,10 @@ public sealed class TenantIndexPolicyTests : TestBase
         _AssertInvalid<TenantIncluded>("*cannot preserve annotation 'Npgsql:IndexInclude'*");
 
     [Fact]
+    public void should_reject_an_index_that_lists_a_complex_property() =>
+        _AssertInvalid<ComplexPropertyIndex>("*must list only scalar properties*");
+
+    [Fact]
     public void should_reject_fulltext_expression_indexes() =>
         _AssertInvalid<FulltextIndex>("*cannot preserve annotation 'Npgsql:TsVectorConfig'*");
 
@@ -221,6 +225,17 @@ public sealed class TenantIndexPolicyTests : TestBase
                 .IsTsVectorExpressionIndex("english");
     }
 
+    private sealed class ComplexPropertyIndex : IPolicy
+    {
+        public static void Configure(ModelBuilder builder)
+        {
+            var located = builder.Entity<LocatedRow>();
+            located.IsTenantOwned();
+            located.ComplexProperty(x => x.Location);
+            located.HasIndex(x => x.Location).IsUnique().IsTenantScoped();
+        }
+    }
+
     private sealed class TenantIncluded : IPolicy
     {
         public static void Configure(ModelBuilder builder)
@@ -231,6 +246,17 @@ public sealed class TenantIndexPolicyTests : TestBase
                 "TenantId"
             );
         }
+    }
+
+    private sealed class LocatedRow
+    {
+        public int Id { get; set; }
+        public Location Location { get; set; } = new();
+    }
+
+    private sealed class Location
+    {
+        public string? City { get; set; }
     }
 
     private sealed class Row

@@ -75,8 +75,8 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
 
                 var target = grantStatus switch
                 {
-                    PermissionGrantStatus.Granted => granting ??= new(StringComparer.Ordinal),
-                    PermissionGrantStatus.Prohibited => prohibiting ??= new(StringComparer.Ordinal),
+                    PermissionGrantStatus.Granted => granting ??= [with(StringComparer.Ordinal)],
+                    PermissionGrantStatus.Prohibited => prohibiting ??= [with(StringComparer.Ordinal)],
                     _ => null,
                 };
 

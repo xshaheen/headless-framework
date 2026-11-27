@@ -14,7 +14,7 @@ namespace Headless.Blobs;
 [PublicAPI]
 public sealed class HeadlessBlobsSetupBuilder
 {
-    private readonly HashSet<string> _instanceNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _instanceNames = [with(StringComparer.Ordinal)];
 
     internal HeadlessBlobsSetupBuilder(IServiceCollection services)
     {

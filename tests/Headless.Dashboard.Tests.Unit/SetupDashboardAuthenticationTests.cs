@@ -147,7 +147,7 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
     }
 
     [Fact]
-    public void add_dashboard_authentication_fails_startup_for_a_configured_custom_mode()
+    public async Task add_dashboard_authentication_fails_startup_for_a_configured_custom_mode()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["Mode"] = "Custom" })
@@ -156,10 +156,10 @@ public sealed class SetupDashboardAuthenticationTests : TestBase
         services.AddLogging();
         services.AddDashboardAuthentication(_Name, configuration);
 
-        using var provider = services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+        await using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(AbortToken);
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Mode*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Mode*");
     }
 
     [Theory]

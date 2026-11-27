@@ -55,7 +55,7 @@ if dependency:
     dependency_id, dependency_version = dependency.split("@", 1)
     dependencies = f'''
     <dependencies>
-      <group targetFramework="net10.0">
+      <group targetFramework="net11.0">
         <dependency id="{dependency_id}" version="{dependency_version}" exclude="Build,Analyzers" />
         <dependency id="Polly" version="8.5.0" exclude="Build,Analyzers" />
       </group>
@@ -88,7 +88,7 @@ sbom = {
 
 with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     archive.writestr(f"{package_id}.nuspec", nuspec)
-    archive.writestr("lib/net10.0/placeholder.txt", "test")
+    archive.writestr("lib/net11.0/placeholder.txt", "test")
     if include_sbom == "true":
         archive.writestr("_manifest/spdx_2.2/manifest.spdx.json", json.dumps(sbom))
     elif include_sbom == "invalid":

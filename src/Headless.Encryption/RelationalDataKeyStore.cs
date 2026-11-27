@@ -319,23 +319,15 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         CancellationToken cancellationToken
     )
     {
-        try
-        {
-            return await SqlAutonomousRead
-                .RunAsync(
-                    operation,
-                    () => _dialect.CreateConnection(_options.ConnectionString),
-                    body,
-                    _timeProvider,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
-        }
+        return await SqlAutonomousRead
+            .RunAsync(
+                operation,
+                () => _dialect.CreateConnection(_options.ConnectionString),
+                body,
+                _timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task<T> _RunAsync<T>(
@@ -344,23 +336,15 @@ internal sealed class RelationalDataKeyStore : IDataKeyStore
         CancellationToken cancellationToken
     )
     {
-        try
-        {
-            return await SqlAutonomousTransaction
-                .RunAsync(
-                    operation,
-                    () => _dialect.CreateConnection(_options.ConnectionString),
-                    body,
-                    _timeProvider,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
-        }
+        return await SqlAutonomousTransaction
+            .RunAsync(
+                operation,
+                () => _dialect.CreateConnection(_options.ConnectionString),
+                body,
+                _timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private DbCommand _Command(DbConnection connection, DbTransaction? transaction, string sql)

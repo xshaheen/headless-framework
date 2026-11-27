@@ -99,7 +99,7 @@ public sealed class ApnsCertificateAuthTests : TestBase
             new ApnsLiveActivityNotification
             {
                 Event = ApnsLiveActivityEvent.Update,
-                ContentState = System.Text.Json.JsonDocument.Parse("""{"score":1}""").RootElement.Clone(),
+                ContentState = System.Text.Json.JsonElement.Parse("""{"score":1}"""),
             },
             AbortToken
         );

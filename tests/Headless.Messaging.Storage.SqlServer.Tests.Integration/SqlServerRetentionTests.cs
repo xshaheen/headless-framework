@@ -60,6 +60,8 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
+        // The key hashes only need to be unique, so they derive from the row number: a SHA-256 per row made this seed
+        // take seconds on Azure SQL Edge and run past the default command timeout on a busy shared server.
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $$"""
@@ -67,12 +69,12 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
                 WITH numbers AS (
                     SELECT TOP (20000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS i
                     FROM sys.all_objects a CROSS JOIN sys.all_objects b
-                ), seed AS (SELECT i,CONVERT(uniqueidentifier,CONVERT(binary(16),i)) AS id FROM numbers)
+                ), seed AS (SELECT i,CONVERT(uniqueidentifier,CONVERT(binary(16),i)) AS id,CONVERT(binary(32),i) AS hash FROM numbers)
                 INSERT INTO {{_table}} (Id,Version,Name,Content,Retries,Added,StatusName,MessageId,IntentType,
                     IsInboxRecord,GenerationIncarnationId,LifecycleId,ContractIdentity,ContractVersion,ConsumerIdentity,InboxKeyHash,ConsumerIdentityHash,EffectiveExpiresAt,ExpiresAt)
                 SELECT id,N'v1',N'retention.plan',N'{}',0,SYSDATETIMEOFFSET(),N'Succeeded',CONVERT(nvarchar(200),i),0,
-                    CASE WHEN i%2=0 THEN 1 ELSE 0 END,id,id,N'retention.plan',N'v1',N'retention.plan',HASHBYTES('SHA2_256',CONVERT(varchar(20),i)),
-                    CASE WHEN i%2=0 THEN NULL ELSE HASHBYTES('SHA2_256',CONVERT(varchar(20),i)) END,
+                    CASE WHEN i%2=0 THEN 1 ELSE 0 END,id,id,N'retention.plan',N'v1',N'retention.plan',hash,
+                    CASE WHEN i%2=0 THEN NULL ELSE hash END,
                     DATEADD(day,CASE WHEN i<=10 THEN -1 ELSE 1 END,SYSDATETIMEOFFSET()),
                     DATEADD(day,CASE WHEN i<=10 THEN -1 ELSE 1 END,SYSDATETIMEOFFSET())
                 FROM seed;

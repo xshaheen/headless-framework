@@ -23,7 +23,7 @@ internal sealed class SecretHasher : ISecretHasher
 
     private readonly IOptions<SecretHasherOptions> _options;
     private readonly string _selectedAlgorithmId;
-    private readonly Dictionary<string, ISecretHashAlgorithm> _algorithms = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ISecretHashAlgorithm> _algorithms = [with(StringComparer.Ordinal)];
 
     public SecretHasher(
         IOptions<SecretHasherOptions> options,

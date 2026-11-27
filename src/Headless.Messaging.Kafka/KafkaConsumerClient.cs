@@ -51,7 +51,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     // The concrete topics this client subscribed, each mapped to the message name it was derived from, so a record on
     // one of them belongs to that message even when a foreign producer sent no Headless headers. Replaced, never
     // mutated, so the handler threads read it without the lock.
-    private volatile FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
+    private volatile FrozenDictionary<string, string> _arrivalNames = [];
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
     private readonly InFlightHandlerTracker _inFlightHandlers = new();
@@ -202,7 +202,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         var topicList = new List<string>();
         foreach (var name in topics)
         {
-            if (name.StartsWith('^'))
+            if (name.StartsWith('^', StringComparison.Ordinal))
             {
                 topicList.Add(name);
                 continue;

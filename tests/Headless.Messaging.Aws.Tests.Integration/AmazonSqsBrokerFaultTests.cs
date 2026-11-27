@@ -70,7 +70,12 @@ public sealed class AmazonSqsBrokerFaultTests(LocalStackTestFixture fixture) : B
         using (var sqs = _CreateSqsClient(broker))
         {
             var queues = await sqs.ListQueuesAsync(new ListQueuesRequest(), cancellationToken);
-            queueNames = [.. (queues.QueueUrls ?? []).Select(static url => url[(url.LastIndexOf('/') + 1)..])];
+            queueNames =
+            [
+                .. (queues.QueueUrls ?? []).Select(static url =>
+                    url[(url.LastIndexOf('/', StringComparison.Ordinal) + 1)..]
+                ),
+            ];
         }
 
         await broker.Container.StopAsync(cancellationToken);

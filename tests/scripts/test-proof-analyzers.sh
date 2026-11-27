@@ -10,7 +10,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
 # proof.py resolves the repository from its own path, so the scratch repository carries a copy of it.
-mkdir -p "$scratch/scripts" "$scratch/src/Fresh/obj/Release/net10.0" "$scratch/src/Stale/obj/Release/net10.0" "$scratch/src/Missing" "$scratch/run"
+mkdir -p "$scratch/scripts" "$scratch/src/Fresh/obj/Release/net11.0" "$scratch/src/Stale/obj/Release/net11.0" "$scratch/src/Missing" "$scratch/run"
 cp "$repo_root/scripts/proof.py" "$scratch/scripts/proof.py"
 cd "$scratch"
 touch src/Fresh/Fresh.csproj src/Stale/Stale.csproj src/Missing/Missing.csproj
@@ -26,11 +26,11 @@ sarif() {
 ]}]}
 JSON
 }
-sarif > src/Fresh/obj/Release/net10.0/analyzers.sarif
-touch src/Fresh/obj/Release/net10.0/Fresh.dll
-sarif > src/Stale/obj/Release/net10.0/analyzers.sarif
-touch -t 202601010000 src/Stale/obj/Release/net10.0/analyzers.sarif
-touch src/Stale/obj/Release/net10.0/Stale.dll
+sarif > src/Fresh/obj/Release/net11.0/analyzers.sarif
+touch src/Fresh/obj/Release/net11.0/Fresh.dll
+sarif > src/Stale/obj/Release/net11.0/analyzers.sarif
+touch -t 202601010000 src/Stale/obj/Release/net11.0/analyzers.sarif
+touch src/Stale/obj/Release/net11.0/Stale.dll
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 ids() { python3 -c 'import json,sys; print(" ".join(sorted(c["DiagnosticId"] for d in json.load(open(sys.argv[1])) for c in d["FileChanges"])))' "$1"; }
@@ -61,9 +61,9 @@ python3 scripts/proof.py analyzers --dir run --configuration Release --severity 
 [ "$(ids run/analyzers/build/format-report.json)" = "MA0020" ] || fail "--diagnostics should filter: $(ids run/analyzers/build/format-report.json)"
 echo 'PASS: severity and diagnostics filters'
 
-rm src/Fresh/obj/Release/net10.0/analyzers.sarif
-sarif | python3 -c 'import json,sys; d=json.load(sys.stdin); d["runs"][0]["results"]=[]; print(json.dumps(d))' > src/Fresh/obj/Release/net10.0/analyzers.sarif
-touch src/Fresh/obj/Release/net10.0/Fresh.dll
+rm src/Fresh/obj/Release/net11.0/analyzers.sarif
+sarif | python3 -c 'import json,sys; d=json.load(sys.stdin); d["runs"][0]["results"]=[]; print(json.dumps(d))' > src/Fresh/obj/Release/net11.0/analyzers.sarif
+touch src/Fresh/obj/Release/net11.0/Fresh.dll
 python3 scripts/proof.py analyzers --dir run --configuration Release --severity hidden -- "$scratch/fallback.sh" 2>/dev/null || fail "a clean log should exit 0"
 echo 'PASS: clean log passes'
 

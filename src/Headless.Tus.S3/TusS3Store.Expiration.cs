@@ -497,7 +497,7 @@ public sealed partial class TusS3Store
         public List<string> Orphans { get; } = [];
 
         /// <summary>Every upload whose state the pass read, with the multipart upload that state records.</summary>
-        public Dictionary<string, string?> Tracked { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string?> Tracked { get; } = [with(StringComparer.Ordinal)];
 
         /// <summary>
         /// Whether the listing showed the folder that holds each tenant's working sets, which only the scan of the

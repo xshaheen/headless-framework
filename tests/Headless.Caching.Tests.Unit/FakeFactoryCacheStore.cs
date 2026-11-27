@@ -6,7 +6,7 @@ namespace Tests;
 
 internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 {
-    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Entry> _entries = [with(StringComparer.Ordinal)];
     private readonly Lock _lock = new();
 
     public int TryGetEntryCalls { get; private set; }

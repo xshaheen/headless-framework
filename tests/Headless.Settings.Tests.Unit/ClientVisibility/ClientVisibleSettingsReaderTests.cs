@@ -90,7 +90,7 @@ public sealed class ClientVisibleSettingsReaderTests : TestBase
             {
                 principalDuringRead = _principalAccessor.Principal;
                 tenantDuringRead = _currentTenant.Id;
-                return new Dictionary<string, SettingValue>(StringComparer.Ordinal);
+                return [with(StringComparer.Ordinal)];
             });
 
         // when

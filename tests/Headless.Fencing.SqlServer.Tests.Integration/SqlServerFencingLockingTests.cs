@@ -123,6 +123,47 @@ public sealed class SqlServerFencingLockingTests(SqlServerFencingFixture fixture
         (await fixture.ReadLeaseAsync(new LeaseKey("", kind, resource), AbortToken)).Should().Be(before);
     }
 
+    [Fact]
+    public async Task should_throw_operation_canceled_when_a_grant_is_cancelled_while_it_waits_on_a_fenced_row()
+    {
+        // SqlClient reports a cancel that interrupts a running command as a SqlException, not as the
+        // OperationCanceledException every other engine throws. The open fence holds the lease row, so the grant keeps
+        // running on the server and the cancel always lands mid-command.
+        var (kind, resource) = (_CreateKind(), _CreateResource());
+        await using var host = await fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var granted = await host.Leases.GrantAsync(kind, resource, _LongDuration, AbortToken);
+
+        await using var fencing = await fixture.BeginUnitAsync(host, AbortToken);
+        await fencing.Unit.Leases.FenceAsync(granted.Lease!, AbortToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var call = host.Leases.GrantAsync(kind, resource, _LongDuration, cts.Token).AsTask();
+
+        // The server waits until the grant queues on the fenced row, so the cancel cannot reach the call before its
+        // command does.
+        await fixture.ScalarAsync(
+            """
+            WHILE NOT EXISTS (
+                SELECT 1 FROM sys.dm_exec_requests WHERE blocking_session_id <> 0 AND database_id = DB_ID()
+            )
+                WAITFOR DELAY '00:00:00.010';
+            SELECT 1;
+            """,
+            AbortToken
+        );
+        await cts.CancelAsync();
+
+        // The driver throws OperationCanceledException itself when the cancel lands in a reader read, and SqlException when
+        // it lands in the command; the call reports either as the cancellation.
+        await FluentActions.Awaiting(() => call).Should().ThrowAsync<OperationCanceledException>();
+
+        (await fencing.Unit.Leases.SettleAsync(granted.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Settled);
+        await fencing.CommitAsync(AbortToken);
+        (await host.Leases.GrantAsync(kind, resource, _LongDuration, AbortToken))
+            .Status.Should()
+            .Be(LeaseGrantStatus.Granted);
+    }
+
     private async Task<XactAbortUnit> _BeginXactAbortAsync(LeasesHost host)
     {
 #pragma warning disable CA2000 // False positive: the returned XactAbortUnit owns the connection and disposes it; the catch disposes it on failure.

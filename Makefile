@@ -61,7 +61,7 @@ CLUSTER_DASHBOARD_DIR ?= src/Headless.Cluster.Dashboard/wwwroot
 IDEMPOTENCY_DASHBOARD_DIR ?= src/Headless.Idempotency.Dashboard/wwwroot
 MESSAGING_COMPATIBILITY_DIR ?= tests/Headless.Messaging.PackageReference.Tests.Unit/Probes/Compatibility
 CONFIGURATION ?= Release
-TARGET_FRAMEWORK ?= net10.0
+TARGET_FRAMEWORK ?= net11.0
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
@@ -143,7 +143,10 @@ UNIT_TEST_MAX_PARALLEL ?= 6
 # module in recent proof runs took about 7 min under load. It only cancels the session's token, so a test blocked
 # where it never observes cancellation runs past it: a broker suite was still running 7 min into a 4m --timeout.
 TEST_TIMEOUT ?= 15m
-AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,--timeout $(TEST_TIMEOUT))
+# After `--`, dotnet test hands --timeout to each test application. Before it, the option is one budget for every module
+# of the run: a whole-solution integration run stopped at 15 min with 12 of 81 modules never started. It goes last, so
+# every option before it still reaches dotnet test itself; a TEST_ARGS that already holds a `--` gets no second one.
+AFFECTED_TIMEOUT_ARGS = $(if $(findstring --timeout,$(TEST_ARGS)),,$(if $(filter --,$(TEST_ARGS)),,-- )--timeout $(TEST_TIMEOUT))
 # The hang bound that does hold: the Test SDK's dumps run the test host under a controller process that dumps and kills
 # its whole process tree once no test has progressed for 10 min. The SDK turns them on only in CI, so a local hang,
 # often in an unattended agent run, held its container slot until something outside killed it. Every target that runs
@@ -274,7 +277,7 @@ AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
 	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} $(AFFECTED_TIMEOUT_ARGS) || status=1; \
 	elif [ -s "$$run/$$units.reused.txt" ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "reused: every selected module matched an earlier pass; see the reused modules below"; \
 	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
 # The integration suites start their containers through Docker, so an unreachable daemon fails every fixture only after
@@ -293,7 +296,7 @@ AFFECTED_DOCKER_POSTCHECK = if [ $$status -ne 0 ] && [ "$${docker_count:-0}" -gt
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage (build or analyzers) failed; fix it first, since the fix re-runs these tests anyway"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} $(AFFECTED_TIMEOUT_ARGS) || status=1; \
 	elif [ -s "$$run/integration.reused.txt" ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "reused: every selected module matched an earlier pass; see the reused modules below"; \
 	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
 # One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it. MTP
@@ -345,7 +348,7 @@ PROOF_REUSE ?= true
 # The gate's own code (this file, scripts/) is not in the key, so a tooling change that only speeds a gate up or rewords
 # its output leaves every open branch's proof valid. Bump this when a tooling change can turn a verdict: a new or
 # stricter stage, or a fix to a stage that passed what it should have failed. The bump reruns every gate once.
-PROOF_GATE_VERSION = 1
+PROOF_GATE_VERSION = 2
 PROOF_KEY_SETTINGS = $(subst ",,$(subst ',,gate-v$(PROOF_GATE_VERSION) $(CONFIGURATION) $(TEST_ARGS) $(TEST_FILTER) $(TEST_TIMEOUT) $(MSBUILD_ARGS) $(COVERAGE_FLOOR_ARGS) $(VERIFY_COVERAGE) $(INTEGRATION_COVERAGE) $(QUALITY_SEVERITY) $(QUALITY_DIAGNOSTICS) $(AFFECTED_SCOPE_ARGS)))
 # Sets `key` for the bundle in `run`, then exits the recipe with the reused bundle's report when one matches.
 PROOF_REUSE_STAGE = key="$$($(GRAPH) input-key --dir "$$run" --salt "$${run\#\#*-} $(PROOF_KEY_SETTINGS)")" || key=""; \
@@ -1361,8 +1364,8 @@ test-discipline-baseline: ## Write the lower counts back to eng/test-discipline-
 invariants: check-layering ## Run the repository-level invariants (check-layering); exit 3 on a violation.
 
 .PHONY: test-timeout
-test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still provide TRX and dumps.
-	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
+test-timeout: ## Run all tests with an explicit MTP timeout per test module (TEST_TIMEOUT). SDK defaults still provide TRX and dumps.
+	$(MAKE) test TEST_FILTER='$(TEST_FILTER) $(AFFECTED_TIMEOUT_ARGS)'
 
 .PHONY: test-unit
 test-unit: build ## Run every *.Tests.Unit module in parallel (honors UNIT_TEST_MAX_PARALLEL, default 6).
@@ -1409,7 +1412,7 @@ test-messaging-integration: ## Run the messaging integration suites with no retr
 	@status=0; for project in $(MESSAGING_INTEGRATION_PROJECTS); do \
 		printf '\033[36m[integration]\033[0m %s\n' "$$project"; \
 		HEADLESS_CONFORMANCE_EXPORT_DIR="$(abspath $(MESSAGING_INTEGRATION_RESULTS_DIR))/conformance" \
-			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(AFFECTED_TIMEOUT_ARGS) $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) || status=1; \
+			$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(MESSAGING_INTEGRATION_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER) $(MSBUILD_ARGS) $(AFFECTED_TIMEOUT_ARGS) || status=1; \
 	done; \
 	if [ "$(MESSAGING_INTEGRATION_REPORT)" = "true" ]; then $(MAKE) --no-print-directory messaging-drift-report MESSAGING_DRIFT_REPORT_ROOT="$(MESSAGING_INTEGRATION_RESULTS_DIR)" || status=1; fi; \
 	exit $$status

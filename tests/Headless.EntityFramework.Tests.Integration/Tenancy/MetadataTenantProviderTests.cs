@@ -86,7 +86,7 @@ public sealed class SqlServerTenantIndexTests(SqlServerMetadataTenantFixture fix
         // Interpolation holes become SQL parameters here, so the code stays a hole rather than inline text.
         const string code = "host-code";
         Func<Task<int>> insert = () =>
-            db.Database.ExecuteSqlInterpolatedAsync(
+            db.Database.ExecuteSqlAsync(
                 $"INSERT INTO [tenancy].[HostRows] ([Id], [Code], [TenantId]) VALUES ({Guid.NewGuid()}, {code}, NULL)",
                 AbortToken
             );

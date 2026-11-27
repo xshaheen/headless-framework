@@ -30,9 +30,10 @@ internal sealed partial class MaxMindDatabaseSync : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     // Read and written only while holding _gate.
-    private readonly Dictionary<string, (DateTimeOffset FailedAt, Exception Error)> _failedDownloads = new(
-        StringComparer.Ordinal
-    );
+    private readonly Dictionary<string, (DateTimeOffset FailedAt, Exception Error)> _failedDownloads =
+    [
+        with(StringComparer.Ordinal),
+    ];
 
     public MaxMindDatabaseSync(
         MaxMindDatabases databases,

@@ -5,7 +5,7 @@ packages: OpenApi, OpenApi.Scalar
 
 # OpenAPI
 
-> OpenAPI 3.1 documents from the native `Microsoft.AspNetCore.OpenApi` generator, enriched by Headless transformers, plus Scalar UI rendering.
+> OpenAPI 3.2 documents from the native `Microsoft.AspNetCore.OpenApi` generator, enriched by Headless transformers, plus Scalar UI rendering.
 
 ## Orientation
 
@@ -38,7 +38,7 @@ app.MapOpenApi("/openapi/{documentName}.json");
 app.MapScalarOpenApi();
 ```
 
-**Verify:** `GET /openapi/v1.json` (or `/openapi/{surface document name}.json`) answers 200 with an `openapi` field that starts with `3.1` and an `info.title` of `{Entry assembly product} API`. `GET /scalar` answers 200 with the UI. In a test, request the document through `WebApplicationFactory` and assert both.
+**Verify:** `GET /openapi/v1.json` (or `/openapi/{surface document name}.json`) answers 200 with an `openapi` field that starts with `3.2` and an `info.title` of `{Entry assembly product} API`. `GET /scalar` answers 200 with the UI. In a test, request the document through `WebApplicationFactory` and assert both.
 
 ## Agent Rules
 
@@ -47,7 +47,8 @@ app.MapScalarOpenApi();
 - Configure the enrichment once, with `ConfigureHeadlessOpenApi(...)`. Every Headless document shares these options, and startup validates them. Call order relative to the document registrations does not matter.
 - Call `AddHeadlessTransformers()` before you add your own transformers in the same callback. Transformers run in registration order, so yours then see the Headless output and can override it. `AddHeadlessOpenApi`'s `configure` callback and `AddHeadlessApiSurfaceDocuments`' per-surface callback already run after the Headless transformers.
 - `MapOpenApi()` and `MapHeadlessEndpoints()` map endpoints, so authorization applies to the documents. Under a fallback authorization policy they answer 401. To publish them anonymously, chain `.AllowAnonymous()` on `MapOpenApi()`. The documents need no middleware ordering.
-- The document is OpenAPI 3.1. Exclusive bounds are numbers (`exclusiveMinimum: 1`), nullability is a `null` type or a `oneOf` with `null`, and examples are JSON values. Do not set `OpenApiOptions.OpenApiVersion` to 3.0 unless a client generator requires it.
+- The document is OpenAPI 3.2, the ASP.NET Core 11 default. Exclusive bounds are numbers (`exclusiveMinimum: 1`), nullability is a `null` type or a `oneOf` with `null`, and examples are JSON values. Set `OpenApiOptions.OpenApiVersion` to `OpenApiSpecVersion.OpenApi3_1` only for a client generator that rejects 3.2. Scalar renders 3.2, and NSwag 14.8 generates a compiling C# client from it with `ProblemResponseRanges = false`.
+- Write a custom transformer against Microsoft.OpenApi 3. A response or request body maps media types as `IOpenApiMediaType`: cast an entry to `OpenApiMediaType` before you set its `Schema`, `Example`, `Examples`, or `Encoding`, because a referenced media type is read-only.
 - Turn on `GenerateDocumentationFile` in the project that declares a documented type or action. Every Headless document reads XML comments from the `.xml` file each assembly ships, and an assembly without the file contributes nothing:
   - A type's and a property's summary (or a positional record's `param`) become schema descriptions. This includes a type that only a property reaches, such as an enum or a nested object: its shared component takes the type's summary, and each property that refers to it keeps its own comment beside the `$ref` (on the `oneOf` of a nullable one).
   - An action's summary, remarks, and parameter comments become the operation's.
@@ -232,7 +233,7 @@ Startup validation fails the host on an empty `ApiKeyHeaderName` while the API-k
 - 403 also needs a named policy, roles, an effective `RequireTenant`, or a claims, name, operation, roles, assertion, or `TenantRequirement` requirement in an applied policy or requirement data.
 - A bare `[Authorize]` or `RequireAuthorization()` applies `DefaultPolicy`. With the default `DefaultPolicy` it only authenticates, so it produces 401 but not 403. A `DefaultPolicy` or `FallbackPolicy` that holds `TenantRequirement` adds 403 and the `tenantRequired` example, unless the endpoint's later tenancy metadata is `AllowMissingTenant`.
 - Policies come from `AuthorizationOptions`. Named policies are not resolved and always count as able to refuse. A custom `IAuthorizationPolicyProvider` that builds its default or fallback policy elsewhere is not seen.
-- The roles of `[Authorize(Roles = ...)]` become the requirement's scopes, which OpenAPI 3.1 allows for any scheme type.
+- The roles of `[Authorize(Roles = ...)]` become the requirement's scopes, which OpenAPI 3.1 and later allow for any scheme type.
 - A selector that returns an unregistered scheme name fails generation, because the requirement would reference a missing component.
 
 **Errors are documented where the framework writes them.** An operation documents the error responses it declares, those its metadata and options show (authorization, `If-Match`, rate limits, feature contracts, tenancy), and the ones the server writes for an operation's shape before any handler runs:
@@ -307,7 +308,7 @@ Their error responses come from the transformers like any other operation's, so 
 | `Length`, `MinimumLength`, `MaximumLength`, `ExactLength` | `minLength`, `maxLength` |
 | `Matches` | `pattern` |
 | Comparisons, `InclusiveBetween` | `minimum`, `maximum` |
-| `GreaterThan`, `LessThan`, `ExclusiveBetween` | The 3.1 numeric `exclusiveMinimum`, `exclusiveMaximum`, with no `minimum` or `maximum` |
+| `GreaterThan`, `LessThan`, `ExclusiveBetween` | The numeric `exclusiveMinimum`, `exclusiveMaximum`, with no `minimum` or `maximum` |
 | `EmailAddress` (ASP.NET Core-compatible mode) | `pattern: ^[^@]+@[^@]+$` |
 
 - Unconditional `Include()` chains are followed, each validator once, so an include cycle ends.

@@ -230,7 +230,7 @@ public static class SitemapUrls
     private sealed class Sharder(Func<SitemapShard, CancellationToken, ValueTask> onShard, int capacity)
         : IAsyncDisposable
     {
-        private readonly List<SitemapUrl> _buffer = new(capacity);
+        private readonly List<SitemapUrl> _buffer = [with(capacity)];
         private SitemapEntrySizer<SitemapUrl>? _sizer;
         private int _shardCount;
 

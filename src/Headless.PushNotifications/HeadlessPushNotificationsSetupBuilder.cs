@@ -21,7 +21,7 @@ namespace Headless.PushNotifications;
 [PublicAPI]
 public sealed class HeadlessPushNotificationsSetupBuilder
 {
-    private readonly HashSet<string> _instanceNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _instanceNames = [with(StringComparer.Ordinal)];
 
     internal HeadlessPushNotificationsSetupBuilder(IServiceCollection services)
     {

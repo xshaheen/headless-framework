@@ -174,7 +174,7 @@ public sealed class Url
     public string Query
     {
         get => QueryParams.ToString();
-        set => _EnsureParsed()._queryParams = new QueryParamCollection(value);
+        set => _EnsureParsed()._queryParams = [with(value)];
     }
 
     /// <summary>
@@ -285,7 +285,7 @@ public sealed class Url
                 AppendPathSegment(uri.AbsolutePath);
             }
 
-            _queryParams = new QueryParamCollection(uri.Query);
+            _queryParams = [with(uri.Query)];
             _fragment = uri.Fragment.TrimStart('#'); // quirk - formal def of fragment does not include the #
 
             // _port is final now; materialize Authority/Root once (mirrors the Root property) and reuse below
@@ -1141,7 +1141,7 @@ public sealed class Url
         return !string.IsNullOrWhiteSpace(url)
             &&
             // TryCreate will succeed for URLs starting with "//". We want to require a scheme to be considered "absolute".
-            !url.Trim().StartsWith('/')
+            !url.Trim().StartsWith('/', StringComparison.Ordinal)
             &&
             // Don't be tempted to use IsWellFormedUriString - it's known to return false positives on some platforms:
             // https://github.com/dotnet/runtime/issues/72632

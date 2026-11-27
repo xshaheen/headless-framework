@@ -26,8 +26,8 @@ internal sealed class DashboardEventPublisher(EventRingBuffer buffer, TimeProvid
     private readonly Dictionary<ObjectKey, string> _versions = [];
     private readonly Queue<ObjectKey> _versionOrder = new();
     private readonly OrderedDictionary<PendingKey, PendingEvent> _pending = [];
-    private readonly HashSet<string> _staleModules = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string[]> _unavailable = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _staleModules = [with(StringComparer.Ordinal)];
+    private readonly Dictionary<string, string[]> _unavailable = [with(StringComparer.Ordinal)];
     private readonly HashSet<NodeKey> _staleNodes = [];
     private readonly EventRingBuffer _buffer = Argument.IsNotNull(buffer);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);

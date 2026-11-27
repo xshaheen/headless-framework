@@ -86,7 +86,7 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        if (!internationalNumber.StartsWith('+'))
+        if (!internationalNumber.StartsWith('+', StringComparison.Ordinal))
         {
             throw new ArgumentException("International phone number must start with '+'", nameof(internationalNumber));
         }

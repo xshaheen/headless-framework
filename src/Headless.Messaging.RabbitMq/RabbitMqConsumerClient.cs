@@ -35,7 +35,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly RabbitMqConsumerConfig? _consumerConfig;
     private readonly MessageLane _lane;
     private readonly List<string> _queueNames = [];
-    private readonly Dictionary<string, string> _consumerTags = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _consumerTags = [with(StringComparer.Ordinal)];
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly Func<RabbitMqConsumerLifecycleCheckpoint, ValueTask>? _lifecycleCheckpointAsync;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -52,7 +52,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TransportEnvelopeGate _envelopeGate;
 
     // Written only while subscribing, before the consumer starts, and read by every delivery afterwards.
-    private readonly Dictionary<string, string> _arrivalNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _arrivalNames = [with(StringComparer.Ordinal)];
 
     // Completes with the broker's reason when an every-instance client's channel shuts down while it is in use.
     private readonly TaskCompletionSource<string> _channelLost = new(

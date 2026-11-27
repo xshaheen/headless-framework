@@ -154,7 +154,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         return binaryCode % mod;
     }
 
-    private static bool _TryHashData(TotpHashMode hashMode, byte[] key, Span<byte> data, Span<byte> destination)
+    private static bool _TryHashData(TotpHashMode hashMode, byte[] key, ReadOnlySpan<byte> data, Span<byte> destination)
     {
         return hashMode switch
         {

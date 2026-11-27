@@ -1126,7 +1126,10 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
+        if (
+            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
+            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
+        )
         {
             throw new ArgumentException(
                 $"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'.",
@@ -1174,7 +1177,10 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (tmpName.StartsWith(pathDelimiter) || tmpName.EndsWith(pathDelimiter))
+        if (
+            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
+            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
+        )
         {
             throw new ArgumentException(
                 $"The queue name cannot contain '/' as prefix or suffix. The supplied value is '{queueName}'.",

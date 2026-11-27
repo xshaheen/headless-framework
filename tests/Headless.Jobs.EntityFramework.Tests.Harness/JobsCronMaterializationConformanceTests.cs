@@ -317,7 +317,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
         {
             if (
                 Armed
-                && command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal)
+                && SqlStatementKind.IsUpdate(command.CommandText)
                 && (
                     command.CommandText.Contains("ScheduleRevision", StringComparison.Ordinal)
                     || command.CommandText.Contains("schedule_revision", StringComparison.Ordinal)

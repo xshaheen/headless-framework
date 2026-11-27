@@ -220,7 +220,9 @@ internal static class JobsClaimedWrite
             set.ToWrite().Bind?.Invoke(command);
             dialect.AddDuration(command, _RenewDurationParameter, duration);
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var reader = await SqlCancellation
+                .ObserveAsync(command.ExecuteReaderAsync(cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
 
             return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? 1 : 0;
         }

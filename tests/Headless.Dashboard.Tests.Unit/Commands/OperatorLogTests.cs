@@ -159,7 +159,7 @@ public sealed class OperatorLogTests : TestBase
             {
                 var values = state is IEnumerable<KeyValuePair<string, object?>> pairs
                     ? pairs.ToDictionary(static p => p.Key, static p => p.Value, StringComparer.Ordinal)
-                    : new Dictionary<string, object?>(StringComparer.Ordinal);
+                    : [with(StringComparer.Ordinal)];
 
                 provider._Add(new LogRecord(category, logLevel, eventId, values, formatter(state, exception)));
             }

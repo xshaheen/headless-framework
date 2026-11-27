@@ -14,9 +14,10 @@ internal sealed class FakeChangeStore(TimeProvider time)
     private readonly Lock _lock = new();
     private readonly List<(long Marker, DashboardChange Change)> _log = [];
 
-    private readonly Dictionary<string, Queue<(DashboardChange[] Changes, bool HasMore)>> _scripted = new(
-        StringComparer.Ordinal
-    );
+    private readonly Dictionary<string, Queue<(DashboardChange[] Changes, bool HasMore)>> _scripted =
+    [
+        with(StringComparer.Ordinal),
+    ];
 
     private readonly List<TaskCompletionSource> _starts = [];
     private readonly List<TaskCompletionSource> _stops = [];

@@ -62,7 +62,7 @@ internal sealed class HeadlessOwnerIndex(IReadOnlyList<EntityEntry> tracked)
         }
 
         var keyProperties = ownership.PrincipalKey.Properties;
-        index = new Dictionary<object[], EntityEntry?>(new KeyComparer(keyProperties));
+        index = [with(new KeyComparer(keyProperties))];
 
         foreach (var candidate in Tracked)
         {

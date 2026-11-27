@@ -197,7 +197,7 @@ public static partial class PublishedPortProbes
     // else is not Redis and is whole as it is.
     private static bool _IsCompleteRespReply(string text)
     {
-        if (text.StartsWith('$'))
+        if (text.StartsWith('$', StringComparison.Ordinal))
         {
             var header = text.IndexOf("\r\n", StringComparison.Ordinal);
 

@@ -212,7 +212,7 @@ internal sealed class RabbitMqTopologyProvisioner(
     {
         if (!queues.TryGetValue(name, out var queue))
         {
-            queue = new RabbitMqTopologyQueue(name, lane, new SortedSet<string>(StringComparer.Ordinal));
+            queue = new RabbitMqTopologyQueue(name, lane, [with(StringComparer.Ordinal)]);
             queues[name] = queue;
         }
 

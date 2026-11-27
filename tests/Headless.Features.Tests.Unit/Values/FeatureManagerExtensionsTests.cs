@@ -103,7 +103,7 @@ public sealed class FeatureManagerExtensionsTests : TestBase
         // manager's single-name read reports it as not defined
         _featureManager
             .GetAllAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, FeatureValue>(StringComparer.Ordinal));
+            .Returns((Dictionary<string, FeatureValue>)[with(StringComparer.Ordinal)]);
         _featureManager
             .GetAsync("Missing", Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(

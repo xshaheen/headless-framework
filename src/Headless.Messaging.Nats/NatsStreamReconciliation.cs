@@ -21,11 +21,12 @@ internal static class NatsStreamReconciliation
     /// runs after the provider asserts the lane-required value. Subjects are compared separately and by
     /// coverage rather than equality — see <see cref="FindUncoveredSubjects"/>.
     /// </summary>
-    private static readonly HashSet<string> _IdentityFields = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _IdentityFields =
+    [
+        with(StringComparer.Ordinal),
         nameof(StreamConfig.Name),
         nameof(StreamConfig.Subjects),
-    };
+    ];
 
     /// <summary>
     /// Fields NATS server 2.9 accepts when updating a stream. The update validator in NATS server
@@ -33,8 +34,9 @@ internal static class NatsStreamReconciliation
     /// Mirror, RePublish, and one-way deletion/purge/seal flags are restricted. Anything outside this explicit
     /// list is over-reported as immutable so an unverified field cannot reach an update that the server rejects.
     /// </summary>
-    private static readonly HashSet<string> _ReconcilableFields = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _ReconcilableFields =
+    [
+        with(StringComparer.Ordinal),
         nameof(StreamConfig.Description),
         nameof(StreamConfig.Discard),
         nameof(StreamConfig.DuplicateWindow),
@@ -46,7 +48,7 @@ internal static class NatsStreamReconciliation
         nameof(StreamConfig.Metadata),
         nameof(StreamConfig.NoAck),
         nameof(StreamConfig.NumReplicas),
-    };
+    ];
 
     private static readonly PropertyInfo[] _ComparableProperties =
     [

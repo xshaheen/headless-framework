@@ -99,8 +99,8 @@ public sealed class JobLedger
     private readonly Lock _lock = new();
     private readonly List<AttemptState> _attempts = [];
     private readonly Dictionary<Guid, JobSpec> _specs = [];
-    private readonly HashSet<string> _killed = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TimeSpan> _killedAt = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _killed = [with(StringComparer.Ordinal)];
+    private readonly Dictionary<string, TimeSpan> _killedAt = [with(StringComparer.Ordinal)];
 
     // wall-clock: the ledger orders events from several in-process hosts on one monotonic clock; no test advances it
     private readonly long _origin = Stopwatch.GetTimestamp();

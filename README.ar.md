@@ -12,7 +12,7 @@
 
 **Infrastructure جاهزة للـ production لخدمات .NET، من غير ما framework يفرض عليك شكل تطبيقك.**
 
-[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
+[![.NET 11](https://img.shields.io/badge/.NET-11-512BD4)](https://dotnet.microsoft.com)
 [![NuGet](https://img.shields.io/nuget/v/Headless.Extensions?label=nuget)](https://www.nuget.org/packages?q=Headless.)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
@@ -254,7 +254,7 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 
 الـ packages منشورة على nuget.org عند `0.4.x`. الـ framework لسه قبل 1.0، والمشروع greenfield: الـ breaking changes بتنزل لما تحسّن الصحة أو الـ API بشكل جوهري، بدل ما نراكم طبقات توافق. ثبّت الـ versions بتاعتك واقرا الـ release notes قبل أي upgrade.
 
-- أغلب الـ packages بتستهدف `.NET 10`. وpackages الـ source generators بتستهدف `netstandard2.0`.
+- الـ packages بتستهدف `net11.0`، فالـ application اللي بتستخدمها لازم تستهدف `net11.0` وتتبني بالـ .NET 11 SDK أو Visual Studio 2026 18.12 أو أحدث. وpackages الـ source generators والـ analyzers بتستهدف `netstandard2.0` ومحتاجة الـ compiler اللي بييجي مع الأدوات دي.
 - الـ repo بيثبّت version الـ .NET SDK في [`global.json`](global.json).
 - الـ release notes بتتنشر عن طريق [GitHub releases](https://github.com/xshaheen/headless-framework/releases).
 

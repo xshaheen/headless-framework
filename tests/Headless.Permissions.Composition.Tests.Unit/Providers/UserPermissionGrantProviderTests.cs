@@ -109,7 +109,7 @@ public sealed class UserPermissionGrantProviderTests : TestBase
                 userId.ToString(),
                 AbortToken
             )
-            .Returns(new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal));
+            .Returns([with(StringComparer.Ordinal)]);
 
         // when
         var result = await _sut.CheckAsync([permission], currentUser, AbortToken);

@@ -27,11 +27,11 @@ public sealed class HeadlessOpenApiDocumentTests : TestBase
         );
 
     [Fact]
-    public async Task should_emit_openapi_31_with_the_product_title_and_response_conventions()
+    public async Task should_emit_openapi_32_with_the_product_title_and_response_conventions()
     {
         var document = await _GetDocumentAsync();
 
-        ((string?)document["openapi"]).Should().StartWith("3.1.");
+        ((string?)document["openapi"]).Should().StartWith("3.2.");
         ((string?)document["info"]?["title"]).Should().Be("Headless OpenApi Tests Unit API");
         ((string?)document["info"]?["description"]).Should().Contain("## Success Response");
     }

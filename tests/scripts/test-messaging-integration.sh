@@ -162,7 +162,7 @@ JSON
 # write_trx <leg> <provider> <round-trip outcome> <empty-body outcome>: the TestDefinitions/Results shape MTP writes.
 write_trx() {
   local leg="$1" provider="$2" assembly="Tests.$2"
-  cat > "$results/$leg/${assembly}_net10.0_x64.trx" <<XML
+  cat > "$results/$leg/${assembly}_net11.0_x64.trx" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <TestRun id="00000000-0000-0000-0000-000000000000" name="integration" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <Results>
@@ -175,10 +175,10 @@ write_trx() {
   </Results>
   <TestDefinitions>
     <UnitTest name="Tests.${provider}ConformanceTests.should_round_trip" id="t1">
-      <TestMethod codeBase="/runner/tests/$assembly/bin/Release/net10.0/$assembly.dll" className="Tests.${provider}ConformanceTests" name="should_round_trip" />
+      <TestMethod codeBase="/runner/tests/$assembly/bin/Release/net11.0/$assembly.dll" className="Tests.${provider}ConformanceTests" name="should_round_trip" />
     </UnitTest>
     <UnitTest name="Tests.${provider}ConformanceTests.should_dispatch_empty_body" id="t2">
-      <TestMethod codeBase="/runner/tests/$assembly/bin/Release/net10.0/$assembly.dll" className="Tests.${provider}ConformanceTests" name="should_dispatch_empty_body" />
+      <TestMethod codeBase="/runner/tests/$assembly/bin/Release/net11.0/$assembly.dll" className="Tests.${provider}ConformanceTests" name="should_dispatch_empty_body" />
     </UnitTest>
   </TestDefinitions>
 </TestRun>

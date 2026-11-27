@@ -49,7 +49,7 @@ public static class PathValidation
             return;
         }
 
-        if (path.StartsWith('/') || path.StartsWith('\\'))
+        if (path.StartsWith('/', StringComparison.Ordinal) || path.StartsWith('\\', StringComparison.Ordinal))
         {
             throw new ArgumentException("Absolute paths are not allowed", paramName);
         }

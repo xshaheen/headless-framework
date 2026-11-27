@@ -45,7 +45,7 @@ public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarn
             return false;
         }
 
-        var separatorIndex = value.LastIndexOf(_Separator);
+        var separatorIndex = value.LastIndexOf(_Separator, StringComparison.Ordinal);
 
         if (separatorIndex <= 0 || separatorIndex == value.Length - 1)
         {

@@ -21,8 +21,8 @@ public sealed record TerminalFailureMessage(string Id);
 public sealed class HandlerRunLedger
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, int> _started = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _completed = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _started = [with(StringComparer.Ordinal)];
+    private readonly Dictionary<string, int> _completed = [with(StringComparer.Ordinal)];
     private readonly ChangeSignal _changed = new();
     private TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _gateOpen = true;

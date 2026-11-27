@@ -108,7 +108,7 @@ public static class BlobLocationResolver
 
         while (true)
         {
-            var slash = path.IndexOf('/', start);
+            var slash = path.IndexOf('/', start, StringComparison.Ordinal);
             var isLastSegment = slash < 0;
             var rawSegment = isLastSegment ? path[start..] : path[start..slash];
             var segment = normalizer.NormalizeBlobName(rawSegment);

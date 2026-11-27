@@ -262,7 +262,10 @@ public static class HeadlessPhoneNumberValidators
 
                     // The out-overload throws when the value does not start with '+', so guard first to
                     // keep malformed input a validation failure rather than an unhandled 500.
-                    if (!number.StartsWith('+') || !MobilePhoneNumberValidator.IsValid(number, out _))
+                    if (
+                        !number.StartsWith('+', StringComparison.Ordinal)
+                        || !MobilePhoneNumberValidator.IsValid(number, out _)
+                    )
                     {
                         _AddPhoneFailure(
                             context,

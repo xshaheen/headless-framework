@@ -193,6 +193,29 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     }
 
     [Fact]
+    public void should_copy_json_type_classifiers()
+    {
+        var classifier = new NeverClassifyingFactory();
+        var source = new MessagingOptions();
+        source.JsonSerializerOptions.TypeClassifiers.Add(classifier);
+        var target = new MessagingOptions();
+
+        _InvokeCopyTo(source, target);
+
+        target.JsonSerializerOptions.TypeClassifiers.Should().ContainSingle().Which.Should().BeSameAs(classifier);
+    }
+
+    private sealed class NeverClassifyingFactory : JsonTypeClassifierFactory
+    {
+        public override bool CanClassify(JsonTypeClassifierContext context) => false;
+
+        public override JsonTypeClassifier CreateJsonClassifier(
+            JsonTypeClassifierContext context,
+            JsonSerializerOptions options
+        ) => throw new NotSupportedException("Never asked: CanClassify is false.");
+    }
+
+    [Fact]
     public void should_copy_duplicate_and_indent_json_settings()
     {
         var source = new MessagingOptions
@@ -219,9 +242,13 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     public void should_pin_every_settable_json_serializer_option_copied_by_copy_to()
     {
         // A setting .NET adds to JsonSerializerOptions would otherwise be dropped by CopyTo with no error, as
-        // AllowDuplicateProperties was. A new name here means: copy it in _CopyJsonSerializerOptions, then list it.
+        // AllowDuplicateProperties was, and TypeClassifiers, a get-only list, was. A new name here means: copy it in
+        // _CopyJsonSerializerOptions, then list it.
         var copied = new HashSet<string>(StringComparer.Ordinal)
         {
+            nameof(JsonSerializerOptions.Converters),
+            nameof(JsonSerializerOptions.TypeClassifiers),
+            nameof(JsonSerializerOptions.TypeInfoResolverChain),
             nameof(JsonSerializerOptions.AllowDuplicateProperties),
             nameof(JsonSerializerOptions.AllowOutOfOrderMetadataProperties),
             nameof(JsonSerializerOptions.AllowTrailingCommas),
@@ -234,6 +261,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
             nameof(JsonSerializerOptions.IncludeFields),
             nameof(JsonSerializerOptions.IndentCharacter),
             nameof(JsonSerializerOptions.IndentSize),
+            nameof(JsonSerializerOptions.InferClosedTypePolymorphism),
             nameof(JsonSerializerOptions.MaxDepth),
             nameof(JsonSerializerOptions.NewLine),
             nameof(JsonSerializerOptions.NumberHandling),
@@ -250,16 +278,22 @@ public sealed class MessagingOptionsCopyToTests : TestBase
             nameof(JsonSerializerOptions.WriteIndented),
         };
 
-        var settable = typeof(JsonSerializerOptions)
+        var configurable = typeof(JsonSerializerOptions)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p =>
-                p is { CanWrite: true, SetMethod.IsPublic: true } && !Attribute.IsDefined(p, typeof(ObsoleteAttribute))
+                (p is { CanWrite: true, SetMethod.IsPublic: true } || _IsGetOnlyList(p))
+                && !Attribute.IsDefined(p, typeof(ObsoleteAttribute))
             )
             .Select(p => p.Name)
             .ToHashSet(StringComparer.Ordinal);
 
-        settable.Should().BeEquivalentTo(copied);
+        configurable.Should().BeEquivalentTo(copied);
     }
+
+    // A list the caller fills in place (Converters): it has no setter, so only its contents carry the configuration.
+    private static bool _IsGetOnlyList(PropertyInfo property) =>
+        property is { CanWrite: false, PropertyType.IsGenericType: true }
+        && property.PropertyType.GetGenericTypeDefinition() == typeof(IList<>);
 
     private static void _InvokeCopyTo(MessagingOptions source, MessagingOptions target)
     {

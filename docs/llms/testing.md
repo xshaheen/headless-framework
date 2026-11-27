@@ -415,6 +415,7 @@ Other types:
 
 - `HeadlessSqlServerFixture` and `HeadlessPostgreSqlFixture` create a database named `hf_` plus 12 hex digits per fixture, and `ConnectionString` points at it. Use `AdminConnectionString` only for server-level statements.
 - `HeadlessRabbitMqFixture` creates a virtual host per fixture. Pass `VirtualHost` to the client options and `-p` to any `rabbitmqctl` command.
+- A `rabbitmqctl` process occasionally stalls and never exits, and `Container.ExecAsync` waits for it with no bound. `HeadlessRabbitMqFixture` bounds each `rabbitmqctl` call it makes at 30 seconds, so a stalled call fails the fixture start or dispose with `TimeoutException` instead of holding the run until the runner's hang timeout. Bound your own `rabbitmqctl` calls the same way: pass `ExecAsync` a token linked to the test's token with `CancelAfter`.
 - For a second database, take its name from `DerivedDatabaseName("suffix")` and create it with `CreateDatabaseAsync`, so it carries the owner's id and is cleaned up with it.
 - A fixture drops its own databases or virtual host on dispose. Every fixture start also drops those left by a dead test process: a database whose owner's session lock (`sp_getapplock`, `pg_try_advisory_lock`) is free, and a RabbitMQ virtual host with no connection that is at least two minutes old.
 

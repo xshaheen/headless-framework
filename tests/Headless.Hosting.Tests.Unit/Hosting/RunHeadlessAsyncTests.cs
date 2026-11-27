@@ -220,6 +220,80 @@ public sealed class RunHeadlessAsyncTests : TestBase
     }
 
     [Fact]
+    public async Task should_exit_1_when_a_background_service_fails_with_an_aggregate_of_several_failures()
+    {
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder => builder.Services.AddHostedService<AggregateFaultingBackgroundService>(),
+            [],
+            AbortToken
+        );
+
+        // then
+        run.ExitCode.Should().Be(1, "a service whose processors fail together has still faulted");
+        run.StandardError.Should().Contain("Host stopped:").And.Contain(nameof(AggregateFaultingBackgroundService));
+    }
+
+    [Fact]
+    public async Task should_throw_when_a_hosted_service_fails_to_start_with_an_empty_aggregate()
+    {
+        // when
+        var act = () =>
+            HostConsoleRun.RunAsync(
+                builder =>
+                {
+                    builder.Services.AddHostedService<FaultingBackgroundService>();
+                    builder.Services.AddHostedService<EmptyAggregateOnStartHostedService>();
+                },
+                [],
+                AbortToken
+            );
+
+        // then: an aggregate that wraps nothing names no background service, so it is not one of their faults
+        await act.Should().ThrowAsync<AggregateException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_a_stop_failure_accompanies_a_background_service_fault()
+    {
+        // when
+        var act = () =>
+            HostConsoleRun.RunAsync(
+                builder =>
+                {
+                    builder.Services.AddHostedService<FaultingBackgroundService>();
+                    builder.Services.AddHostedService<FailingOnStopHostedService>();
+                },
+                [],
+                AbortToken
+            );
+
+        // then: the assertion unwraps the host's aggregate, so the stop failure is one of the exceptions it sees
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.Subject.Should().Contain(x => x.Message == FailingOnStopHostedService.Message);
+    }
+
+    [Fact]
+    public async Task should_report_the_manifest_failure_when_the_run_is_already_cancelled()
+    {
+        // given
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var run = await HostConsoleRun.RunAsync(
+            builder =>
+                builder.Services.AddStartupValidator(_ => new FailingValidator("The cache provider is missing.")),
+            ["describe"],
+            cancelled.Token
+        );
+
+        // then
+        run.ExitCode.Should().Be(1);
+        run.StandardError.Should().Contain("Host manifest failed:");
+    }
+
+    [Fact]
     public async Task should_exit_0_when_a_background_service_faults_only_while_the_host_shuts_down()
     {
         // given: a clean stop, during which the service throws (a disposed client, say)
@@ -323,6 +397,36 @@ public sealed class RunHeadlessAsyncTests : TestBase
 
             throw new ObjectDisposedException("The client was disposed.");
         }
+    }
+
+    private sealed class AggregateFaultingBackgroundService : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            await Task.Yield();
+
+            throw new AggregateException(
+                new InvalidOperationException("The orders processor failed."),
+                new InvalidOperationException("The invoices processor failed.")
+            );
+        }
+    }
+
+    private sealed class EmptyAggregateOnStartHostedService : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken) => Task.FromException(new AggregateException());
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class FailingOnStopHostedService : IHostedService
+    {
+        public const string Message = "The broker connection could not close.";
+
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) =>
+            Task.FromException(new InvalidOperationException(Message));
     }
 
     private sealed class FaultingBackgroundService : BackgroundService

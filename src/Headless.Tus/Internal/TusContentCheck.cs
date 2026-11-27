@@ -369,9 +369,9 @@ internal sealed class TusContentCheck(
     /// <summary>Content types and file extensions, as an allow-list or an upload's declaration names them.</summary>
     private sealed class TypeSet
     {
-        public HashSet<string> ContentTypes { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ContentTypes { get; } = [with(StringComparer.OrdinalIgnoreCase)];
 
-        public HashSet<string> Extensions { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Extensions { get; } = [with(StringComparer.OrdinalIgnoreCase)];
 
         public bool Covers(FileFormat format)
         {

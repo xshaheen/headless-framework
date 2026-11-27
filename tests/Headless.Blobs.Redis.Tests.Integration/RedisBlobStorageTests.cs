@@ -580,7 +580,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     {
         var value = key.ToString();
         var open = value.IndexOf('{', StringComparison.Ordinal);
-        var close = value.IndexOf('}', open + 1);
+        var close = value.IndexOf('}', open + 1, StringComparison.Ordinal);
 
         return value[(open + 1)..close];
     }

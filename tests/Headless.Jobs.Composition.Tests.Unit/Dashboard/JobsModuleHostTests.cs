@@ -378,7 +378,7 @@ public sealed class JobsModuleHostTests : TestBase
         using var refused = await JobsDashboardHttpHost.PostAsync(
             client,
             JobsDashboardHttpHost.Api + "/cron-jobs",
-            JsonDocument.Parse(json).RootElement,
+            JsonElement.Parse(json),
             cookie,
             AbortToken
         );

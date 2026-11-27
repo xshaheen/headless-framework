@@ -696,7 +696,7 @@ internal sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeP
 
     private sealed class ResourceState
     {
-        public Dictionary<string, LeaseEntry> Readers { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, LeaseEntry> Readers { get; } = [with(StringComparer.Ordinal)];
 
         public WriterEntry? Writer { get; set; }
 

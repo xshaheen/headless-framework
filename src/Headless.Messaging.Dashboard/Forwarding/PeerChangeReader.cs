@@ -43,7 +43,7 @@ internal sealed class PeerChangeReader(
     // fresh again soon.
     private const int _MaxSkippedTicks = 3;
 
-    private readonly Dictionary<string, PeerWatch> _watches = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PeerWatch> _watches = [with(StringComparer.Ordinal)];
     private readonly Lock _lock = new();
 
     /// <summary>

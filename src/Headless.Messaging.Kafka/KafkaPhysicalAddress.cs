@@ -40,7 +40,7 @@ internal static class KafkaPhysicalAddress
         }
 
         // librdkafka treats a subscription that starts with '^' as a pattern, so the prefix goes after the anchor.
-        var unanchored = pattern.StartsWith('^') ? pattern[1..] : pattern;
+        var unanchored = pattern.StartsWith('^', StringComparison.Ordinal) ? pattern[1..] : pattern;
         return "^" + Regex.Escape(hostPrefix + ".") + unanchored;
     }
 

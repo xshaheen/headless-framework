@@ -56,6 +56,7 @@ public sealed class OrderFulfillmentConsumer : IConsume<OrderPlaced>
 - **Before the handler runs** (opening the connection, a pool timeout, beginning the transaction, enlisting), the attempt does not spend the retry budget. EF execution strategies may retry this setup first; the raw storages do not. See [retries.md § Consumer failure policy](retries.md#consumer-failure-policy) for `RetryPolicy.MaxPreEntryFailures`.
 - **After the handler entered**, a failure in the handler, save, commit, rollback, or disposal goes to Messaging's retry path. EF never replays the handler inside one attempt.
 - **An ambiguous commit** is probed on every relational storage, so a commit that did land is recognized.
+- **A cancelled storage call** throws `OperationCanceledException` on every relational storage, including when the cancel interrupts a statement running on SQL Server, inside your transaction or on the storage's own connection. The driver's fault is its `InnerException`. Catch `OperationCanceledException`, not `SqlException`, to detect a cancel.
 
 ## Raw storage handlers
 

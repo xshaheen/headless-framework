@@ -18,7 +18,7 @@ namespace Headless.DistributedLocks;
 /// </remarks>
 internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int? maxWaitersPerResource)
 {
-    private readonly Dictionary<string, int> _waitersByResource = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _waitersByResource = [with(StringComparer.Ordinal)];
     private readonly Lock _gate = new();
 
     /// <summary>

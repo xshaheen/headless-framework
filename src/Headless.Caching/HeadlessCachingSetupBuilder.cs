@@ -14,7 +14,7 @@ namespace Headless.Caching;
 [PublicAPI]
 public sealed class HeadlessCachingSetupBuilder
 {
-    private readonly HashSet<string> _instanceNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _instanceNames = [with(StringComparer.Ordinal)];
 
     internal HeadlessCachingSetupBuilder(IServiceCollection services)
     {

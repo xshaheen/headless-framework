@@ -13,7 +13,7 @@ namespace Headless.Logging.Internal;
 /// </summary>
 internal sealed class LogPropertyRedactors(FrozenDictionary<string, Redactor> redactors)
 {
-    public static readonly LogPropertyRedactors Empty = new(FrozenDictionary<string, Redactor>.Empty);
+    public static readonly LogPropertyRedactors Empty = new([]);
 
     /// <summary>The text logging renders for a null value, inside a collection or in a template hole.</summary>
     public const string NullText = "(null)";

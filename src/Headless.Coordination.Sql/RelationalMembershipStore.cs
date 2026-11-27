@@ -617,7 +617,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         var identity = new NodeIdentity(new NodeId(reader.GetString(0)), new NodeIncarnation(reader.GetInt64(1)));
         var role = await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(2);
         var metadata = await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            ? [with(StringComparer.Ordinal)]
             : _Deserialize(reader.GetString(3));
 
         var lastBeat = await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false);
@@ -632,8 +632,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
 
     private Dictionary<string, string> _Deserialize(string value)
     {
-        return _serializer.Deserialize<Dictionary<string, string>>(value)
-            ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        return _serializer.Deserialize<Dictionary<string, string>>(value) ?? [with(StringComparer.Ordinal)];
     }
 
     // The state is an integer literal in the CASE: int on both engines, but read through Convert so a driver that
@@ -656,9 +655,9 @@ internal sealed class RelationalMembershipStore : IMembershipStore
             return await execute().ConfigureAwait(false);
         }
         // SqlClient reports a command it cancelled mid-flight as a provider error; surface the cancellation asked for.
-        catch (DbException ex) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (SqlCancellation.IsCancellation(ex, cancellationToken))
         {
-            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+            throw SqlCancellation.ToOperationCanceled(ex, cancellationToken);
         }
     }
 

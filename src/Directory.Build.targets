@@ -23,7 +23,7 @@
        with NU1004. Pinning the pack makes the lock file independent of the installed SDK; raise it with the SDK. -->
   <Target Name="PinILLinkPackVersion" BeforeTargets="ProcessFrameworkReferences">
     <ItemGroup>
-      <KnownILLinkPack Condition="'%(KnownILLinkPack.TargetFramework)' == 'net10.0'" ILLinkPackVersion="10.0.13" />
+      <KnownILLinkPack Condition="'%(KnownILLinkPack.TargetFramework)' == 'net11.0'" ILLinkPackVersion="11.0.0" />
     </ItemGroup>
   </Target>
 </Project>

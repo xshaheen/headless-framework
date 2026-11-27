@@ -48,11 +48,7 @@ internal static class TopicNormalizer
     public static CreateQueueRequest ToSqsCreateQueueRequest(this string origin)
     {
         var queueName = origin.NormalizeForSqsQueueName();
-        var request = new CreateQueueRequest
-        {
-            QueueName = queueName,
-            Attributes = new Dictionary<string, string>(StringComparer.Ordinal),
-        };
+        var request = new CreateQueueRequest { QueueName = queueName, Attributes = [with(StringComparer.Ordinal)] };
 
         if (queueName.IsAwsFifoName())
         {
@@ -66,10 +62,7 @@ internal static class TopicNormalizer
     public static CreateTopicRequest ToSnsCreateTopicRequest(this string origin)
     {
         var topicName = origin.NormalizeForAws();
-        var request = new CreateTopicRequest(topicName)
-        {
-            Attributes = new Dictionary<string, string>(StringComparer.Ordinal),
-        };
+        var request = new CreateTopicRequest(topicName) { Attributes = [with(StringComparer.Ordinal)] };
 
         if (topicName.IsAwsFifoName())
         {

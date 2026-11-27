@@ -13,7 +13,7 @@ public sealed class SettingsSnapshotTests : TestBase
     private const string _PublicLimit = "RateLimit.Public";
     private const string _UserLimit = "RateLimit.User";
 
-    private readonly Dictionary<string, string?> _stored = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _stored = [with(StringComparer.Ordinal)];
     private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
     private readonly ISettingDefinitionManager _definitionManager = Substitute.For<ISettingDefinitionManager>();
     private readonly TimerCountingTimeProvider _timeProvider = new();

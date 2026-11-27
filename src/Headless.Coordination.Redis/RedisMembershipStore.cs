@@ -422,8 +422,7 @@ internal sealed partial class RedisMembershipStore(
 
     private Dictionary<string, string> _DeserializeDictionary(string value)
     {
-        return serializer.Deserialize<Dictionary<string, string>>(value)
-            ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        return serializer.Deserialize<Dictionary<string, string>>(value) ?? [with(StringComparer.Ordinal)];
     }
 
     [LoggerMessage(

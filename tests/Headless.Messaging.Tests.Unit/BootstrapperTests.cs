@@ -177,6 +177,41 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_skip_the_hosted_start_without_a_fault_when_a_stop_has_begun()
+    {
+        // given: the host's stop reached the bootstrapper before its ExecuteAsync ran
+        await using var processor = new TrackingProcessingServer();
+        await using var provider = _CreateProvider(beforeMessaging: processor);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var hostedService = (IHostedService)bootstrapper;
+        await hostedService.StopAsync(AbortToken);
+
+        // when
+        await hostedService.StartAsync(AbortToken);
+        var executeTask = ((BackgroundService)bootstrapper).ExecuteTask!;
+        await executeTask
+            .WaitAsync(AbortToken)
+            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+
+        // then: a faulted ExecuteTask would make the host rethrow it from StopAsync
+        executeTask.IsCompletedSuccessfully.Should().BeTrue(executeTask.Exception?.ToString());
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_refuse_an_explicit_bootstrap_after_a_stop_has_begun()
+    {
+        await using var processor = new TrackingProcessingServer();
+        await using var provider = _CreateProvider(beforeMessaging: processor);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        await ((IHostedService)bootstrapper).StopAsync(AbortToken);
+
+        var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*shutdown has begun*");
+    }
+
+    [Fact]
     public async Task stop_should_return_at_configured_shutdown_boundary_when_processor_cleanup_blocks()
     {
         var timeProvider = new FakeTimeProvider();

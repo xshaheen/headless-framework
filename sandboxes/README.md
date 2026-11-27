@@ -86,7 +86,7 @@ The host also defines `sandbox.nightly-report` in code with a daily cron schedul
 a cron job defined in code, whose schedule stays read-only.
 
 The sandbox runs one node. A run on a second node needs `STORE=postgres` and a second process: start
-`dotnet sandboxes/Headless.Dashboards.Sandbox/bin/Release/net10.0/Headless.Dashboards.Sandbox.dll` by hand with
+`dotnet sandboxes/Headless.Dashboards.Sandbox/bin/Release/net11.0/Headless.Dashboards.Sandbox.dll` by hand with
 `ASPNETCORE_URLS` on another port, `ASPNETCORE_ENVIRONMENT=Development`, `Sandbox__Store=Postgres`, and the same
 `Sandbox__PostgresConnectionString` and `Sandbox__MessagingDashboardPassword` that `make up` uses. `make down` does not
 stop it.

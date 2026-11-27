@@ -183,17 +183,8 @@ public sealed class RabbitMqRawPayloadTests(RabbitMqFixture fixture) : TestBase
         return _WaitUntilAsync(
             async () =>
             {
-                var result = await fixture.Container.ExecAsync(
-                    [
-                        "rabbitmqctl",
-                        "list_queues",
-                        "-p",
-                        fixture.VirtualHost,
-                        "-q",
-                        "--no-table-headers",
-                        "name",
-                        "messages",
-                    ],
+                var result = await fixture.RabbitMqCtlAsync(
+                    ["list_queues", "-p", fixture.VirtualHost, "-q", "--no-table-headers", "name", "messages"],
                     AbortToken
                 );
 

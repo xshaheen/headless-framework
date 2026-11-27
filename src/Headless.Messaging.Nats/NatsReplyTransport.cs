@@ -36,7 +36,7 @@ internal sealed class NatsReplyTransport(INatsConnectionPool connectionPool, ILo
     {
         return ReplyAddresses.IsInReplyNamespace(address)
             && !address.Contains("..", StringComparison.Ordinal)
-            && !address.EndsWith('.');
+            && !address.EndsWith('.', StringComparison.Ordinal);
     }
 
     public ValueTask<IReplyListener> OpenListenerAsync(

@@ -201,7 +201,7 @@ public sealed class SettingValueProviderChainTests : TestBase
     {
         public const string ProviderName = "Account";
 
-        private readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _values = [with(StringComparer.Ordinal)];
 
         public string Name => ProviderName;
 

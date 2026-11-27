@@ -261,8 +261,9 @@ internal sealed class HttpIdempotencyOptionsValidator : AbstractValidator<HttpId
     private const int _MaxBodySizeForHashingCap = 64 * 1024 * 1024; // 64 MiB
     private const int _MaxRequestBodyBufferThreshold = _MaxBodySizeForHashingCap + 1;
 
-    private static readonly HashSet<string> _ValidMethods = new(StringComparer.OrdinalIgnoreCase)
-    {
+    private static readonly HashSet<string> _ValidMethods =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
         "POST",
         "PUT",
         "PATCH",
@@ -271,7 +272,7 @@ internal sealed class HttpIdempotencyOptionsValidator : AbstractValidator<HttpId
         "OPTIONS",
         "CONNECT",
         "TRACE",
-    };
+    ];
 
     public HttpIdempotencyOptionsValidator()
     {

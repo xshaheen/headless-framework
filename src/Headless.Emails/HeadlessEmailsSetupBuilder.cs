@@ -20,7 +20,7 @@ namespace Headless.Emails;
 [PublicAPI]
 public sealed class HeadlessEmailsSetupBuilder
 {
-    private readonly HashSet<string> _instanceNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _instanceNames = [with(StringComparer.Ordinal)];
 
     internal HeadlessEmailsSetupBuilder(IServiceCollection services)
     {

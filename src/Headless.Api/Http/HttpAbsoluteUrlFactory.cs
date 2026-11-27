@@ -80,7 +80,7 @@ internal sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IA
 
         // A relative path without a leading '/' ("users/1") would otherwise be glued onto the host
         // ("https://example.comusers/1"), which names a different host.
-        var separator = path.StartsWith('/') ? "" : "/";
+        var separator = path.StartsWith('/', StringComparison.Ordinal) ? "" : "/";
 
         return $"{request.Scheme}://{request.Host.ToUriComponent()}{request.PathBase.ToUriComponent()}{separator}{path}";
     }

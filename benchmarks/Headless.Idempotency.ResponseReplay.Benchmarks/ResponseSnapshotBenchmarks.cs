@@ -63,7 +63,7 @@ public class ResponseSnapshotBenchmarks
     private sealed class LegacySnapshot
     {
         public int StatusCode { get; set; }
-        public Dictionary<string, string[]> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string[]> Headers { get; set; } = [with(StringComparer.OrdinalIgnoreCase)];
         public byte[] Body { get; set; } = [];
     }
 

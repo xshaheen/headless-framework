@@ -20,7 +20,7 @@ namespace Headless.Sms;
 [PublicAPI]
 public sealed class HeadlessSmsSetupBuilder
 {
-    private readonly HashSet<string> _instanceNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _instanceNames = [with(StringComparer.Ordinal)];
 
     internal HeadlessSmsSetupBuilder(IServiceCollection services)
     {

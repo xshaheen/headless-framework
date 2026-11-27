@@ -38,7 +38,10 @@ internal static class GeneratorTestHelper
     {
         var compilation = CreateCompilation("Jobs.SourceGenerator.Tests", sources, additionalReferences);
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(new JobsIncrementalSourceGenerator());
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            [new JobsIncrementalSourceGenerator().AsSourceGenerator()],
+            parseOptions: GeneratorCompilation.ParseOptions
+        );
         var result = driver.RunGeneratorsAndUpdateCompilation(
             compilation,
             out var outputCompilation,
@@ -55,7 +58,10 @@ internal static class GeneratorTestHelper
     )
     {
         var compilation = CreateCompilation(assemblyName, [($"{assemblyName}.cs", source)], []);
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(new JobsIncrementalSourceGenerator());
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            [new JobsIncrementalSourceGenerator().AsSourceGenerator()],
+            parseOptions: GeneratorCompilation.ParseOptions
+        );
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var generatorDiagnostics);
         compilationDiagnostics = outputCompilation.GetDiagnostics().AddRange(generatorDiagnostics);
 

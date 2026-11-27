@@ -35,7 +35,7 @@ internal sealed class NodeEpoch
             return false;
         }
 
-        var separator = eventId.LastIndexOf(':');
+        var separator = eventId.LastIndexOf(':', StringComparison.Ordinal);
 
         return separator > 0
             && string.Equals(eventId[..separator], Value, StringComparison.Ordinal)

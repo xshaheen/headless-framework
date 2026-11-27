@@ -275,7 +275,7 @@ internal static class HostLeakHost
         public bool TryRedact(string path, [NotNullWhen(true)] out string? redacted)
         {
             var start = path.IndexOf("/users/", StringComparison.Ordinal);
-            var end = start < 0 ? -1 : path.IndexOf('/', start + "/users/".Length);
+            var end = start < 0 ? -1 : path.IndexOf('/', start + "/users/".Length, StringComparison.Ordinal);
 
             if (start < 0 || end < 0)
             {

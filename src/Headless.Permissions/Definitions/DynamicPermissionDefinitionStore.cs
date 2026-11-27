@@ -125,8 +125,8 @@ public sealed class DynamicPermissionDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private volatile Dictionary<string, PermissionGroupDefinition> _groupMemoryCache = new(StringComparer.Ordinal);
-    private volatile Dictionary<string, PermissionDefinition> _permissionMemoryCache = new(StringComparer.Ordinal);
+    private volatile Dictionary<string, PermissionGroupDefinition> _groupMemoryCache = [with(StringComparer.Ordinal)];
+    private volatile Dictionary<string, PermissionDefinition> _permissionMemoryCache = [with(StringComparer.Ordinal)];
     private volatile IReadOnlyList<PermissionGroupDefinition> _groupListCache = [];
     private volatile IReadOnlyList<PermissionDefinition> _permissionListCache = [];
 

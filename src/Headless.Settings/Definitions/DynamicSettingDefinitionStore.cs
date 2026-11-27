@@ -93,7 +93,7 @@ public sealed class DynamicSettingDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private volatile Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
+    private volatile Dictionary<string, SettingDefinition> _memoryCache = [with(StringComparer.Ordinal)];
     private volatile IReadOnlyList<SettingDefinition> _settingListCache = [];
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)

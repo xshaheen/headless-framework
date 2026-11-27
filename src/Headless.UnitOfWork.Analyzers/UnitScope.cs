@@ -13,19 +13,21 @@ namespace Headless.UnitOfWork.Analyzers;
 /// </summary>
 internal static class UnitScope
 {
-    private static readonly HashSet<string> _CompletionMembers = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _CompletionMembers =
+    [
+        with(StringComparer.Ordinal),
         "CompleteAsync",
         "RollbackAsync",
         "Dispose",
         "DisposeAsync",
-    };
+    ];
 
-    private static readonly HashSet<string> _CallbackMembers = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _CallbackMembers =
+    [
+        with(StringComparer.Ordinal),
         "OnCompleted",
         "OnFailed",
-    };
+    ];
 
     /// <summary>Returns the innermost eligible unit at <paramref name="call"/>, or <see langword="null"/> when none is.</summary>
     public static ISymbol? Find(

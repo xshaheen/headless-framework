@@ -5,6 +5,7 @@ using System.Data;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Headless.Sql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -204,7 +205,9 @@ internal static class JobsKeyLock
         }
 
         command.Parameters.Add(parameter);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await SqlCancellation
+            .ObserveAsync(command.ExecuteScalarAsync(cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
         if (result is not int acquired || acquired != identities.Length)
         {
             if (result is int failure && failure < 0)

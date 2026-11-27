@@ -304,7 +304,7 @@ internal sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvi
 
     private sealed class ResourceState
     {
-        public Dictionary<string, HolderEntry> Holders { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, HolderEntry> Holders { get; } = [with(StringComparer.Ordinal)];
 
         public bool Removed { get; set; }
     }

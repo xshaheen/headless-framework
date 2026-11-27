@@ -369,8 +369,7 @@ internal sealed class ProblemDetailsCreator(
 
             if (localized is null && !ReferenceEquals(result, error))
             {
-                localized = new List<ErrorDescriptor>(errors.Count);
-                localized.AddRange(errors.Take(index));
+                localized = [with(errors.Count), .. errors.Take(index)];
             }
 
             localized?.Add(result);

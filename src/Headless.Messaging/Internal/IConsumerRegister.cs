@@ -966,7 +966,7 @@ internal sealed partial class ConsumerRegister(
                 // With several brokers, one that is down must not stop the others: the subscriptions of this transport
                 // stay missing, and the next pass recreates exactly those, leaving the running ones alone.
                 _needsPartialRestart = true;
-                (unreachableTransports ??= new HashSet<string>(StringComparer.Ordinal)).Add(transportKey);
+                (unreachableTransports ??= [with(StringComparer.Ordinal)]).Add(transportKey);
                 continue;
             }
 
@@ -1929,7 +1929,7 @@ internal sealed partial class ConsumerRegister(
 
         // Health is kept per client because one client's ConsumerRegistered says nothing about a sibling that lost its
         // channel; the handle is degraded while any entry remains.
-        private readonly HashSet<object> _degraded = new(ReferenceEqualityComparer.Instance);
+        private readonly HashSet<object> _degraded = [with(ReferenceEqualityComparer.Instance)];
 
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
@@ -1993,7 +1993,7 @@ internal sealed partial class ConsumerRegister(
 
         // Clients a sequential subscription stopped when its host lost the lock: they no longer belong to the handle, so
         // the events they raise while closing must not degrade it.
-        private readonly HashSet<IConsumerClient> _retired = new(ReferenceEqualityComparer.Instance);
+        private readonly HashSet<IConsumerClient> _retired = [with(ReferenceEqualityComparer.Instance)];
 
         public void MarkClientDegraded(IConsumerClient client)
         {

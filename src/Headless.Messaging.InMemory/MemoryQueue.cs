@@ -18,7 +18,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     // Reply addresses live here rather than on a transport instance, so hosts that share one MemoryQueue also share
     // reply addresses, as processes sharing one broker do.
-    private readonly Dictionary<string, InMemoryReplyListener> _replyListeners = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, InMemoryReplyListener> _replyListeners = [with(StringComparer.Ordinal)];
 
     /// <summary>
     /// Registers a consumer client for a specific group.

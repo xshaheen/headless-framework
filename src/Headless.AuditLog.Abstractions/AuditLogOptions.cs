@@ -53,18 +53,18 @@ public sealed class AuditLogOptions
     /// Consumers can add, remove, or clear entries to match their model.
     /// </summary>
     public HashSet<string> DefaultExcludedProperties { get; } =
-        new(StringComparer.Ordinal)
-        {
-            "ConcurrencyStamp",
-            "CreatedAt",
-            "UpdatedAt",
-            "DeletedAt",
-            "RestoredAt",
-            "CreatedById",
-            "UpdatedById",
-            "DeletedById",
-            "RestoredById",
-        };
+    [
+        with(StringComparer.Ordinal),
+        "ConcurrencyStamp",
+        "CreatedAt",
+        "UpdatedAt",
+        "DeletedAt",
+        "RestoredAt",
+        "CreatedById",
+        "UpdatedById",
+        "DeletedById",
+        "RestoredById",
+    ];
 
     /// <summary>
     /// Strategy applied when audit capture (<c>IAuditChangeCapture.CaptureChanges</c>) throws,

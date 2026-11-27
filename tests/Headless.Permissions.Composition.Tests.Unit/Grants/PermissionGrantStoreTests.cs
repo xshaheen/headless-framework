@@ -65,7 +65,7 @@ public sealed class PermissionGrantStoreTests : TestBase
 
     // The rows the repository holds, by name. Writes land here, and a read by name returns them, so a write's read-back
     // after its commit sees what it stored; a test that configures the read itself overrides this.
-    private readonly Dictionary<string, PermissionGrantRecord> _rows = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PermissionGrantRecord> _rows = [with(StringComparer.Ordinal)];
 
     public PermissionGrantStoreTests()
     {

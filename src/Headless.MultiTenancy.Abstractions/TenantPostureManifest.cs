@@ -15,7 +15,7 @@ namespace Headless.MultiTenancy;
 public sealed class TenantPostureManifest
 {
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, TenantSeamPosture> _seams = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TenantSeamPosture> _seams = [with(StringComparer.Ordinal)];
 
     /// <summary>Gets a point-in-time, thread-safe snapshot of configured seam posture.</summary>
     /// <value>An immutable copy of the recorded seam postures; mutating the result does not affect the manifest.</value>

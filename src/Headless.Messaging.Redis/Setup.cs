@@ -175,7 +175,7 @@ public static class SetupMessagingRedis
 
             options.Configuration ??= new ConfigurationOptions();
 
-            if (!options.Configuration.EndPoints.Any())
+            if (options.Configuration.EndPoints.Count == 0)
             {
                 options.Configuration.EndPoints.Add(IPAddress.Loopback, 0);
                 options.Configuration.SetDefaultPorts();

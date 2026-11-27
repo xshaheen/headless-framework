@@ -20,7 +20,7 @@ public class MessageHeaderBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+        _headers = [with(StringComparer.Ordinal)];
 
         for (var i = 0; i < HeaderCount; i++)
         {

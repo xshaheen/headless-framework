@@ -689,7 +689,7 @@ file sealed class CancellationOnlyStream : Stream
 /// <summary>Minimal in-memory <see cref="IBlobStorage"/> used to prove content/JSON helpers round-trip end to end.</summary>
 file sealed class InMemoryBlobStorage : IBlobStorage
 {
-    private readonly Dictionary<string, byte[]> _store = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _store = [with(StringComparer.Ordinal)];
 
     // The dictionary materializes lazily; uploads never require a provisioned container.
     public bool RequiresContainerProvisioning => false;

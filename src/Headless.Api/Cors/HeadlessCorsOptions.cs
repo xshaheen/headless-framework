@@ -246,7 +246,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
         // A one-label suffix ('*.com') or none at all ('*.') matches every host under a top-level domain.
         var host = new Uri(concrete).IdnHost;
 
-        if (!host.Contains('.', StringComparison.Ordinal) || host.EndsWith('.'))
+        if (!host.Contains('.', StringComparison.Ordinal) || host.EndsWith('.', StringComparison.Ordinal))
         {
             context.AddFailure(
                 $"Allowed origin template '{template}' needs a literal suffix of at least two labels after '*.',"
@@ -290,7 +290,7 @@ internal sealed class HeadlessCorsOptionsValidator : AbstractValidator<HeadlessC
         // fail, since the browser's Origin header never carries a path.
         var authorityStart = origin.IndexOf("://", StringComparison.Ordinal) + 3;
 
-        if (origin.IndexOf('/', authorityStart) >= 0)
+        if (origin.IndexOf('/', authorityStart, StringComparison.Ordinal) >= 0)
         {
             return "must not contain a path or trailing slash.";
         }

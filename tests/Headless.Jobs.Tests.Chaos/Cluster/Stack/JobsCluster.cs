@@ -24,7 +24,7 @@ public sealed class JobsCluster : IAsyncDisposable
 
     private readonly Action<string>? _output;
     private readonly List<ClusterNode> _nodes = [];
-    private readonly HashSet<string> _watchedOwners = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _watchedOwners = [with(StringComparer.Ordinal)];
     private readonly List<LeaseSample> _leaseSamples = [];
     private readonly Lock _sampleLock = new();
     private IHost? _control;

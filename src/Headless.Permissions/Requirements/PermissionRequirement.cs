@@ -51,11 +51,11 @@ public sealed class PermissionRequirementHandler(IPermissionManager permissionMa
             {
                 case PermissionRequirement single:
                     (requirements ??= []).Add(single);
-                    (names ??= new(StringComparer.Ordinal)).Add(single.PermissionName);
+                    (names ??= [with(StringComparer.Ordinal)]).Add(single.PermissionName);
                     break;
                 case PermissionsRequirement multiple:
                     (requirements ??= []).Add(multiple);
-                    (names ??= new(StringComparer.Ordinal)).UnionWith(multiple.PermissionNames);
+                    (names ??= [with(StringComparer.Ordinal)]).UnionWith(multiple.PermissionNames);
                     break;
             }
         }

@@ -134,7 +134,7 @@ public static class ArabicSearchCorpus
         {
             var line = lines[i];
 
-            if (line.Length == 0 || line.StartsWith('#'))
+            if (line.Length == 0 || line.StartsWith('#', StringComparison.Ordinal))
             {
                 continue;
             }

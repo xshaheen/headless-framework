@@ -124,7 +124,11 @@ internal sealed class RelationalSequenceStore(
         // settings stay as the caller set them.
         var (connection, transaction) = _RequireLive(unitOfWork);
 
-        return await _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken)
+        return await SqlCancellation
+            .ObserveAsync(
+                _ExecuteAsync(connection, transaction, _incrementSql, key, insertValue, delta, cancellationToken),
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -138,6 +142,23 @@ internal sealed class RelationalSequenceStore(
     {
         var (connection, transaction) = _RequireLive(unitOfWork);
 
+        return await SqlCancellation
+            .ObserveAsync(
+                _AdvanceAsync(connection, transaction, key, value, baseline, cancellationToken),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<long> _AdvanceAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        SequenceKey key,
+        long value,
+        long baseline,
+        CancellationToken cancellationToken
+    )
+    {
         // First make sure the counter exists, so the locked read below always finds a row to lock: two first reports
         // for one key then queue on that row instead of both reading "absent".
         await using (var insert = _Command(connection, transaction, _advanceInsertSql, key))

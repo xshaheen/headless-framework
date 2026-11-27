@@ -30,7 +30,7 @@ internal sealed class MessagingCircuitChanges : ICircuitStateObserver
     private readonly TimeProvider _timeProvider;
     private readonly IServiceProvider _services;
     private ICircuitBreakerMonitor? _monitor;
-    private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _versions = [with(StringComparer.Ordinal)];
     private readonly Lock _lock = new();
     private readonly long _startedAt;
     private long _last;

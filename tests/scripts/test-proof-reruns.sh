@@ -32,7 +32,7 @@ project() {
     if [[ -n "$reference" ]]; then printf '    <ProjectReference Include="%s" />\n' "$reference"; fi
     printf '  </ItemGroup>\n</Project>\n'
   } > "$path"
-  printf '{"version": 2, "dependencies": {"net10.0": {"%s": {"type": "Direct"}, "Shared.Analyzer": {"type": "Direct"}}}}\n' "$package" > "$dir/packages.lock.json"
+  printf '{"version": 2, "dependencies": {"net11.0": {"%s": {"type": "Direct"}, "Shared.Analyzer": {"type": "Direct"}}}}\n' "$package" > "$dir/packages.lock.json"
 }
 
 project src/Kafka/Kafka.csproj Confluent.Kafka
@@ -82,7 +82,7 @@ mkdir -p "$proof/integration-tests"
 printf 'tests/Kafka.Tests.Integration/Kafka.Tests.Integration.csproj\n' > "$proof/integration.txt"
 printf '{"base": "origin/main", "changed_projects": ["src/Kafka/Kafka.csproj"]}\n' > "$proof/affected.json"
 printf '{"name": "integration-tests", "command": [], "exit_code": 1, "seconds": 1.0, "log": "", "note": ""}\n' > "$proof/stages.jsonl"
-cat > "$proof/integration-tests/Kafka.Tests.Integration_net10.0_arm64.trx" <<'XML'
+cat > "$proof/integration-tests/Kafka.Tests.Integration_net11.0_arm64.trx" <<'XML'
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
   <Results>
     <UnitTestResult testName="should_consume" outcome="Failed"><Output><ErrorInfo><Message>broker timed out</Message></ErrorInfo></Output></UnitTestResult>

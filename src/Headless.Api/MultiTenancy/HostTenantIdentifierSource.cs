@@ -73,7 +73,7 @@ internal sealed partial class HostTenantIdentifierSource(
 
         var hostname = host.Host;
 
-        if (hostname.EndsWith('.'))
+        if (hostname.EndsWith('.', StringComparison.Ordinal))
         {
             hostname = hostname[..^1];
         }

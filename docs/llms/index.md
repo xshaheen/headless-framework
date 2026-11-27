@@ -16,6 +16,7 @@ Package READMEs only route to these guides; they are not API reference.
 
 ## Framework-wide rules
 
+- Target `net11.0` and build with the .NET 11 SDK or Visual Studio 2026 18.12 or later. Every package ships only a `net11.0` build, so a `net10.0` project fails restore with NU1202. The source generator and analyzer packages target `netstandard2.0` and need the compiler those tools ship (Roslyn 5.12). An older compiler skips them with a warning, so the generated code is missing.
 - Keep provider types at the composition root. Application and domain code depend on abstractions such as `ICache`, `IBlobStorage`, `IBus`, or `IEmailSender`.
 - Install only the packages the host uses: usually an abstractions package, the domain's root package, and one provider. A guide whose domain has another shape says so.
 - Register each feature through its `AddHeadless*` setup builder and pick providers there. Do not register the feature's services a second way around the builder.

@@ -59,7 +59,9 @@ internal static class MessageContractRules
             );
         }
 
-        if (messageName.StartsWith('.') || messageName.EndsWith('.'))
+        if (
+            messageName.StartsWith('.', StringComparison.Ordinal) || messageName.EndsWith('.', StringComparison.Ordinal)
+        )
         {
             throw new ArgumentException(
                 $"Message name '{messageName}' cannot start or end with a dot.",

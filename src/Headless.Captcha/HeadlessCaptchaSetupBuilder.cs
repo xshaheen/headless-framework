@@ -12,7 +12,7 @@ namespace Headless.Captcha;
 [PublicAPI]
 public sealed class HeadlessCaptchaSetupBuilder
 {
-    private readonly HashSet<string> _names = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _names = [with(StringComparer.Ordinal)];
 
     internal HeadlessCaptchaSetupBuilder(IServiceCollection services)
     {

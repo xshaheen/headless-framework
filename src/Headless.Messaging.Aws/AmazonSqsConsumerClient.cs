@@ -66,12 +66,12 @@ internal sealed class AmazonSqsConsumerClient(
 
     // The running receive loop of each polled queue URL, and the signal that the URL set changed. Both are guarded by
     // _queueUrlsLock together with _queueUrls.
-    private readonly Dictionary<string, Task> _receiveLoops = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Task> _receiveLoops = [with(StringComparer.Ordinal)];
     private TaskCompletionSource _queueUrlsChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     // The message name each polled queue belongs to, built when the client subscribes: on the Queue lane a queue URL
     // maps to its message, and on the Bus lane the identity queue maps to its message only when it carries one.
-    private FrozenDictionary<string, string> _arrivalNames = FrozenDictionary<string, string>.Empty;
+    private FrozenDictionary<string, string> _arrivalNames = [];
     private string? _busArrivalName;
 
     // Every received message the core has not settled yet, keyed by receipt handle: the heartbeat extends their

@@ -758,7 +758,7 @@ public sealed class JobsModuleApiTests : TestBase
         var entry = _log.Entries.Should().ContainSingle().Subject;
         entry.Scope.Should().NotBeNull();
         entry.Scope.Should().NotContain("ord-7");
-        JsonDocument.Parse(entry.Scope!).RootElement.GetProperty("correlationId").GetString().Should().Be("(redacted)");
+        JsonElement.Parse(entry.Scope!).GetProperty("correlationId").GetString().Should().Be("(redacted)");
     }
 
     private static async Task<List<Guid>> _RunIdsAsync(HttpClient client, string cookie, string path)

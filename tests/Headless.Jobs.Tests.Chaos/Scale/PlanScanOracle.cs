@@ -41,7 +41,7 @@ public static partial class PlanScanOracle
                 continue;
             }
 
-            if (block is not null && line.StartsWith('\t'))
+            if (block is not null && line.StartsWith('\t', StringComparison.Ordinal))
             {
                 block.Add(line.Trim());
 

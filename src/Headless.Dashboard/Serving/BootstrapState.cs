@@ -293,7 +293,7 @@ internal static class ShellJson
         return options;
     }
 
-    private static JsonTypeInfo<T> _TypeInfo<T>() => (JsonTypeInfo<T>)_Options.GetTypeInfo(typeof(T));
+    private static JsonTypeInfo<T> _TypeInfo<T>() => _Options.GetTypeInfo<T>();
 }
 
 [JsonSourceGenerationOptions(

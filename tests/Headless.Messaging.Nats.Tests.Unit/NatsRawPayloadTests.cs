@@ -326,7 +326,7 @@ public sealed class NatsRawPayloadTests : TestBase
             rawPayload: raw
         );
 
-    private static HashSet<string> _NoShards() => new(StringComparer.Ordinal);
+    private static HashSet<string> _NoShards() => [with(StringComparer.Ordinal)];
 
     private static INatsJSMsg<ReadOnlyMemory<byte>> _JetStreamMsg(string replyTo, string subject = _RawSubject)
     {

@@ -101,8 +101,9 @@ internal sealed class MessagePublishRequestFactory(
         $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage."
     );
 
-    private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _ReservedHeaders =
+    [
+        with(StringComparer.Ordinal),
         Headers.MessageId,
         Headers.ContractVersion,
         Headers.RoutingAffinityKey,
@@ -125,7 +126,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.InReplyTo,
         Headers.ReplyStatus,
         Headers.TransportAddress,
-    };
+    ];
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
     {

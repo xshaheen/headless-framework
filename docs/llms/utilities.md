@@ -344,6 +344,7 @@ return await app.RunHeadlessAsync(args);
 | Anything else | Runs the host as `RunAsync` does | Yes |
 
 - **Every verb validates like a start.** It runs options marked `ValidateOnStart`, then every `IHeadlessStartupValidator`, in the order a real start does. A verb never starts a hosted service, so it opens no broker connection and claims no job. The resource [startup checks](#what-a-starting-host-checks) are skipped, so `resources provision` can create what a start would reject.
+- **Verbs run only `IAsyncStartupValidator` registrations from `Microsoft.Extensions.Options`.** A validator you register only as the obsolete `IStartupValidator` runs on a real start but not during `check`, `describe`, `resources`, `seed`, or `deploy`, so a verb passes a configuration the start rejects. Implement `IHeadlessStartupValidator` for your own checks, or `IAsyncStartupValidator` when you replace the options validator. **Verify:** run `check` with the configuration your validator rejects. The command must exit non-zero with your validator's message.
 - **Run verbs from the host's own entry point.** Only the entry point sees the host's real configuration sources.
 - **Console logging goes to standard error** during a verb, for hosts built with `HostApplicationBuilder` or `WebApplicationBuilder`. A host built with the legacy `Host.CreateDefaultBuilder` can still write Microsoft console logger lines to standard output. `describe` then writes a warning to standard error first. Filter the log lines out, or turn console logging off for the command.
 - **A normal run exits 1 after a background fault.** When the host runs normally, `RunHeadlessAsync` returns 0, or 1 when a `BackgroundService` had faulted by the time the host began stopping. It then writes `Host stopped: {service} failed: {message}` to standard error. A fault the stop causes, such as a disposed client during shutdown, does not count. Orchestrators see the exit code.
@@ -584,7 +585,7 @@ dotnet MyApp.dll describe | jq '.sections.jobs.functions[].name'
       "environment": "Production",
       "applicationVersion": "2.4.0+9f2c1e7",
       "headlessVersion": "0.9.0+c56441b",
-      "runtime": ".NET 10.0.13"
+      "runtime": ".NET 11.0.0"
     },
     "jobs": { "functions": [] },
     "messaging": { "consumers": [], "messages": [], "outboxes": [], "transports": {} }
@@ -902,6 +903,8 @@ services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("Ap
 
 **Verify:** with an invalid value, the host start and `dotnet MyApp.dll describe` both fail with an `OptionsValidationException` that names the failed rule.
 
+An empty string in configuration is a value: a source added later that sets a key to `""` overrides an earlier source, also through `AddConfiguration`, so the bound property becomes `""` and a `NotEmpty` rule fails the start. Remove the key to keep the earlier value.
+
 In a trimmed or native AOT application, use the `Action<TOptions>` overloads. The overloads that bind an `IConfiguration` (`Configure*`, `GetOptions`, `GetRequired`) or validate with data annotations carry `[RequiresUnreferencedCode]`, and the binding ones also `[RequiresDynamicCode]`, so the compiler warns at the call site.
 
 ### Service registration helpers
@@ -932,6 +935,7 @@ services.TryDecorateKeyedWith<IService>("reports", (inner, sp) => new LoggingSer
 - A decorator that returns a different instance owns disposing the inner one, because the container tracks only what the factory returns.
 - Decorating turns every registration into a factory, so an instance the application registered and owned (`AddSingleton(instance)`) becomes container-disposed.
 - `TryDecorateKeyedWith` does not decorate a `KeyedService.AnyKey` registration.
+- Disposing a scope or the provider disposes every tracked service even when one throws. One failure rethrows as it is; two or more throw one `AggregateException` with each failure in `InnerExceptions`. Catch both shapes around `Dispose` or `DisposeAsync`, because a `catch` for a service's own exception type misses the aggregate.
 
 ---
 

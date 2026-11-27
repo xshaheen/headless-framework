@@ -17,8 +17,9 @@ internal static class WalkLeaves
     // A class or any of its base classes with one of these names. A DbContext's getters reach its Database, Model, and
     // sets; an entry's reach the change tracker and every navigation; an HTTP context's reach the request body and the
     // service provider.
-    private static readonly HashSet<string> _BaseNames = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _BaseNames =
+    [
+        with(StringComparer.Ordinal),
         "Microsoft.EntityFrameworkCore.DbContext",
         "Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade",
         "Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker",
@@ -28,19 +29,20 @@ internal static class WalkLeaves
         "Microsoft.AspNetCore.Http.HttpRequest",
         "Microsoft.AspNetCore.Http.HttpResponse",
         "Microsoft.AspNetCore.Http.ConnectionInfo",
-    };
+    ];
 
     // A type implementing one of these. A lazy-loading proxy loads a navigation from inside its getter, and an
     // NHibernate collection loads on enumeration although it is a list; a model's getters reach every entity type.
-    private static readonly HashSet<string> _InterfaceNames = new(StringComparer.Ordinal)
-    {
+    private static readonly HashSet<string> _InterfaceNames =
+    [
+        with(StringComparer.Ordinal),
         "Microsoft.EntityFrameworkCore.Metadata.IReadOnlyModel",
         "Microsoft.EntityFrameworkCore.Infrastructure.ILazyLoader",
         "Microsoft.EntityFrameworkCore.Proxies.Internal.IProxyLazyLoader",
         "Castle.DynamicProxy.IProxyTargetAccessor",
         "NHibernate.Proxy.INHibernateProxy",
         "NHibernate.Collection.IPersistentCollection",
-    };
+    ];
 
     private const string _LazyLoaderName = "Microsoft.EntityFrameworkCore.Infrastructure.ILazyLoader";
 

@@ -126,7 +126,7 @@ public sealed class OperationTransformerTests : TestBase
             {
                 ["403"] = new OpenApiResponse
                 {
-                    Content = new Dictionary<string, OpenApiMediaType>(StringComparer.Ordinal)
+                    Content = new Dictionary<string, IOpenApiMediaType>(StringComparer.Ordinal)
                     {
                         ["application/problem+json"] = mediaType,
                     },

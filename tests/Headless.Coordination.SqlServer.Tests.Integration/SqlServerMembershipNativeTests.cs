@@ -265,6 +265,71 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         livenessRows.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_throw_operation_canceled_when_a_heartbeat_is_cancelled_while_it_waits_on_a_held_row()
+    {
+        // SqlClient reports a cancel that interrupts a running command as a SqlException, not as the
+        // OperationCanceledException every other engine throws. Holding the node's liveness row keeps the heartbeat
+        // running on the server, so the cancel always lands mid-command.
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await using var holder = new SqlConnection(fixture.ConnectionString);
+        await holder.OpenAsync(AbortToken);
+        await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync(AbortToken);
+        await using (
+            var lockRow = new SqlCommand(
+                $$"""
+                SELECT 1 FROM {{_Schema}}.CoordinationLiveness WITH (XLOCK, ROWLOCK)
+                WHERE ClusterName = @ClusterName AND NodeId = 'node-a';
+                """,
+                holder,
+                transaction
+            )
+        )
+        {
+            lockRow.Parameters.AddWithValue("ClusterName", cluster);
+            (await lockRow.ExecuteScalarAsync(AbortToken)).Should().NotBeNull();
+        }
+
+        short holderSession;
+        await using (var spid = new SqlCommand("SELECT CAST(@@SPID AS smallint);", holder, transaction))
+        {
+            holderSession = (short)(await spid.ExecuteScalarAsync(AbortToken))!;
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var call = store.HeartbeatAsync(identity, cts.Token).AsTask();
+
+        // The server waits until the heartbeat queues on the held row, so the cancel cannot reach the call before its
+        // command does.
+        await using (var connection = new SqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync(AbortToken);
+            await using var wait = new SqlCommand(
+                """
+                WHILE NOT EXISTS (SELECT 1 FROM sys.dm_exec_requests WHERE blocking_session_id = @Holder)
+                    WAITFOR DELAY '00:00:00.010';
+                """,
+                connection
+            );
+            wait.CommandTimeout = 0;
+            wait.Parameters.AddWithValue("Holder", holderSession);
+            await wait.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        await cts.CancelAsync();
+
+        // The driver throws OperationCanceledException itself when the cancel lands in a reader read, and SqlException when
+        // it lands in the command; the call reports either as the cancellation.
+        await FluentActions.Awaiting(() => call).Should().ThrowAsync<OperationCanceledException>();
+
+        await transaction.RollbackAsync(AbortToken);
+        (await store.HeartbeatAsync(identity, AbortToken)).Should().BeTrue();
+    }
+
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");

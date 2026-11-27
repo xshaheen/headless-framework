@@ -118,13 +118,18 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
         return Task.CompletedTask;
     }
 
-    private static void _VisitContent(DocumentWalker walker, IDictionary<string, OpenApiMediaType> content, TypeUse use)
+    private static void _VisitContent(
+        DocumentWalker walker,
+        IDictionary<string, IOpenApiMediaType> content,
+        TypeUse use
+    )
     {
         foreach (var media in content.Values)
         {
-            if (media.Schema is { } schema)
+            // A media type that is a component reference is shared, so only an inline one is rewritten here.
+            if (media is OpenApiMediaType { Schema: { } schema } inline)
             {
-                media.Schema = walker.Visit(schema, use);
+                inline.Schema = walker.Visit(schema, use);
             }
         }
     }
@@ -147,16 +152,16 @@ internal sealed class GenericNullabilityTransformer : IOpenApiOperationTransform
         private readonly NullabilityInfoContext _nullability = new();
 
         // The component of each generic type as the generator published it, before this walker rewrote it.
-        private readonly Dictionary<string, OpenApiSchema> _originals = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, OpenApiSchema> _originals = [with(StringComparer.Ordinal)];
 
         // The component chosen for each (component id, use) pair, so every use resolves once.
-        private readonly Dictionary<string, string> _resolved = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _building = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _reenteredWhileBuilding = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _resolved = [with(StringComparer.Ordinal)];
+        private readonly HashSet<string> _building = [with(StringComparer.Ordinal)];
+        private readonly HashSet<string> _reenteredWhileBuilding = [with(StringComparer.Ordinal)];
 
-        private readonly HashSet<string> _walked = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _variants = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _replaced = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _walked = [with(StringComparer.Ordinal)];
+        private readonly HashSet<string> _variants = [with(StringComparer.Ordinal)];
+        private readonly HashSet<string> _replaced = [with(StringComparer.Ordinal)];
 
         public DocumentWalker(OpenApiDocument document, IServiceProvider services)
         {

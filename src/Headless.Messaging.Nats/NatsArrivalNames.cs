@@ -13,8 +13,7 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsArrivalNames
 {
     /// <summary>A lookup for a client that subscribed to nothing: no subject names a message.</summary>
-    public static NatsArrivalNames Empty { get; } =
-        new(FrozenDictionary<string, string>.Empty, FrozenDictionary<string, string>.Empty, [], []);
+    public static NatsArrivalNames Empty { get; } = new([], [], [], []);
 
     // A subscribed message's own subject.
     private readonly FrozenDictionary<string, string> _exact;
@@ -128,7 +127,7 @@ internal sealed class NatsArrivalNames
         }
 
         // A shard is one token, so only the last token can be one.
-        var lastDot = subject.LastIndexOf('.');
+        var lastDot = subject.LastIndexOf('.', StringComparison.Ordinal);
         if (lastDot <= 0 || lastDot == subject.Length - 1)
         {
             return null;

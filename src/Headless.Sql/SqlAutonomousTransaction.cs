@@ -20,6 +20,11 @@ namespace Headless.Sql;
 /// unchanged. This is the rule the unit-of-work runner applies to its own replays.
 /// </para>
 /// <para>
+/// A cancelled call throws <see cref="OperationCanceledException" /> on every engine, including when the cancel
+/// interrupts a statement running on SQL Server, where SqlClient reports it as a <c>SqlException</c>. The driver's fault
+/// is its inner exception. A commit fault surfaces unchanged even after a cancel, because the commit may have landed.
+/// </para>
+/// <para>
 /// Only autonomous calls retry. A call running inside a caller's transaction must never be retried by the store: a
 /// deadlock has already rolled that transaction back (on SQL Server later statements on the connection would even
 /// autocommit one by one), so only the transaction's owner can run the whole unit again.
@@ -81,7 +86,9 @@ public static class SqlAutonomousTransaction
     /// <returns>The successful attempt's result.</returns>
     /// <remarks>
     /// The fault that ends the call, a non-transient one, one raised after the commit started, or the last
-    /// attempt's, propagates unchanged.
+    /// attempt's, propagates unchanged. The one exception is a database fault raised before the commit started after
+    /// the caller's token was cancelled: it surfaces as <see cref="OperationCanceledException" /> with the driver's
+    /// fault as its inner exception, on every engine (<see cref="SqlCancellation" />).
     /// </remarks>
     public static ValueTask<T> RetryAsync<T>(
         string operation,
@@ -126,7 +133,7 @@ public static class SqlAutonomousTransaction
                 attemptNumber++;
                 observer?.AttemptStarted(current);
 
-                return new ValueTask<T>(attempt(current, ct));
+                return _ObserveCancellationAsync(attempt(current, ct), current, ct);
             },
             ex =>
             {
@@ -144,6 +151,28 @@ public static class SqlAutonomousTransaction
             timeProvider,
             cancellationToken
         );
+    }
+
+    /// <summary>
+    /// Reports a fault the caller's cancel caused before the commit started as the cancellation
+    /// (<see cref="SqlCancellation" />). A commit fault surfaces unchanged even then: the commit may have landed, so a
+    /// cancellation would tell the caller a write did not happen when it may have.
+    /// </summary>
+    private static async ValueTask<T> _ObserveCancellationAsync<T>(
+        Task<T> attempt,
+        SqlAutonomousAttempt current,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await attempt.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!current.CommitStarted && SqlCancellation.IsCancellation(exception, cancellationToken))
+        {
+            throw SqlCancellation.ToOperationCanceled(exception, cancellationToken);
+        }
     }
 
     private static async Task<T> _RunOnceAsync<T>(

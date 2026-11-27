@@ -55,7 +55,7 @@ public sealed class ClusterLog(JobLedger ledger)
                 return;
             }
 
-            var shortCategory = category[(category.LastIndexOf('.') + 1)..];
+            var shortCategory = category[(category.LastIndexOf('.', StringComparison.Ordinal) + 1)..];
             log._Add(
                 string.Create(
                     CultureInfo.InvariantCulture,

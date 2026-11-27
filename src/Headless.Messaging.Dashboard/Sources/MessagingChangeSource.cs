@@ -249,7 +249,7 @@ internal sealed class MessagingChangeSource(MessagingStores stores, int pageSize
 
     private static bool _TryParse(string? value, out Dictionary<string, MessageChangeCursor?> cursors)
     {
-        cursors = new Dictionary<string, MessageChangeCursor?>(StringComparer.OrdinalIgnoreCase);
+        cursors = [with(StringComparer.OrdinalIgnoreCase)];
         var parts = value?.Split(_StoreSeparator);
 
         if (parts is not { Length: > 0 } || !string.Equals(parts[0], _FormatVersion, StringComparison.Ordinal))

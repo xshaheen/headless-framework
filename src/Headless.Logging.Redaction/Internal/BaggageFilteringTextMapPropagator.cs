@@ -47,7 +47,7 @@ internal sealed class BaggageFilteringTextMapPropagator(TextMapPropagator inner,
                 continue;
             }
 
-            (kept ??= new(StringComparer.Ordinal))[key] = value;
+            (kept ??= [with(StringComparer.Ordinal)])[key] = value;
         }
 
         Inner.Inject(

@@ -100,7 +100,7 @@ internal sealed class CancellationProcessJob : IJob
     public async ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
     {
         _ = context;
-        await Console.Out.WriteLineAsync("USER_CODE").ConfigureAwait(false);
+        await Console.Out.WriteLineAsync("USER_CODE", cancellationToken).ConfigureAwait(false);
         await Console.Out.FlushAsync(cancellationToken).ConfigureAwait(false);
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
     }

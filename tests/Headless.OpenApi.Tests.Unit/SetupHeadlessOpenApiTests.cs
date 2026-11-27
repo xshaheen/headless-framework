@@ -78,12 +78,14 @@ public sealed class SetupHeadlessOpenApiTests : TestBase
 
         services.AddHeadlessApiSurfaceDocuments(["Portal"]);
 
-        var documentKeys = services
-            .Where(d => d.IsKeyedService)
-            .Select(d => d.ServiceKey)
+        // AddOpenApi(documentName) records each document as named options configuration.
+        var documentNames = services
+            .Select(d => d.ImplementationInstance)
+            .OfType<ConfigureNamedOptions<OpenApiOptions>>()
+            .Select(o => o.Name)
             .OfType<string>()
             .ToHashSet(StringComparer.Ordinal);
-        documentKeys.Should().Contain("portal").And.NotContain("console");
+        documentNames.Should().Contain("portal").And.NotContain("console");
     }
 
     [Fact]

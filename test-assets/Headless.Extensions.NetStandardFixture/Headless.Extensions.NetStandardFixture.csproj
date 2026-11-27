@@ -1,0 +1,8 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <!-- netstandard2.0 keeps compiler-generated async state machines whatever the test host's runtime does, so the
+         failure fingerprint tests can prove such a frame still reduces to its declaring method. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>Headless.Extensions.NetStandardFixture</RootNamespace>
+  </PropertyGroup>
+</Project>

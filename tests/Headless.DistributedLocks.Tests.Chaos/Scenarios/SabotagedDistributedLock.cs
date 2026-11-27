@@ -15,7 +15,7 @@ public sealed class SabotagedDistributedLock(IDistributedLock inner) : IDistribu
     private const int _HonestReleasesPerResource = 3;
 
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ResourceState> _resources = [with(StringComparer.Ordinal)];
 
     /// <summary>How many grants carried a reused token.</summary>
     public int Sabotaged { get; private set; }

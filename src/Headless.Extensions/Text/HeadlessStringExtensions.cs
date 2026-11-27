@@ -310,7 +310,7 @@ public static class HeadlessStringExtensions
 
         var startsWithChar =
             comparisonType == StringComparison.Ordinal
-                ? input.StartsWith(c)
+                ? input.StartsWith(c, StringComparison.Ordinal)
                 : input.AsSpan().StartsWith(needle, comparisonType);
 
         return startsWithChar ? input : c + input;
@@ -350,7 +350,7 @@ public static class HeadlessStringExtensions
 
         var endsWithChar =
             comparisonType == StringComparison.Ordinal
-                ? input.EndsWith(suffix)
+                ? input.EndsWith(suffix, StringComparison.Ordinal)
                 : input.AsSpan().EndsWith(needle, comparisonType);
 
         return endsWithChar ? input : input + suffix;
@@ -438,7 +438,7 @@ public static class HeadlessStringExtensions
             return null;
         }
 
-        return input.EndsWith(postfix) ? input[..^1] : input;
+        return input.EndsWith(postfix, StringComparison.Ordinal) ? input[..^1] : input;
     }
 
     /// <summary>Removes every occurrence of the given character from the string.</summary>
@@ -601,7 +601,7 @@ public static class HeadlessStringExtensions
 
         foreach (var prefix in prefixes)
         {
-            if (input.StartsWith(prefix))
+            if (input.StartsWith(prefix, StringComparison.Ordinal))
             {
                 var len = input.Length - 1;
 
@@ -629,7 +629,7 @@ public static class HeadlessStringExtensions
             return null;
         }
 
-        if (input.StartsWith(prefix))
+        if (input.StartsWith(prefix, StringComparison.Ordinal))
         {
             var len = input.Length - 1;
 

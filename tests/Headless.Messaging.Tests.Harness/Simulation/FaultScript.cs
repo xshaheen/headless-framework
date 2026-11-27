@@ -126,7 +126,7 @@ public sealed class FaultScript
     private readonly Lock _gate = new();
     private readonly Dictionary<StorageOperation, int> _calls = [];
     private readonly List<StoreFault> _storeFaults = [];
-    private readonly Dictionary<string, (int Remaining, string Reason)> _receiveFaults = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Remaining, string Reason)> _receiveFaults = [with(StringComparer.Ordinal)];
     private readonly List<Action> _listeners = [];
     private int _settlementFaults;
     private readonly Queue<PublishFaultKind> _publishFaults = new();

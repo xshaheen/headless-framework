@@ -51,7 +51,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -161,7 +161,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -220,7 +220,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -284,7 +284,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -351,7 +351,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -428,7 +428,7 @@ public sealed class ProblemDetailsTests : TestBase
         _ = environment;
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -472,7 +472,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -520,7 +520,7 @@ public sealed class ProblemDetailsTests : TestBase
     {
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
-        var jsonElement = JsonDocument.Parse(json).RootElement;
+        var jsonElement = JsonElement.Parse(json);
 
         _ValidateCoreProblemDetails(
             jsonElement,

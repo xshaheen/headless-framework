@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
 using Headless.Sequences;
+using Headless.Sequences.SqlServer;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
@@ -99,6 +101,62 @@ public sealed class SqlServerSequencesLockingTests(SqlServerSequencesFixture fix
 
         (await fixture.ReadValueAsync(new SequenceKey(tenant, gapFreeName, ""), AbortToken)).Should().Be(1);
         (await fixture.ReadValueAsync(new SequenceKey(tenant, fastName, ""), AbortToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_throw_operation_canceled_when_a_call_is_cancelled_while_its_increment_waits_on_the_server()
+    {
+        // SqlClient reports a cancel that interrupts a running command as a SqlException, not as the
+        // OperationCanceledException every other engine throws. Holding the counter's row lock keeps the increment
+        // running on the server, so the cancel always lands mid-command.
+        var name = $"cancel-{Guid.NewGuid():N}";
+        await using var host = await fixture.CreateHostAsync(cancellationToken: AbortToken);
+        (await host.Generator.NextAsync(name, cancellationToken: AbortToken)).Should().Be(1);
+
+        await using var holder = new SqlConnection(fixture.CountersConnectionString);
+        await holder.OpenAsync(AbortToken);
+        await using var transaction = (SqlTransaction)await holder.BeginTransactionAsync(AbortToken);
+        await using var lockRow = new SqlCommand(
+            $"""
+            SELECT [Value] FROM [{HeadlessStorageDefaults.Schema}].[{SqlServerSequencesOptions.DefaultTableName}]
+                WITH (XLOCK, ROWLOCK)
+            WHERE [TenantId] = N'' AND [Name] = @name AND [Partition] = N'';
+            SELECT @@SPID;
+            """,
+            holder,
+            transaction
+        );
+        lockRow.Parameters.AddWithValue("name", name);
+        short holderSession;
+
+        await using (var reader = await lockRow.ExecuteReaderAsync(AbortToken))
+        {
+            (await reader.ReadAsync(AbortToken)).Should().BeTrue();
+            await reader.NextResultAsync(AbortToken);
+            await reader.ReadAsync(AbortToken);
+            holderSession = reader.GetInt16(0);
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var call = host.Generator.NextAsync(name, cancellationToken: cts.Token).AsTask();
+
+        // The server waits until the increment queues on the held lock, so the cancel below cannot reach the call
+        // before its command does.
+        await fixture.ScalarAsync(
+            """
+            WHILE NOT EXISTS (SELECT 1 FROM sys.dm_exec_requests WHERE blocking_session_id = @holder)
+                WAITFOR DELAY '00:00:00.010';
+            SELECT 1;
+            """,
+            AbortToken,
+            ("holder", holderSession)
+        );
+        await cts.CancelAsync();
+
+        await FluentActions.Awaiting(() => call).Should().ThrowAsync<OperationCanceledException>();
+
+        await transaction.RollbackAsync(AbortToken);
+        (await host.Generator.NextAsync(name, cancellationToken: AbortToken)).Should().Be(2);
     }
 
     private ValueTask<SequencesHost> _CreateGapFreeHostAsync(string name)

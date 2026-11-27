@@ -6,7 +6,7 @@ namespace Tests.Fakes;
 
 public sealed class FakeStaticSettingDefinitionStore : IStaticSettingDefinitionStore
 {
-    private readonly Dictionary<string, SettingDefinition> _definitions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SettingDefinition> _definitions = [with(StringComparer.Ordinal)];
 
     public void Add(SettingDefinition definition)
     {

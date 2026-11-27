@@ -82,7 +82,7 @@ internal sealed class DevInboxChangeSource(string moduleId, DevInboxChannels cha
 
     private bool _TryParse(string cursor, out Dictionary<string, long> positions)
     {
-        positions = new Dictionary<string, long>(StringComparer.Ordinal);
+        positions = [with(StringComparer.Ordinal)];
 
         foreach (var part in cursor.Split('.'))
         {

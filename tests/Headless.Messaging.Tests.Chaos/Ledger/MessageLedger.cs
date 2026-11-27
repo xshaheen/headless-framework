@@ -17,7 +17,7 @@ namespace Tests.Ledger;
 public sealed class MessageLedger(TimeProvider clock)
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Entry> _entries = [with(StringComparer.Ordinal)];
     private readonly List<DateTimeOffset> _completions = [];
     private readonly ChangeSignal _changed = new();
     private LedgerProgress _progress;

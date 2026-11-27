@@ -44,10 +44,10 @@ internal static class LogPathTags
         redacted = null;
         var pathStart = 0;
 
-        if (!value.StartsWith('/'))
+        if (!value.StartsWith('/', StringComparison.Ordinal))
         {
             var scheme = value.IndexOf("://", StringComparison.Ordinal);
-            pathStart = scheme < 0 ? -1 : value.IndexOf('/', scheme + 3);
+            pathStart = scheme < 0 ? -1 : value.IndexOf('/', scheme + 3, StringComparison.Ordinal);
 
             if (pathStart < 0)
             {

@@ -23,9 +23,9 @@ internal sealed class MessagingMetricsEventListener : EventListener
         }
     }
 
-    public CircularBuffer<int?> PublishedPerSec { get; } = new(HistorySize);
-    public CircularBuffer<int?> InvokeSubscriberPerSec { get; } = new(HistorySize);
-    public CircularBuffer<int?> InvokeSubscriberElapsedMs { get; } = new(HistorySize);
+    public CircularBuffer<int?> PublishedPerSec { get; } = [with(HistorySize)];
+    public CircularBuffer<int?> InvokeSubscriberPerSec { get; } = [with(HistorySize)];
+    public CircularBuffer<int?> InvokeSubscriberElapsedMs { get; } = [with(HistorySize)];
 
     /// <summary>Returns the consumed-per-second values of the last <paramref name="seconds"/> seconds, oldest first.</summary>
     public IReadOnlyList<int?> LastSeconds(int seconds)

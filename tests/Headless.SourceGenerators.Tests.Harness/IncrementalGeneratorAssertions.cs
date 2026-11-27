@@ -47,7 +47,7 @@ public static class IncrementalGeneratorAssertions
         {
             foreach (var (value, _) in result.TrackedSteps[step].SelectMany(run => run.Outputs))
             {
-                _Visit(value, step, new HashSet<object>(ReferenceEqualityComparer.Instance));
+                _Visit(value, step, [with(ReferenceEqualityComparer.Instance)]);
             }
         }
     }

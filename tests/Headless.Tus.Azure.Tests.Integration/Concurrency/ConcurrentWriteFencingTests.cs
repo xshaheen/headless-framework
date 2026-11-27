@@ -222,7 +222,7 @@ public sealed class ConcurrentWriteFencingTests : TestBase
         var first = Faker.Random.Bytes(300);
         var second = Faker.Random.Bytes(500);
         var location = await _CreateUploadAsync(client, first.Length + second.Length);
-        var fileId = location[(location.LastIndexOf('/') + 1)..];
+        var fileId = location[(location.LastIndexOf('/', StringComparison.Ordinal) + 1)..];
         _stageGate.Arm(fileId);
 
 #pragma warning disable CA2025 // False positive: both tasks are awaited below, before client goes out of scope.

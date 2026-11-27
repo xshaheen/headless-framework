@@ -145,7 +145,7 @@ public sealed class RedisBlobStorageClusterSlotTests : TestBase
             return value;
         }
 
-        var close = value.IndexOf('}', open + 1);
+        var close = value.IndexOf('}', open + 1, StringComparison.Ordinal);
 
         return close > open + 1 ? value[(open + 1)..close] : value;
     }

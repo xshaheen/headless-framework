@@ -80,7 +80,7 @@ public sealed class RabbitMqVirtualHostOwnershipTests(RabbitMqOwnershipFixture f
 
     private async Task<string> _RabbitMqCtlAsync(params string[] arguments)
     {
-        var result = await fixture.Container.ExecAsync(["rabbitmqctl", .. arguments], AbortToken);
+        var result = await RabbitMqCtl.ExecAsync(fixture.Container, arguments, AbortToken);
         result.ExitCode.Should().Be(0, result.Stderr);
 
         return result.Stdout;

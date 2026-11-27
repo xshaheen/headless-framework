@@ -11,7 +11,7 @@ public static class TestData
     /// <summary>Builds <paramref name="count"/> randomly-populated setting definitions through the definition-context factory.</summary>
     public static List<SettingDefinition> CreateDefinitions(int count)
     {
-        var context = new SettingDefinitionContext(new Dictionary<string, SettingDefinition>(StringComparer.Ordinal));
+        var context = new SettingDefinitionContext([with(StringComparer.Ordinal)]);
 
         for (var i = 0; i < count; i++)
         {

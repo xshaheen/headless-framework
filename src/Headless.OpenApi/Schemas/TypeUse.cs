@@ -221,7 +221,7 @@ internal sealed class TypeUse
 
     private static string _WithoutArity(string name)
     {
-        var tick = name.LastIndexOf('`');
+        var tick = name.LastIndexOf('`', StringComparison.Ordinal);
 
         return tick == -1 ? name : name[..tick];
     }

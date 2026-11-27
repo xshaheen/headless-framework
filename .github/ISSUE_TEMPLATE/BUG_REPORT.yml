@@ -30,7 +30,7 @@ body:
     attributes:
       label: Runtime and host
       description: Include OS, .NET SDK/runtime, and any relevant hosting details.
-      placeholder: .NET 10 on Ubuntu 24.04, ASP.NET Core, Docker
+      placeholder: .NET 11 on Ubuntu 24.04, ASP.NET Core, Docker
     validations:
       required: true
   - type: textarea
