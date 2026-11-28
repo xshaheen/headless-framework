@@ -381,9 +381,6 @@ public sealed class SimulationKitTests : TestBase
     [Fact]
     public async Task should_fail_fast_with_a_message_when_shutdown_is_awaited_without_advancing_the_clock()
     {
-        // quarantine: #1930 under load the second StopAsync can outlast its 200 ms real-time stall window
-        Assert.Skip("Quarantined: flaky under machine load, see #1930");
-
         // given: a consumer client whose close takes ten seconds of simulated time
         await using var host = await _StartConsumerHostAsync();
         host.Broker.Faults.SlowCloses(TimeSpan.FromSeconds(10));
@@ -399,6 +396,30 @@ public sealed class SimulationKitTests : TestBase
         var finishing = host.StopAsync(AbortToken);
         host.Advance(TimeSpan.FromSeconds(10));
         await finishing.WaitAsync(_Bound, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_not_report_a_stall_when_the_clock_moved_while_shutdown_runs_past_the_window()
+    {
+        // given: a shutdown held by a hung close, which only real time releases, while its own bound waits on the clock
+        await using var host = await _StartConsumerHostAsync();
+        host.Broker.Faults.HangCloses();
+        host.ShutdownStallWindow = TimeSpan.FromMilliseconds(200);
+
+        // when: one caller advances the clock while awaiting the stop, and a later caller, which does not, waits
+        // longer, so the first caller's window has passed by the time the second one reports
+        var advancing = host.StopAsync(AbortToken);
+        host.Advance(TimeSpan.FromSeconds(1));
+        host.ShutdownStallWindow = TimeSpan.FromSeconds(1);
+        var idle = () => host.StopAsync(AbortToken);
+
+        // then: only the caller that did not move the clock is told shutdown waits on it
+        (await idle.Should().ThrowAsync<SimulationStallException>()).WithMessage("*waiting on the simulation clock*");
+        advancing.IsCompleted.Should().BeFalse("a caller driving the clock waits for shutdown to end");
+
+        // and: once the close is released, the advancing caller's stop finishes
+        host.Broker.Faults.ReleaseHungCloses();
+        await advancing.WaitAsync(_Bound, AbortToken);
     }
 
     [Fact]

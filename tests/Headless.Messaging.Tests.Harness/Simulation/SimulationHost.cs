@@ -211,39 +211,54 @@ public sealed class SimulationHost : IAsyncDisposable
 
     /// <summary>
     /// Stops messaging, and fails fast instead of hanging when shutdown waits on simulated time: when shutdown has not
-    /// finished within <see cref="ShutdownStallWindow"/> and waits armed on the clock since it began are still pending,
-    /// nothing will move them while the test is awaiting this call.
+    /// finished within <see cref="ShutdownStallWindow"/>, the clock has not moved since this call began, and waits armed
+    /// on the clock since the shutdown began are still pending, nothing will move them while the test is awaiting this
+    /// call.
     /// </summary>
     /// <remarks>
-    /// To let a shutdown that needs simulated time finish, start this call, advance the clock, then await it.
+    /// To let a shutdown that needs simulated time finish, start this call, advance the clock, then await it. Once the
+    /// clock has moved during the call, the call waits for shutdown to end with no stall check, so bound it the way the
+    /// test bounds any other wait.
     /// </remarks>
     /// <exception cref="SimulationStallException">Shutdown is waiting on the simulation clock.</exception>
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        var calledAt = Clock.GetUtcNow();
         var stop = _BeginStop();
 
-        try
+        while (true)
         {
-            await stop.WaitAsync(ShutdownStallWindow, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-        catch (TimeoutException)
-        {
-            // Checked below: a shutdown can be slow for reasons that have nothing to do with the clock.
-        }
+            try
+            {
+                await stop.WaitAsync(ShutdownStallWindow, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (TimeoutException)
+            {
+                // Checked below: a shutdown can be slow for reasons that have nothing to do with the clock.
+            }
 
-        var pending = Clock.PendingWaitsArmedSince(_stopMark);
-        if (pending.Count == 0)
-        {
-            await stop.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
+            if (Clock.GetUtcNow() != calledAt)
+            {
+                // The caller is driving the clock, so a pending wait proves no stall: shutdown keeps its own bound armed
+                // while the work an advance released runs in real time, which on a loaded machine outlasts any window.
+                await stop.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
 
-        throw new SimulationStallException(
-            $"Shutdown has not finished after {ShutdownStallWindow} and is waiting on the simulation clock: "
-                + $"{pending.Count} wait(s) armed since it began are pending, the nearest due in {pending[0]} of "
-                + "simulated time. Advance the clock while awaiting StopAsync, or remove the fault that holds shutdown."
-        );
+            var pending = Clock.PendingWaitsArmedSince(_stopMark);
+            if (pending.Count > 0)
+            {
+                throw new SimulationStallException(
+                    $"Shutdown has not finished after {ShutdownStallWindow} and is waiting on the simulation clock: "
+                        + $"{pending.Count} wait(s) armed since it began are pending, the nearest due in {pending[0]} "
+                        + "of simulated time. Advance the clock while awaiting StopAsync, or remove the fault that holds "
+                        + "shutdown."
+                );
+            }
+
+            // No clock wait yet, but a slow shutdown may still arm one that nothing would move, so look again.
+        }
     }
 
     public async ValueTask DisposeAsync()
