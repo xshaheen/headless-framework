@@ -69,6 +69,26 @@ internal sealed class UnitOfWorkBinding<TKey>
     }
 
     /// <summary>
+    /// Gets the unit bound to <paramref name="key" /> when it is <see cref="UnitOfWorkState.Active" />, without the
+    /// lookups' cleanup: nothing is evicted or abandoned, and a completing unit is reported as absent rather than
+    /// thrown on. For a hot path that only needs to know which unit a key serves, such as a change-tracker handler
+    /// that runs for every tracked entity and must never fail the tracking call.
+    /// </summary>
+    public bool TryPeek(TKey key, out IUnitOfWork unit)
+    {
+        if (_bindings.TryGetValue(key, out var bound) && bound.State == UnitOfWorkState.Active)
+        {
+            unit = bound;
+
+            return true;
+        }
+
+        unit = null!;
+
+        return false;
+    }
+
+    /// <summary>
     /// <see cref="TryGet" /> for an asynchronous caller about to begin on the same key: a stale owned unit is
     /// abandoned inline, so its rollback and connection close have finished before the caller opens the connection
     /// again and reads its state.

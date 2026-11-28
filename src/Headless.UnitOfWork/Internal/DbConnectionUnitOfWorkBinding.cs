@@ -20,6 +20,9 @@ internal static class DbConnectionUnitOfWorkBinding
 
     public static bool TryGet(DbConnection connection, out IUnitOfWork unit) => _Binding.TryGet(connection, out unit);
 
+    /// <summary>Reads the active unit bound to <paramref name="connection" /> without evicting, abandoning, or throwing.</summary>
+    public static bool TryPeek(DbConnection connection, out IUnitOfWork unit) => _Binding.TryPeek(connection, out unit);
+
     /// <summary>Removes the binding of <paramref name="connection" /> when it is still bound to <paramref name="unit" />.</summary>
     public static void Unbind(DbConnection connection, IUnitOfWork unit) => _Binding.Unbind(connection, unit);
 

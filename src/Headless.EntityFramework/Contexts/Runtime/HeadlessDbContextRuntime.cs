@@ -48,6 +48,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     // True once a registration or factory bound the context. An adopted or private scope is a fallback that an explicit
     // binding replaces, because something (such as a derived constructor) may read ServiceProvider before binding.
     private bool _explicitlyBound;
+
+    // The unit last found over the context's connection by the replay registration. While it stays active, a later
+    // tracked entity costs one state read instead of the binding lookups.
+    private IUnitOfWork? _replayUnit;
     private IHeadlessSaveChangesPipeline? _pipeline;
     private ICurrentTenant? _currentTenant;
     private TenantGuardOptions? _guardOptions;
@@ -62,6 +66,13 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
         // handlers attached later would be dropped by the next lease. That makes this the one place to decide, and
         // the decision holds for the instance's life: its options, and so its model and guard setting, never change.
+        // Only a relational context can share a unit of work's connection; another provider has no connection to read.
+        if (_db.Database.IsRelational())
+        {
+            _db.ChangeTracker.Tracked += _OnTrackedForReplay;
+            _db.ChangeTracker.StateChanged += _OnStateChangedForReplay;
+        }
+
         if (!_TenantStampCanApply())
         {
             return;
@@ -194,6 +205,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         _ownedScope = null;
         IsScopeLeased = false;
         _explicitlyBound = false;
+        _replayUnit = null;
         _boundServices = null;
         _pipeline = null;
         _currentTenant = null;
@@ -264,6 +276,24 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
         {
             _StampTenantOnAdded(e.Entry);
         }
+    }
+
+    // A replayed RunAsync block runs over this context's tracker as the failed attempt left it, so a context that
+    // tracks anything inside an active unit's attempt must be known to that unit even when it never looked the unit
+    // up: the unit then refuses the replay instead of saving the attempt's rows a second time. StateChanged also
+    // covers an entity tracked before the unit began and changed inside it, once EF detects the change.
+    private void _OnTrackedForReplay(object? sender, EntityTrackedEventArgs e) => _RegisterWithActiveUnit();
+
+    private void _OnStateChangedForReplay(object? sender, EntityStateChangedEventArgs e) => _RegisterWithActiveUnit();
+
+    private void _RegisterWithActiveUnit()
+    {
+        if (_replayUnit is { State: UnitOfWorkState.Active })
+        {
+            return;
+        }
+
+        _replayUnit = DbContextUnitOfWorkBinding.RegisterTrackingContext(_db);
     }
 
     private void _StampTenantOnAdded(EntityEntry entry)
