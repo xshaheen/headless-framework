@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.DistributedLocks;
+using Headless.Hosting;
 using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,6 +52,7 @@ internal sealed class JobsInitializationHostedService(
         _ = serviceProvider.GetRequiredService<JobSchedulingPolicies>();
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
+        var masker = serviceProvider.GetService<ILogTextMasker>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
 
         // A pickup lease (expiring LeaseDuration after the claim) shorter than the fallback re-queue cadence can expire
@@ -89,8 +91,12 @@ internal sealed class JobsInitializationHostedService(
                 switch (type)
                 {
                     case CoreNotifyActionType.NotifyHostExceptionMessage:
-                        notificationHubSender.UpdateHostException(value);
-                        executionContext.LastHostExceptionMessage = (string)value;
+                        // The host's failure text is the exception's full ToString(), which the dashboard shows, so it
+                        // is masked like a log entry's before it leaves here.
+                        var hostException = (string)value;
+                        hostException = masker?.Mask(hostException) ?? hostException;
+                        notificationHubSender.UpdateHostException(hostException);
+                        executionContext.LastHostExceptionMessage = hostException;
 
                         break;
                     case CoreNotifyActionType.NotifyNextOccurence:

@@ -4,6 +4,7 @@ using System.Collections.Frozen;
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Dashboard;
+using Headless.Hosting;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -748,7 +749,7 @@ internal sealed class MessagingCommands(
                 .GetService<ILogger<MessagingCommands>>()
                 ?.LogMessagingOutboxReceiptFailed(exception, id, store.Name);
 
-            return (applied, exception.Message);
+            return (applied, _MaskedMessage(exception));
         }
     }
 
@@ -1080,7 +1081,15 @@ internal sealed class MessagingCommands(
     {
         _services.GetService<ILogger<MessagingCommands>>()?.LogMessagingCommandFailed(exception, id);
 
-        return _Failed(id, exception.Message);
+        return _Failed(id, _MaskedMessage(exception));
+    }
+
+    // A storage failure's message reaches the operator's browser, so it is masked like a log entry's.
+    private string _MaskedMessage(Exception exception)
+    {
+        var message = exception.Message;
+
+        return _services.GetService<ILogTextMasker>()?.Mask(message) ?? message;
     }
 
     // A row is terminal once it succeeded, or failed with no retry left; only then may an operator act on it.

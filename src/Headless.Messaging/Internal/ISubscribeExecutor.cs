@@ -999,7 +999,7 @@ internal sealed class SubscribeExecutor(
         message.InlineAttempts = Math.Max(0, reservedInlineAttempts - 1);
         message.Origin.AddOrUpdateException(fault);
         message.HasUnpersistedOriginChanges = true;
-        message.ExceptionInfo = fault.ExpandMessage();
+        message.ExceptionInfo = _telemetry.ExceptionInfoOf(fault);
         message.FailureFingerprint = MessagingFailureFingerprints.Of(fault);
         // The transactional branch stamped the success expiry before the attempt; a rescheduled row keeps a failure's.
         message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
@@ -1057,7 +1057,7 @@ internal sealed class SubscribeExecutor(
 
         message.Origin.AddOrUpdateException(ex);
         message.HasUnpersistedOriginChanges = true;
-        message.ExceptionInfo = ex.ExpandMessage();
+        message.ExceptionInfo = _telemetry.ExceptionInfoOf(ex);
         // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
         // An expired deadline is not the consumer's failure, so it groups under the fixed expiry cause.
         message.FailureFingerprint = decision.IsSilentExpiry

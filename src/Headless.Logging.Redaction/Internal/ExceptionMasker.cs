@@ -14,8 +14,8 @@ namespace Headless.Logging.Internal;
 /// <remarks>
 /// The messages and data values are scanned, not <see cref="Exception.ToString"/>: rendering it would format every stack
 /// trace on each recorded exception, which the provider then repeats. A match yields a copy of the original type, so
-/// error trackers keep its type and stack frames; <see cref="RedactedException"/> is the fallback when the runtime
-/// cannot be copied or the copy's message would still match.
+/// error trackers keep its type and stack frames, with its stack trace text masked too; <see cref="RedactedException"/>
+/// is the fallback when the runtime cannot be copied or the copy's message or stack trace would still match.
 /// </remarks>
 internal static class ExceptionMasker
 {
@@ -88,13 +88,49 @@ internal static class ExceptionMasker
             // used only when its message no longer matches.
             var copiedMessage = copy.Message;
 
-            if (string.Equals(mask(copiedMessage, state), copiedMessage, StringComparison.Ordinal))
+            if (
+                string.Equals(mask(copiedMessage, state), copiedMessage, StringComparison.Ordinal)
+                && _TryMaskStackTrace(exception, copy, mask, state)
+            )
             {
                 return copy;
             }
         }
 
         return new RedactedException(exception, maskedMessage, inners, maskedData, text => mask(text, state));
+    }
+
+    /// <summary>
+    /// Masks the stack trace text of <paramref name="copy"/>, a copy of <paramref name="original"/>. Returns
+    /// <see langword="false"/> when the copy cannot return the masked text, so the caller takes the fallback.
+    /// </summary>
+    /// <remarks>
+    /// The trace is rendered only here, once a message or data value already matched: rendering every recorded
+    /// exception's trace to look for a match would cost each one a full format. A rethrown or deserialized exception
+    /// carries a remote trace as text, which can hold values; the copy's frames are kept either way.
+    /// </remarks>
+    private static bool _TryMaskStackTrace<TState>(
+        Exception original,
+        Exception copy,
+        Func<string, TState, string> mask,
+        TState state
+    )
+    {
+        if (original.StackTrace is not { } trace)
+        {
+            return true;
+        }
+
+        var masked = mask(trace, state);
+
+        if (string.Equals(masked, trace, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // A type that overrides StackTrace would still return its own text, which the fallback masks.
+        return ExceptionCopier.TrySetStackTrace(copy, masked)
+            && string.Equals(copy.StackTrace, masked, StringComparison.Ordinal);
     }
 
     /// <summary>

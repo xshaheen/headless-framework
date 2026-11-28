@@ -123,6 +123,42 @@ internal static class ExceptionCopier
         }
     }
 
+    /// <summary>
+    /// Makes <paramref name="copy"/>, a copy <see cref="TryCopy"/> made, return <paramref name="stackTrace"/> from
+    /// <see cref="Exception.StackTrace"/>, and so from <see cref="Exception.ToString"/>. The captured frames stay, so a
+    /// tracker that walks them still symbolicates the copy. Returns <see langword="false"/> when the runtime's fields are
+    /// not where expected.
+    /// </summary>
+    public static bool TrySetStackTrace(Exception copy, string stackTrace)
+    {
+        if (_unavailable)
+        {
+            return false;
+        }
+
+        try
+        {
+            // The runtime returns the remote part followed by this text once it is set, so the remote part, already
+            // part of the masked text, is cleared.
+            _StackTraceString(copy) = stackTrace;
+            _RemoteStackTraceString(copy) = null;
+
+            return true;
+        }
+        catch (MissingFieldException)
+        {
+            _unavailable = true;
+
+            return false;
+        }
+    }
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_stackTraceString")]
+    private static extern ref string? _StackTraceString(Exception exception);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_remoteStackTraceString")]
+    private static extern ref string? _RemoteStackTraceString(Exception exception);
+
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "MemberwiseClone")]
     private static extern object _MemberwiseClone(object instance);
 

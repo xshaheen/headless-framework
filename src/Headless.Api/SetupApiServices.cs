@@ -2,6 +2,7 @@
 
 using System.IO.Compression;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Http;
 using Headless.MultiTenancy;
 using Headless.Serializer;
@@ -108,6 +109,16 @@ public static class SetupApiServices
                     using var cultureScope = RequestCultureScope.Enter(context.HttpContext);
                     var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
                     creator.Normalize(context.ProblemDetails);
+
+                    // A body written for an exception can carry its text (the developer exception page writes the
+                    // message and the full ToString()), so it is masked like the exception's log entry.
+                    if (
+                        context.Exception is not null
+                        && context.HttpContext.RequestServices.GetService<ILogTextMasker>() is { } masker
+                    )
+                    {
+                        ProblemDetailsExceptionText.Mask(context.ProblemDetails, masker);
+                    }
                 };
             });
 

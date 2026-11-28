@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Temps;
 using Microsoft.Extensions.DependencyInjection;
@@ -420,7 +421,7 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
         // case an operator meets.
         return result.Exception is InvalidOperationException
             ? "Started since it was read — it can no longer be edited"
-            : result.Exception.Message;
+            : _MaskedMessage(result.Exception);
     }
 
     public async Task<Guid?> DuplicateTimeJobAsync(
@@ -592,7 +593,7 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
             .UpdateAsync(cronJob, cancellationToken)
             .ConfigureAwait(false);
 
-        return result.IsSucceeded ? null : result.Exception.Message;
+        return result.IsSucceeded ? null : _MaskedMessage(result.Exception);
     }
 
     public async Task<Guid> AddTimeJobAsync(JobsDashboardTimeJobDraft draft, CancellationToken cancellationToken)
@@ -643,6 +644,15 @@ internal sealed class JobsDashboardBackend<TTimeJob, TCronJob>(IServiceProvider 
     public Task<IReadOnlyDictionary<string, JobRunCount>> CountRunningByOwnerAsync(CancellationToken cancellationToken)
     {
         return Store.CountInProgressJobRunsByOwnerAsync(cancellationToken: cancellationToken);
+    }
+
+    // A manager's failure can come from the store, and its message reaches the operator's browser, so it is masked
+    // like a log entry's.
+    private string _MaskedMessage(Exception exception)
+    {
+        var message = exception.Message;
+
+        return _services.GetService<ILogTextMasker>()?.Mask(message) ?? message;
     }
 
     private TTimeJob _BuildTimeJob(JobsDashboardTimeJobDraft draft, bool isRoot)

@@ -30,6 +30,17 @@ internal sealed class MessagingTelemetry(
     /// </summary>
     public ILogTextMasker? Masker { get; } = masker;
 
+    /// <summary>
+    /// The failure text a message stores as its <c>ExceptionInfo</c>, which the storage persists and the dashboard
+    /// shows: the exception's expanded messages and stack traces, masked by <see cref="Masker"/> when one is registered.
+    /// </summary>
+    public string ExceptionInfoOf(Exception exception)
+    {
+        var text = exception.ExpandMessage();
+
+        return Masker?.Mask(text) ?? text;
+    }
+
     private readonly TenantTelemetryOptions _tenantTelemetry = tenantTelemetry ?? new TenantTelemetryOptions();
 
     // The tenant attribute is written here rather than by an enricher because its name comes from

@@ -530,7 +530,7 @@ internal sealed class MessageSender : IMessageSender
     )
     {
         var originalInlineAttempts = message.InlineAttempts;
-        message.ExceptionInfo = ex.ExpandMessage();
+        message.ExceptionInfo = _telemetry.ExceptionInfoOf(ex);
         message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
@@ -590,7 +590,7 @@ internal sealed class MessageSender : IMessageSender
         // (instead of Failed-with-reason) is a change to this one method.
         var originalInlineAttempts = message.InlineAttempts;
         message.Origin.AddOrUpdateException(expired);
-        message.ExceptionInfo = expired.ExpandMessage();
+        message.ExceptionInfo = _telemetry.ExceptionInfoOf(expired);
         message.FailureFingerprint = MessagingFailureFingerprints.Expired;
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
         message.NextRetryAt = null;
@@ -794,7 +794,7 @@ internal sealed class MessageSender : IMessageSender
 
         message.Origin.AddOrUpdateException(ex);
         // The fingerprint comes from the live exception: the stored text keeps too little of it to derive one later.
-        message.ExceptionInfo = ex.ExpandMessage();
+        message.ExceptionInfo = _telemetry.ExceptionInfoOf(ex);
         message.FailureFingerprint = MessagingFailureFingerprints.Of(ex);
         message.ExpiresAt = _timeProvider.GetUtcNow().AddSeconds(_options.FailedMessageExpiredAfter);
 
