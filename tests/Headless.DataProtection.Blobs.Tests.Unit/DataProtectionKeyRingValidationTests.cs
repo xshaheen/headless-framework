@@ -316,8 +316,10 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
             .Status.Should()
             .Be(HealthStatus.Healthy);
 
-        // The runner logs completion once the warm-up returns; a completed warm-up is never run again.
-        await logs.WaitForAsync("WarmupCompleted").WaitAsync(_WaitLimit, AbortToken);
+        // A LogOnly warm-up does not gate readiness, so WaitForWarmupAsync does not wait for it, and another
+        // warm-up's WarmupCompleted may come first: wait for the validation's own event. It returns instead of
+        // throwing, and the runner retries only a throw, which would log WarmupFailed.
+        await logs.WaitForAsync("KeyRingValidationFailed").WaitAsync(_WaitLimit, AbortToken);
         logs.Count("WarmupFailed").Should().Be(0);
         logs.Count("KeyRingValidationFailed").Should().Be(1);
         await host.StopAsync(AbortToken);
