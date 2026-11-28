@@ -357,8 +357,6 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_refresh_sliding_entry_without_reading_value()
     {
-        // quarantine: #1937 the 150 ms sliding window runs on the Redis server clock while the test waits real time on the host, so a loaded run can miss the margin
-        Assert.Skip("Quarantined: flaky against the Redis server clock (#1937)");
         return base.should_refresh_sliding_entry_without_reading_value();
     }
 
