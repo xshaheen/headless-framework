@@ -6,6 +6,7 @@ ASP.NET Core demo for wiring the AWS messaging transport with in-memory storage.
 
 - A `[BusConsumer]` consumer registered through the generated module with `AddModule<…MessagingModule>()`.
 - AWS transport setup through `UseAws(...)`.
+- `AddDeployStepsOnStartup()`, which creates the SNS topics and SQS queues as the demo starts; a deployed app runs `resources provision` instead.
 - In-memory storage through `UseInMemoryStorage()`.
 - Messaging dashboard registration with `WithNoAuth()`.
 - Controller-based publishing.
@@ -16,7 +17,7 @@ ASP.NET Core demo for wiring the AWS messaging transport with in-memory storage.
 dotnet run --project demo/Headless.Messaging.Aws.InMemory.Demo
 ```
 
-The demo configures `RegionEndpoint.CNNorthWest1`; AWS credentials and reachable AWS messaging resources must come from your normal AWS SDK environment.
+The demo configures `RegionEndpoint.CNNorthWest1`; AWS credentials come from your normal AWS SDK environment, and the identity must be allowed to create the topics and queues the demo provisions.
 
 ## Production Note
 

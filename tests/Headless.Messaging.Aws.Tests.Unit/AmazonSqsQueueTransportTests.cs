@@ -301,7 +301,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_queue_when_url_not_cached()
+    public async Task should_look_the_queue_up_when_url_not_cached()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
@@ -310,8 +310,8 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
-            .CreateQueueAsync(expectedQueueName, Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
+            .GetQueueUrlAsync(expectedQueueName, Arg.Any<CancellationToken>())
+            .Returns(new GetQueueUrlResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
         sqsClient
             .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResponse { MessageId = "msg-123" });
@@ -331,7 +331,8 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await sqsClient.Received(1).CreateQueueAsync(expectedQueueName, Arg.Any<CancellationToken>());
+        await sqsClient.Received(1).GetQueueUrlAsync(expectedQueueName, Arg.Any<CancellationToken>());
+        await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>());
         await sqsClient
             .Received(1)
             .SendMessageAsync(
@@ -341,7 +342,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_fifo_queue_with_fifo_attributes_when_url_not_cached()
+    public async Task should_send_to_a_fifo_queue_with_fifo_metadata_when_url_not_cached()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
@@ -350,8 +351,8 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
-            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
+            .GetQueueUrlAsync(expectedQueueName, Arg.Any<CancellationToken>())
+            .Returns(new GetQueueUrlResponse { QueueUrl = $"https://sqs.local/{expectedQueueName}" });
         sqsClient
             .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResponse { MessageId = "msg-123" });
@@ -375,16 +376,6 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         result.Succeeded.Should().BeTrue();
         await sqsClient
             .Received(1)
-            .CreateQueueAsync(
-                Arg.Is<CreateQueueRequest>(r =>
-                    r.QueueName == expectedQueueName
-                    && r.Attributes["FifoQueue"] == "true"
-                    && r.Attributes["ContentBasedDeduplication"] == "true"
-                ),
-                Arg.Any<CancellationToken>()
-            );
-        await sqsClient
-            .Received(1)
             .SendMessageAsync(
                 Arg.Is<SendMessageRequest>(r =>
                     r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"
@@ -402,8 +393,8 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
-            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/queue-order-created.fifo" });
+            .GetQueueUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GetQueueUrlResponse { QueueUrl = "https://sqs.local/queue-order-created.fifo" });
         sqsClient
             .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SendMessageResponse { MessageId = "msg-123" });

@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
-using Amazon.Auth.AccessControlPolicy;
 using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -24,7 +23,8 @@ internal sealed class AmazonSqsConsumerClient(
     ILogger<AmazonSqsConsumerClient> logger,
     MessageLane lane = MessageLane.Bus,
     TimeProvider? timeProvider = null,
-    IServiceProvider? serviceProvider = null
+    IServiceProvider? serviceProvider = null,
+    bool provisionsTopology = false
 ) : IConsumerClient
 {
     private const string _TransportName = "Amazon SQS";
@@ -59,7 +59,8 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly TransportEnvelopeGate _envelopeGate =
         serviceProvider?.GetService<TransportEnvelopeGate>() ?? TransportEnvelopeGate.Strict;
 
-    // Shared by every client of the process, so a topic is created once rather than once per client and start step.
+    // Shared by every client of the process, so a runtime subscription creates a topic once rather than once per client
+    // and start step.
     private readonly SnsTopicArnCache _topicArns = serviceProvider?.GetService<SnsTopicArnCache>() ?? new();
 
     private ImmutableArray<string> _queueUrls = [];
@@ -141,14 +142,19 @@ internal sealed class AmazonSqsConsumerClient(
             List<string> names = [.. messageNames];
             _ = _ResolveBusArrivalName(names);
 
-            // Externally managed topology already subscribes the queue to its topics, so there is nothing to resolve.
-            if (!_amazonSqsOptions.AutoProvision)
+            // A registered subscription's topics, policy, and subscriptions are the deployment's (resources provision),
+            // so there is nothing to resolve; only a runtime subscription creates its own.
+            if (!provisionsTopology)
             {
                 return names;
             }
 
             var topicArns = await _CreateTopicsAsync(names, cancellationToken).ConfigureAwait(false);
-            await _GenerateSqsAccessPolicyAsync(topicArns, cancellationToken).ConfigureAwait(false);
+            await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            await AwsTopology
+                .AllowTopicsAsync(_sqsClient!, _queueUrl, topicArns, cancellationToken)
+                .ConfigureAwait(false);
 
             return names;
         }
@@ -178,7 +184,7 @@ internal sealed class AmazonSqsConsumerClient(
             List<string> names = [.. topics];
             Volatile.Write(ref _busArrivalName, _ResolveBusArrivalName(names));
 
-            if (!_amazonSqsOptions.AutoProvision)
+            if (!provisionsTopology)
             {
                 await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
@@ -805,20 +811,21 @@ internal sealed class AmazonSqsConsumerClient(
     private InvalidOperationException _CreateProvisioningFailure(string stage, AmazonServiceException exception)
     {
         var requiredActions =
-            !_amazonSqsOptions.AutoProvision ? "sqs:GetQueueUrl, on a queue that already exists"
+            !provisionsTopology ? "sqs:GetQueueUrl, on a queue that 'resources provision' created"
             : lane == MessageLane.Bus
                 ? "sns:CreateTopic, sqs:CreateQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sns:Subscribe, sns:SetSubscriptionAttributes"
             : "sqs:CreateQueue";
         var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode) ? "unknown" : exception.ErrorCode;
 
+        // Only the error code: the AWS exception's message can carry endpoint URLs with credentials or tokens.
         return new InvalidOperationException(
             $"AWS_MESSAGING_PROVISIONING_DENIED: Failed to {stage} for the {lane} lane and subscription '{subscriptionName}' "
                 + $"({errorCode}). Verify region/service endpoints and grant the runtime identity only the required actions: "
                 + $"{requiredActions}. "
                 + (
-                    _amazonSqsOptions.AutoProvision
-                        ? "Auto-provisioning never widens IAM policy automatically."
-                        : "AutoProvision is off, so the queue, its topics, and their subscriptions must be created first."
+                    provisionsTopology
+                        ? "A runtime subscription creates its own topology and never widens IAM policy automatically."
+                        : "The host creates no topology: run 'resources provision' to create the queue, its topics, and their subscriptions."
                 )
         );
     }
@@ -1196,21 +1203,13 @@ internal sealed class AmazonSqsConsumerClient(
 
     #region private methods
 
-    // CreateQueue is idempotent and returns the URL of an existing queue; with AutoProvision off the queue must exist.
-    private async Task<string> _ResolveQueueUrlAsync(string queueName, CancellationToken cancellationToken)
+    // A registered subscription's queue is the deployment's (resources provision), so it is only looked up, and a
+    // missing one fails naming that step; a runtime subscription creates its own (CreateQueue is idempotent).
+    private Task<string> _ResolveQueueUrlAsync(string queueName, CancellationToken cancellationToken)
     {
-        if (!_amazonSqsOptions.AutoProvision)
-        {
-            var urlResponse = await _sqsClient!
-                .GetQueueUrlAsync(queueName.NormalizeForSqsQueueName(), cancellationToken)
-                .ConfigureAwait(false);
-            return urlResponse.QueueUrl;
-        }
-
-        var createResponse = await _sqsClient!
-            .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
-            .ConfigureAwait(false);
-        return createResponse.QueueUrl;
+        return provisionsTopology
+            ? AwsTopology.CreateQueueAsync(_sqsClient!, queueName, cancellationToken)
+            : AwsTopology.RequireQueueUrlAsync(_sqsClient!, queueName, cancellationToken);
     }
 
     // Both lanes read one envelope: the Queue lane sends the header bag itself, and the Bus lane's SNS subscriptions use
@@ -1396,80 +1395,16 @@ internal sealed class AmazonSqsConsumerClient(
         OnLogCallback?.Invoke(logArgs);
     }
 
-    private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns, CancellationToken cancellationToken)
-    {
-        await _ConnectAsync(initSns: false, initSqs: true, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        var queueAttributes = await _sqsClient!
-            .GetAttributesAsync(_queueUrl)
-            .WaitAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var sqsQueueArn = queueAttributes["QueueArn"];
-
-        var policy =
-            queueAttributes.TryGetValue("Policy", out var policyStr) && !string.IsNullOrEmpty(policyStr)
-                ? Policy.FromJson(policyStr)
-                : new Policy();
-
-        var topicArnsToAllow = topicArns.Where(a => !policy.HasSqsPermission(a, sqsQueueArn)).ToList();
-
-        if (topicArnsToAllow.Count == 0)
-        {
-            return;
-        }
-
-        policy.AddSqsPermissions(topicArnsToAllow, sqsQueueArn);
-
-        var setAttributes = new Dictionary<string, string>(StringComparer.Ordinal) { { "Policy", policy.ToJson() } };
-        await _sqsClient
-            .SetAttributesAsync(_queueUrl, setAttributes)
-            .WaitAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     private async Task _SubscribeToTopics(IEnumerable<string> topics, CancellationToken cancellationToken)
     {
-        var queueAttributes = await _sqsClient!
-            .GetAttributesAsync(_queueUrl)
-            .WaitAsync(cancellationToken)
+        var (queueArn, _) = await AwsTopology
+            .GetQueueArnAndPolicyAsync(_sqsClient!, _queueUrl, cancellationToken)
             .ConfigureAwait(false);
 
-        var sqsQueueArn = queueAttributes["QueueArn"];
         foreach (var topicArn in topics)
         {
-            var request = new SubscribeRequest
-            {
-                TopicArn = topicArn,
-                Protocol = "sqs",
-                Endpoint = sqsQueueArn,
-                // The consumer reads the published body and header bag directly, not SNS's JSON wrapper. Asked for at
-                // creation, so no message reaches a new subscription wrapped.
-                Attributes = new Dictionary<string, string>(StringComparer.Ordinal) { ["RawMessageDelivery"] = "true" },
-            };
-
-            SubscribeResponse response;
-            try
-            {
-                response = await _snsClient!.SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
-            }
-            catch (InvalidParameterException)
-            {
-                // SNS refuses to resubscribe an existing subscription with different attributes; take it as it is and
-                // switch it below.
-                request.Attributes = null;
-                response = await _snsClient!.SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
-            }
-
-            // Subscribe returns an existing subscription without applying the requested attributes, and a wrapped
-            // message would be deleted as malformed, so raw delivery is set on every subscription the consumer owns.
-            await _snsClient
-                .SetSubscriptionAttributesAsync(
-                    response.SubscriptionArn,
-                    "RawMessageDelivery",
-                    "true",
-                    cancellationToken
-                )
+            await AwsTopology
+                .SubscribeQueueAsync(_snsClient!, topicArn, queueArn, cancellationToken)
                 .ConfigureAwait(false);
         }
     }

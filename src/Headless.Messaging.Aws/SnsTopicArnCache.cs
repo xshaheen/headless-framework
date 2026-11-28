@@ -6,7 +6,7 @@ using Amazon.SimpleNotificationService;
 namespace Headless.Messaging.Aws;
 
 /// <summary>
-/// The SNS topic ARNs the consumers of one process have created, shared so each topic costs one CreateTopic call per
+/// The SNS topic ARNs the runtime-subscription consumers of one process have created, shared so each topic costs one CreateTopic call per
 /// process instead of one per listening client: every consumer identity runs several clients, and each one resolves its
 /// topics at topology and again at subscription, which multiplies control-plane calls into SNS throttling.
 /// </summary>
@@ -63,14 +63,8 @@ internal sealed class SnsTopicArnCache
     /// </summary>
     public void Forget(string topicName) => _creations.TryRemove(topicName, out _);
 
-    // The request form carries the FIFO attributes a FIFO topic must be created with. CreateTopic is idempotent and
-    // returns the ARN of an existing topic.
-    private static async Task<string> _CreateAsync(IAmazonSimpleNotificationService snsClient, string topicName)
-    {
-        var response = await snsClient
-            .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), CancellationToken.None)
-            .ConfigureAwait(false);
-
-        return response.TopicArn;
-    }
+    // CreateTopic is idempotent and returns the ARN of an existing topic. The shared create outlives one caller's
+    // cancellation, so it takes none.
+    private static Task<string> _CreateAsync(IAmazonSimpleNotificationService snsClient, string topicName) =>
+        AwsTopology.CreateTopicAsync(snsClient, topicName, CancellationToken.None);
 }

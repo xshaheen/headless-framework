@@ -5,6 +5,7 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
@@ -15,8 +16,8 @@ using MessagingHeaders = Headless.Messaging.Headers;
 namespace Tests;
 
 /// <summary>
-/// Against LocalStack: a handler slower than the visibility timeout is not redelivered, and with AutoProvision off a Bus
-/// consumer and publisher run on externally created topology through raw message delivery.
+/// Against LocalStack: a handler slower than the visibility timeout is not redelivered, and a registered Bus consumer and
+/// a publisher run on topology created outside the host, through raw message delivery, without creating anything.
 /// </summary>
 [Collection<LocalStackTestFixture>]
 public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : TestBase
@@ -33,7 +34,9 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
             1,
             options,
             NullLogger<AmazonSqsConsumerClient>.Instance,
-            MessageLane.Queue
+            MessageLane.Queue,
+            // The test owns its queue, so the client creates it in place of 'resources provision'.
+            provisionsTopology: true
         );
         var queueUrls = await consumer.FetchMessageNamesAsync([destination], AbortToken);
         await consumer.SubscribeAsync(queueUrls, AbortToken);
@@ -77,7 +80,7 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
         // given: the topic, the queue, its policy, and a raw-delivery subscription are created outside the transport
         var identity = $"external-{Guid.NewGuid():N}";
         var messageName = $"ExternalEvent{Guid.NewGuid():N}";
-        var options = _Options(o => o.AutoProvision = false);
+        var options = _Options(_ => { });
         using var sqs = AwsClientFactory.CreateSqsClient(options.Value);
         using var sns = AwsClientFactory.CreateSnsClient(options.Value);
         var topicArn = (await sns.CreateTopicAsync(AwsPhysicalAddress.BusTopic("", messageName), AbortToken)).TopicArn;
@@ -142,13 +145,13 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
     }
 
     [Fact]
-    public async Task should_fail_to_start_a_consumer_whose_queue_does_not_exist_without_provisioning()
+    public async Task should_fail_to_start_a_consumer_whose_queue_does_not_exist_naming_resources_provision()
     {
         // given
         await using var consumer = new AmazonSqsConsumerClient(
             $"missing-{Guid.NewGuid():N}",
             1,
-            _Options(o => o.AutoProvision = false),
+            _Options(_ => { }),
             NullLogger<AmazonSqsConsumerClient>.Instance,
             MessageLane.Queue
         );
@@ -158,8 +161,8 @@ public sealed class VisibilityAndTopologyTests(LocalStackTestFixture fixture) : 
 
         // then
         await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*sqs:GetQueueUrl*AutoProvision is off*");
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*SQS queue*does not exist*resources provision*");
     }
 
     private IOptions<AmazonSqsMessagingOptions> _Options(Action<AmazonSqsMessagingOptions> configure)

@@ -30,7 +30,9 @@ public sealed class FifoGroupOrderTests(LocalStackTestFixture fixture) : TestBas
             4,
             options,
             NullLogger<AmazonSqsConsumerClient>.Instance,
-            MessageLane.Queue
+            MessageLane.Queue,
+            // The test owns its queue, so the client creates it in place of 'resources provision'.
+            provisionsTopology: true
         );
         var queueUrls = await consumer.FetchMessageNamesAsync([destination], AbortToken);
         await consumer.SubscribeAsync(queueUrls, AbortToken);

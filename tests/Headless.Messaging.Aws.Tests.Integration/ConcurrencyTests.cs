@@ -50,15 +50,20 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_auto_create_topics_for_all_messages()
+    public async Task should_publish_to_many_provisioned_topics_concurrently()
     {
-        // given - The transport auto-creates topics, so all messages should succeed
+        // given - the deployment created every topic; the publisher only looks each up once
         await using var transport = _CreateTransport();
+
+        for (var topic = 0; topic < 10; topic++)
+        {
+            await _CreateTopicAsync($"auto-topic-{topic}");
+        }
 
         const int parallelCount = 20;
         var results = new OperateResult[parallelCount];
 
-        // when - Send messages to different topics (some pre-existing, some new)
+        // when - send to ten topics at once, two messages each
         await Parallel.ForEachAsync(
             Enumerable.Range(0, parallelCount),
             AbortToken,
@@ -77,7 +82,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             }
         );
 
-        // then - All should succeed since topics are auto-created
+        // then
         results.Should().HaveCount(parallelCount);
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
@@ -106,6 +111,6 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             new AmazonSimpleNotificationServiceConfig { ServiceURL = fixture.Container.GetConnectionString() }
         );
 
-        await snsClient.CreateTopicAsync(topicName.NormalizeForAws(), AbortToken);
+        await snsClient.CreateTopicAsync(AwsPhysicalAddress.BusTopic("", topicName), AbortToken);
     }
 }

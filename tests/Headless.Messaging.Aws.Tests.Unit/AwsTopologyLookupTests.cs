@@ -6,6 +6,7 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
@@ -17,10 +18,11 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// With <see cref="AmazonSqsMessagingOptions.AutoProvision"/> off, publishers and consumers only look entities up, so the
-/// runtime identity needs no create or policy permissions; with it on, Bus subscriptions use raw message delivery.
+/// Publishers and registered consumers only look the shared topology up, so the runtime identity needs no create or
+/// policy permissions and a missing object names <c>resources provision</c>; a runtime subscription creates its own
+/// topology, with raw message delivery.
 /// </summary>
-public sealed class AwsAutoProvisionTests : TestBase
+public sealed class AwsTopologyLookupTests : TestBase
 {
     private readonly IAmazonSQS _sqs = Substitute.For<IAmazonSQS>();
     private readonly IAmazonSimpleNotificationService _sns = Substitute.For<IAmazonSimpleNotificationService>();
@@ -31,7 +33,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         // given
         _sqs.GetQueueUrlAsync("queue-orders", Arg.Any<CancellationToken>())
             .Returns(new GetQueueUrlResponse { QueueUrl = "https://sqs.local/queue-orders" });
-        await using var client = _CreateConsumer(MessageLane.Queue, autoProvision: false);
+        await using var client = _CreateConsumer(MessageLane.Queue, provisionsTopology: false);
 
         // when
         var queueUrls = await client.FetchMessageNamesAsync(["orders"], AbortToken);
@@ -42,14 +44,32 @@ public sealed class AwsAutoProvisionTests : TestBase
     }
 
     [Fact]
-    public async Task should_name_the_missing_queue_and_the_lookup_permission_when_lookup_fails()
+    public async Task should_name_resources_provision_when_the_queue_does_not_exist()
     {
         // given
         _sqs.GetQueueUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(
                 new QueueDoesNotExistException("missing") { ErrorCode = "AWS.SimpleQueueService.NonExistentQueue" }
             );
-        await using var client = _CreateConsumer(MessageLane.Queue, autoProvision: false);
+        await using var client = _CreateConsumer(MessageLane.Queue, provisionsTopology: false);
+
+        // when
+        var act = async () => await client.FetchMessageNamesAsync(["orders"], AbortToken);
+
+        // then: the failure the resources startup check reports, so readiness stays held until the deploy step runs
+        await act.Should()
+            .ThrowAsync<ResourceProvisioningException>()
+            .WithMessage("*SQS queue 'queue-orders' does not exist*resources provision*");
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_name_the_lookup_permission_when_the_lookup_is_denied()
+    {
+        // given
+        _sqs.GetQueueUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonSQSException("denied") { ErrorCode = "AccessDenied" });
+        await using var client = _CreateConsumer(MessageLane.Queue, provisionsTopology: false);
 
         // when
         var act = async () => await client.FetchMessageNamesAsync(["orders"], AbortToken);
@@ -57,14 +77,14 @@ public sealed class AwsAutoProvisionTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*NonExistentQueue*sqs:GetQueueUrl*AutoProvision is off*");
+            .WithMessage("*AccessDenied*sqs:GetQueueUrl*The host creates no topology*resources provision*");
     }
 
     [Fact]
-    public async Task should_leave_bus_topology_alone_when_it_is_managed_externally()
+    public async Task should_leave_bus_topology_alone_for_a_registered_subscription()
     {
         // given
-        await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: false);
+        await using var client = _CreateConsumer(MessageLane.Bus, provisionsTopology: false);
 
         // when
         var names = await client.FetchMessageNamesAsync(["orders.placed"], AbortToken);
@@ -73,8 +93,31 @@ public sealed class AwsAutoProvisionTests : TestBase
         // then
         names.Should().Equal("orders.placed");
         _sns.ReceivedCalls().Should().BeEmpty();
-        await _sqs.DidNotReceiveWithAnyArgs().SetAttributesAsync(default!, default!);
+        await _sqs.DidNotReceiveWithAnyArgs().SetQueueAttributesAsync(default!, default!, AbortToken);
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
         await client.WaitUntilReadyAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_let_a_runtime_subscription_create_its_topics_and_queue_policy()
+    {
+        // given
+        _GivenBusQueue();
+        await using var client = _CreateConsumer(MessageLane.Bus, provisionsTopology: true);
+
+        // when
+        await client.FetchMessageNamesAsync(["orders.placed"], AbortToken);
+
+        // then: the topic and the policy that lets it deliver to the queue
+        await _sns.Received(1).CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>());
+        await _sqs.Received(1)
+            .SetQueueAttributesAsync(
+                "https://sqs.local/bus-orders",
+                Arg.Is<Dictionary<string, string>>(a =>
+                    a["Policy"].Contains("arn:aws:sns:::bus-orders-placed", StringComparison.Ordinal)
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -84,7 +127,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         _GivenBusQueue();
         _sns.SubscribeAsync(Arg.Any<SubscribeRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:sub" });
-        await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
+        await using var client = _CreateConsumer(MessageLane.Bus, provisionsTopology: true);
 
         // when
         await client.SubscribeAsync(["orders.placed"], AbortToken);
@@ -117,7 +160,7 @@ public sealed class AwsAutoProvisionTests : TestBase
             .ThrowsAsync(new InvalidParameterException("Subscription already exists with different attributes"));
         _sns.SubscribeAsync(Arg.Is<SubscribeRequest>(r => r.Attributes == null), Arg.Any<CancellationToken>())
             .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:old" });
-        await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
+        await using var client = _CreateConsumer(MessageLane.Bus, provisionsTopology: true);
 
         // when
         await client.SubscribeAsync(["orders.placed"], AbortToken);
@@ -135,13 +178,13 @@ public sealed class AwsAutoProvisionTests : TestBase
     [Fact]
     public async Task should_create_a_topic_once_for_every_client_of_the_process()
     {
-        // given: two listening clients of one consumer identity share the process's services
+        // given: two listening clients of one runtime subscription share the process's services
         _GivenBusQueue();
         _sns.SubscribeAsync(Arg.Any<SubscribeRequest>(), Arg.Any<CancellationToken>())
             .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:sub" });
         var services = new ServiceCollection().AddSingleton<SnsTopicArnCache>().BuildServiceProvider();
-        await using var first = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
-        await using var second = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+        await using var first = _CreateConsumer(MessageLane.Bus, provisionsTopology: true, services);
+        await using var second = _CreateConsumer(MessageLane.Bus, provisionsTopology: true, services);
 
         // when: each runs the topology step and subscribes
         foreach (var client in new[] { first, second })
@@ -188,8 +231,8 @@ public sealed class AwsAutoProvisionTests : TestBase
                 Task.FromResult(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" })
             );
         var services = new ServiceCollection().AddSingleton<SnsTopicArnCache>().BuildServiceProvider();
-        await using var first = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
-        await using var second = _CreateConsumer(MessageLane.Bus, autoProvision: true, services);
+        await using var first = _CreateConsumer(MessageLane.Bus, provisionsTopology: true, services);
+        await using var second = _CreateConsumer(MessageLane.Bus, provisionsTopology: true, services);
 
         // when
         var failed = async () => await first.SubscribeAsync(["orders.placed"], AbortToken);
@@ -205,16 +248,6 @@ public sealed class AwsAutoProvisionTests : TestBase
             );
     }
 
-    private void _GivenBusQueue()
-    {
-        _sns.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" });
-        _sqs.GetAttributesAsync("https://sqs.local/bus-orders")
-            .Returns(
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:::bus-orders" }
-            );
-    }
-
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -224,7 +257,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         _sns.FindTopicAsync("bus-orders").Returns(exists ? new Topic { TopicArn = "arn:aws:sns:::bus-orders" } : null);
         await using var transport = new AmazonSnsBusTransport(
             Substitute.For<ILogger<AmazonSnsBusTransport>>(),
-            _Options(autoProvision: false)
+            _Options()
         );
         _SetField(transport, "_snsClient", _sns);
         _SetField(transport, "_topicArnMaps", new ConcurrentDictionary<string, string>(StringComparer.Ordinal));
@@ -245,7 +278,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         _sns.FindTopicAsync("bus-orders").Returns((Topic?)null);
         await using var transport = new AmazonSnsBusTransport(
             Substitute.For<ILogger<AmazonSnsBusTransport>>(),
-            _Options(autoProvision: false)
+            _Options()
         );
         _SetField(transport, "_snsClient", _sns);
         _SetField(transport, "_topicArnMaps", new ConcurrentDictionary<string, string>(StringComparer.Ordinal));
@@ -268,7 +301,7 @@ public sealed class AwsAutoProvisionTests : TestBase
             .Returns(new GetQueueUrlResponse { QueueUrl = "https://sqs.local/queue-orders" });
         await using var transport = new AmazonSqsQueueTransport(
             Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
-            _Options(autoProvision: false)
+            _Options()
         );
         _SetField(transport, "_sqsClient", _sqs);
 
@@ -286,19 +319,65 @@ public sealed class AwsAutoProvisionTests : TestBase
         await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
     }
 
+    [Fact]
+    public async Task should_fail_a_send_to_a_missing_queue_and_find_it_once_provisioned()
+    {
+        // given: the queue does not exist on the first send and does on the second
+        _sqs.GetQueueUrlAsync("queue-orders", Arg.Any<CancellationToken>())
+            .Returns(
+                _ => Task.FromException<GetQueueUrlResponse>(new QueueDoesNotExistException("missing")),
+                _ => Task.FromResult(new GetQueueUrlResponse { QueueUrl = "https://sqs.local/queue-orders" })
+            );
+        await using var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _Options()
+        );
+        _SetField(transport, "_sqsClient", _sqs);
+
+        // when
+        var first = await transport.SendAsync(_Message("orders"), AbortToken);
+        var second = await transport.SendAsync(_Message("orders"), AbortToken);
+
+        // then: the miss names the deploy step and is not cached
+        first.Succeeded.Should().BeFalse();
+        first.Exception!.ToString().Should().Contain("resources provision");
+        second.Succeeded.Should().BeTrue();
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
+    }
+
+    private void _GivenBusQueue()
+    {
+        _sns.CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:::bus-orders-placed" });
+        _sqs.GetQueueAttributesAsync(
+                Arg.Is<GetQueueAttributesRequest>(r => r.QueueUrl == "https://sqs.local/bus-orders"),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new GetQueueAttributesResponse
+                {
+                    Attributes = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["QueueArn"] = "arn:aws:sqs:::bus-orders",
+                    },
+                }
+            );
+    }
+
     private AmazonSqsConsumerClient _CreateConsumer(
         MessageLane lane,
-        bool autoProvision,
+        bool provisionsTopology,
         IServiceProvider? serviceProvider = null
     )
     {
         var client = new AmazonSqsConsumerClient(
             "orders",
             1,
-            _Options(autoProvision),
+            _Options(),
             Substitute.For<ILogger<AmazonSqsConsumerClient>>(),
             lane,
-            serviceProvider: serviceProvider
+            serviceProvider: serviceProvider,
+            provisionsTopology: provisionsTopology
         );
         _SetField(client, "_sqsClient", _sqs);
         _SetField(client, "_snsClient", _sns);
@@ -306,7 +385,7 @@ public sealed class AwsAutoProvisionTests : TestBase
         return client;
     }
 
-    private static IOptions<AmazonSqsMessagingOptions> _Options(bool autoProvision)
+    private static IOptions<AmazonSqsMessagingOptions> _Options()
     {
         return Options.Create(
             new AmazonSqsMessagingOptions
@@ -314,7 +393,6 @@ public sealed class AwsAutoProvisionTests : TestBase
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = "http://localhost:4566",
                 SnsServiceUrl = "http://localhost:4566",
-                AutoProvision = autoProvision,
             }
         );
     }
@@ -337,48 +415,5 @@ public sealed class AwsAutoProvisionTests : TestBase
             .GetType()
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(target, value);
-    }
-}
-
-/// <summary>SQS takes the visibility timeout and the receive wait as whole seconds within its own limits.</summary>
-public sealed class AmazonSqsMessagingOptionsValidatorTests
-{
-    [Theory]
-    [InlineData(0.0, 5.0)]
-    [InlineData(43201.0, 5.0)]
-    [InlineData(30.5, 5.0)]
-    [InlineData(30.0, 21.0)]
-    [InlineData(30.0, -1.0)]
-    [InlineData(30.0, 2.5)]
-    public void should_reject_values_sqs_cannot_take(double visibilitySeconds, double waitSeconds)
-    {
-        // given
-        var options = new AmazonSqsMessagingOptions
-        {
-            Region = Amazon.RegionEndpoint.USEast1,
-            VisibilityTimeout = TimeSpan.FromSeconds(visibilitySeconds),
-            ReceiveWaitTime = TimeSpan.FromSeconds(waitSeconds),
-        };
-
-        // when
-        var result = new AmazonSqsMessagingOptionsValidator().Validate(options);
-
-        // then
-        result.IsValid.Should().BeFalse();
-    }
-
-    [Theory]
-    [InlineData(1.0, 0.0)]
-    [InlineData(43200.0, 20.0)]
-    public void should_accept_the_sqs_limits(double visibilitySeconds, double waitSeconds)
-    {
-        var options = new AmazonSqsMessagingOptions
-        {
-            Region = Amazon.RegionEndpoint.USEast1,
-            VisibilityTimeout = TimeSpan.FromSeconds(visibilitySeconds),
-            ReceiveWaitTime = TimeSpan.FromSeconds(waitSeconds),
-        };
-
-        new AmazonSqsMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 }

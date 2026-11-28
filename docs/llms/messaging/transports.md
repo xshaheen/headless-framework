@@ -111,7 +111,7 @@ The example uses process-local storage for development. Use PostgreSQL or SQL Se
 
 | Provider | Topology | Operational requirement |
 | --- | --- | --- |
-| AWS | Bus consumer identities own SQS queues subscribed to SNS; Queue sends directly to SQS | Grant the scoped runtime and provisioning actions in [AWS permissions](aws.md#aws-permissions) |
+| AWS | Bus consumer identities own SQS queues subscribed to SNS; Queue sends directly to SQS; created by `resources provision` | Run `resources provision` under a deploy identity with the create actions; the running host needs read and data actions only (see [AWS permissions](aws.md#aws-permissions)) |
 | Azure Service Bus | Topics and subscriptions for Bus; queues for Queue | A namespace with the required permissions and session configuration |
 | InMemory | Process-local channels | A restart loses all state |
 | Kafka | Queue-only topics; one Kafka consumer group per message | Configure partitions for the workload |
@@ -123,18 +123,19 @@ A deployment still owns its credentials, resource permissions, retention, and re
 
 ## Runtime create rights
 
-Only RabbitMQ provisions at deploy time. AWS SNS/SQS, Azure Service Bus, Kafka, NATS, and Redis Streams create their topology at runtime, as each provider file describes, so `resources provision` creates nothing for them and their runtime identity keeps every create right those files list.
+Only RabbitMQ and AWS SNS/SQS provision at deploy time. Azure Service Bus, Kafka, NATS, and Redis Streams create their topology at runtime, as each provider file describes, so `resources provision` creates nothing for them and their runtime identity keeps every create right those files list.
 
 For a transport that offers its topology as a [provisioned resource](../utilities.md#resource-provisioning), a host start never creates the shared topology. The deployment creates it with `resources provision`, and the running host checks once that it exists (see [Topology check](#topology-check)). A consumer started against a reachable broker that lacks its queue fails when it starts consuming, with a `ResourceProvisioningException` that names `resources provision`. An unreachable broker is retried. Objects that belong to one process, or to a subscription added while the host runs, are still created by the running host:
 
 | Provider | Created by `resources provision` | Still created by the running host |
 | --- | --- | --- |
 | RabbitMQ | The Bus and Queue lane exchanges; one durable queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers, with its bindings; the `.dlx` exchanges and `headless_dlq.` queues when dead-lettering is on | An every-instance consumer's exclusive queue and its binding; the request/reply `headless.reply.*` queue; the queue and bindings of an `IRuntimeSubscriber` subscription. The runtime user needs `configure` on `headless.reply.*`, on the server-named every-instance queues, and on the runtime subscriptions' queues, plus `write` on the Bus exchange to bind them |
-| AWS, Azure Service Bus, Kafka, NATS, Redis | Not a provisioned resource | Everything, as described for the provider |
+| AWS | One SNS topic per Bus message; one SQS queue per competing Bus consumer identity and per Queue-lane message the host consumes or registers; each identity queue's access policy and raw-delivery subscriptions | The topic, identity queue, policy, and subscription of an `IRuntimeSubscriber` subscription. The runtime identity needs the create actions for them (see [AWS permissions](aws.md#aws-permissions)) |
+| Azure Service Bus, Kafka, NATS, Redis | Not a provisioned resource | Everything, as described for the provider |
 
 ## Topology check
 
-Each provisioned transport topology is a resource named `topology` of kind `RabbitMQ`. Its startup check is `ResourceStartupCheck.GateReadiness` by default ([what a starting host checks](../utilities.md#resource-provisioning)). After the host starts, the `Resources` [warm-up](../utilities.md#warm-up) verifies the registered topology once per transport per host, not once per consumer client.
+Each provisioned transport topology is a resource named `topology` of kind `RabbitMQ` or `AmazonSqs`. Its startup check is `ResourceStartupCheck.GateReadiness` by default ([what a starting host checks](../utilities.md#resource-provisioning)). After the host starts, the `Resources` [warm-up](../utilities.md#warm-up) verifies the registered topology once per transport per host, not once per consumer client.
 
 - Until the check passes, the `warmup` readiness check is `Unhealthy` and names the first missing object, such as `RabbitMQ queue 'queue.orders' does not exist. Run 'resources provision' ...`.
 - A failed check is retried with the warm-up back-off, so readiness turns `Healthy` once the deployment runs `resources provision`. Liveness and the host start are not affected.

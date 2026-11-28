@@ -5,7 +5,7 @@ packages: Messaging.Aws
 
 # AWS SNS/SQS transport
 
-> Part of [Messaging](../messaging.md). The `Headless.Messaging.Aws` transport: SNS topics for the Bus lane, SQS queues for the Queue lane, FIFO support, and the IAM actions each workload needs.
+> Part of [Messaging](../messaging.md). The `Headless.Messaging.Aws` transport: SNS topics for the Bus lane, SQS queues for the Queue lane, deploy-time topology through `resources provision`, FIFO support, and the IAM actions each workload needs.
 
 ## Headless.Messaging.Aws
 
@@ -37,16 +37,37 @@ public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
 }
 ```
 
-**Verify:** the `messaging-broker` readiness check reports `Healthy` after the first receive or send ([Broker reachability](operations.md#broker-reachability)), and the `describe` host manifest's `messaging.transports` shows `"bus": "aws.sns"` and `"queue": "aws_sqs"`. A denied consumer topology call fails with `AWS_MESSAGING_PROVISIONING_DENIED` naming the missing stage.
+Then create the topology as a deploy step, before the new release serves traffic. Its kind is `AmazonSqs` (`SetupMessagingAws.TopologyResourceKind`):
+
+```bash
+dotnet MyApp.dll resources provision -k AmazonSqs
+```
+
+**Verify:** `resources provision` prints the `AmazonSqs` `topology` line with status `Ok`, then the `warmup` readiness check turns `Healthy` once the host's [topology check](transports.md#topology-check) passes, and `messaging-broker` reports `Healthy` after the first receive or send ([Broker reachability](operations.md#broker-reachability)). Until provisioning runs, `warmup` stays `Unhealthy` and names every missing object, such as `Amazon SQS queue 'queue-orders-place.fifo' does not exist. Run 'resources provision' ...`. The `describe` host manifest's `messaging.transports` shows `"bus": "aws.sns"` and `"queue": "aws_sqs"`.
 
 ### Names and topology
 
 - Bus publishes to the SNS topic `bus-{logical-name}`. Each Bus consumer identity owns the SQS queue `bus-{consumer-identity}`, subscribed to that topic. Queue sends go to `queue-{logical-name}`. In names, `.` becomes `-` and `:` becomes `_`.
 - With `Headless:Prefix` set to `wt1`, every topic and queue starts with `wt1_` (`wt1_bus-orders-created`), and the IAM resource patterns below become `wt1_bus-*` and `wt1_queue-*`. See [host prefix](transports.md#host-prefix).
 - Bus and Queue have independent topology, so one contract name can carry both lanes without cross-delivery.
-- `AutoProvision = true` (default) creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use.
-- `AutoProvision = false` looks topics and queues up and creates nothing, for topology managed by infrastructure as code. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup. A missing topic fails the send. After a miss, sends to that topic fail without a new `sns:ListTopics` lookup for 30 seconds, so a topic provisioned while the host runs is found within that window.
-- Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
+- Consumer startup honors host cancellation through the SNS/SQS lookups.
+
+**What the topology resource does:**
+
+- `provision` creates one SNS topic per registered Bus message, one SQS queue per competing Bus consumer identity and per registered Queue-lane message (consumed on this host or not), each identity queue's access policy for its topics, and a raw-delivery subscription from each topic to each identity queue that consumes it. Each create is idempotent, and the queue policy is written only when a topic is missing from it, so a second run changes nothing.
+- `verify` writes nothing. It costs one `sns:ListTopics` per 100 topics in the account and region (SNS has no lookup by name), one `sqs:GetQueueUrl` per queue, and for each identity queue one `sqs:GetQueueAttributes` (ARN and policy), one `sns:ListSubscriptionsByTopic` per 100 subscriptions of each of its topics, and one `sns:GetSubscriptionAttributes` per subscription of that queue to check raw delivery. It names every missing topic, queue, policy grant, and raw subscription in one failure.
+- `purge` runs `PurgeQueue` on each queue this host consumes. SQS allows one purge per queue every 60 seconds; a purge already running counts as done.
+- `delete` removes the SNS subscriptions feeding each queue this host consumes, then the queue. A queue already gone is skipped.
+- `status` reports each queue's visible and in-flight message counts, and each missing object.
+- Purge and delete never touch a queue the host only sends to, because it belongs to the service that consumes it. Topics are never deleted: every service that publishes or consumes a message shares its topic, and a publish-only service leaves no subscription that shows it still uses one. Delete a topic by hand once no service publishes it.
+- An infrastructure-as-code deployment may create the same objects instead. `resources verify` then checks them, and each Bus subscription must enable raw message delivery.
+
+**What the running host does:**
+
+- Consumer clients create nothing. A missing queue fails the consumer with `ResourceProvisioningException` naming `resources provision`, and the readiness gate holds meanwhile.
+- A Bus publisher lists the topics once per process and looks up a topic that was not listed. A missing topic fails the send naming `resources provision`. After a miss, sends to that topic fail without a new `sns:ListTopics` lookup for 30 seconds, so a topic provisioned while the host runs is found within that window.
+- A Queue publisher looks a queue up with `sqs:GetQueueUrl` before its first send in each process. A missing queue fails the send naming `resources provision`, and the next send looks again.
+- An `IRuntimeSubscriber` subscription still creates its topic, identity queue, queue policy, and raw-delivery subscription when it attaches, because `resources provision` never sees it.
 - Not supported: every-instance consumers (startup fails naming the consumer) and request/reply (a host that sends requests or declares a responder fails startup).
 
 ### Configuration
@@ -55,7 +76,6 @@ Configure region, service URLs, and credentials through `AmazonSqsMessagingOptio
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `AutoProvision` | `true` | Creates topology on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy |
 | `VisibilityTimeout` | 30 s | Sent on every receive, so the queue's own default does not apply. Whole seconds from 1 second to 12 hours |
 | `ReceiveWaitTime` | 5 s | SQS long-poll wait per receive. Whole seconds from 0 to 20 |
 
@@ -63,25 +83,27 @@ Configure region, service URLs, and credentials through `AmazonSqsMessagingOptio
 
 **FIFO consumption order.** On a FIFO queue the consumer reads each message's `MessageGroupId`, takes a group's messages in one at a time in receive order, and returns the rest of a group's batch to the queue as soon as one of them is rejected, hidden as long as the rejected message. Admission to the inbox therefore keeps the group's order. Handlers run after admission, so a shared group does not make handling exclusive on its own. Tune the consumer `Sequential()` with the group as its `RoutingAffinityKey`, or run it at `Concurrency(1)`. See [Transport-Specific Ordering](ordering.md#transport-specific-ordering).
 
-**Envelope format.** Every send puts the whole header dictionary into one String attribute named `headless-aws-headers-v1`: an SQS message attribute on the Queue lane and an SNS message attribute on the Bus lane. The body and the native `MessageGroupId` are unchanged. Bus subscriptions use SNS raw message delivery (`RawMessageDelivery = true`), so SQS receives the body and attribute as sent. With `AutoProvision`, the consumer sets raw delivery on a subscription it creates and on one that already exists (`sns:SetSubscriptionAttributes`). One attribute stays inside the SQS limit of ten message attributes. A message whose attribute is missing (including an SNS-wrapped body from a subscription without raw delivery), mixed with other attributes, malformed, or holding duplicate or reserved header names is deleted from the queue without reaching a handler.
+**Envelope format.** Every send puts the whole header dictionary into one String attribute named `headless-aws-headers-v1`: an SQS message attribute on the Queue lane and an SNS message attribute on the Bus lane. The body and the native `MessageGroupId` are unchanged. Bus subscriptions use SNS raw message delivery (`RawMessageDelivery = true`), so SQS receives the body and attribute as sent. `resources provision` and a runtime subscription set raw delivery on a subscription they create and on one that already exists (`sns:SetSubscriptionAttributes`). One attribute stays inside the SQS limit of ten message attributes. A message whose attribute is missing (including an SNS-wrapped body from a subscription without raw delivery), mixed with other attributes, malformed, or holding duplicate or reserved header names is deleted from the queue without reaching a handler.
 
 ### AWS permissions
 
-`AmazonSqsMessagingOptions.Credentials`, or the SDK default chain, supplies one identity for runtime and topology calls. There is no separate provisioning credential. Grant only the rows each workload uses:
+`AmazonSqsMessagingOptions.Credentials`, or the SDK default chain, supplies the identity. Run `resources provision` under a deploy identity with the create rights, and give the running host only the read and data actions. Grant only the rows each workload uses:
 
-| Workload | Runtime actions | Provisioning and discovery actions | Resource scope |
+| Workload | Running host | `resources provision` (deploy identity) | Resource scope |
 | --- | --- | --- | --- |
-| Bus publisher | `sns:ListTopics`, `sns:Publish` | `sns:CreateTopic` when a `bus-*` topic is absent | `sns:ListTopics` requires `Resource: "*"`; scope create and publish to `arn:${Partition}:sns:${Region}:${Account}:bus-*` |
-| Queue publisher | `sqs:SendMessage` | `sqs:CreateQueue` on first use in each process, also for a pre-created queue, because the idempotent create call resolves its URL | `arn:${Partition}:sqs:${Region}:${Account}:queue-*` |
-| Bus consumer | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe` | SNS actions on the generated `bus-*` topics; SQS actions on the generated `bus-*` consumer-identity queues |
-| Queue consumer | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` on startup | The consumer's `queue-*` destinations |
-| SNS service principal (the queue policy the Bus consumer deployment writes) | `sqs:SendMessage` | None | The provider writes the queue policy for principal `sns.amazonaws.com`, resource = that consumer-identity queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
+| Bus publisher | `sns:ListTopics`, `sns:Publish` | `sns:CreateTopic` | `sns:ListTopics` requires `Resource: "*"`; scope create and publish to `arn:${Partition}:sns:${Region}:${Account}:bus-*` |
+| Queue publisher | `sqs:GetQueueUrl`, `sqs:SendMessage` | `sqs:CreateQueue` | `arn:${Partition}:sqs:${Region}:${Account}:queue-*` |
+| Bus consumer | `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`; for the topology check, `sns:ListTopics`, `sqs:GetQueueAttributes`, `sns:ListSubscriptionsByTopic`, `sns:GetSubscriptionAttributes` | `sns:CreateTopic`, `sqs:CreateQueue`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sns:Subscribe`, `sns:SetSubscriptionAttributes` | SNS actions on the generated `bus-*` topics; SQS actions on the generated `bus-*` consumer-identity queues |
+| Queue consumer | `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | `sqs:CreateQueue` | The consumer's `queue-*` destinations |
+| `IRuntimeSubscriber` subscription | The Bus consumer's running-host actions, plus its `resources provision` actions, because the subscription creates its own topology | None | The runtime subscription's `bus-*` topics and identity queue |
+| `resources purge` and `resources delete` | None | `sqs:GetQueueUrl`, `sqs:PurgeQueue`; for delete also `sns:ListTopics`, `sqs:GetQueueAttributes`, `sns:ListSubscriptionsByTopic`, `sns:Unsubscribe`, `sqs:DeleteQueue` | The queues this host consumes. Grant these only to the environment that resets or tears down |
+| SNS service principal (the queue policy `resources provision` writes) | `sqs:SendMessage` | None | The policy names principal `sns.amazonaws.com`, resource = that consumer-identity queue ARN, and `aws:SourceArn` = the subscribing `bus-*` topic ARN |
 
-With `AutoProvision = false`, a consumer needs `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:ChangeMessageVisibility`. A Bus publisher needs `sns:ListTopics` and `sns:Publish`. A Queue publisher needs `sqs:GetQueueUrl` and `sqs:SendMessage`.
+To drop the readiness check, and with it the running host's `sns:ListSubscriptionsByTopic`, `sns:GetSubscriptionAttributes`, and `sqs:GetQueueAttributes` rights, call `services.ConfigureResourceProvisioning(o => o.StartupChecks[SetupMessagingAws.TopologyResourceKind] = ResourceStartupCheck.None)`. A missing queue then surfaces only when a consumer starts on it.
 
 - A consumer topology denial surfaces as `AWS_MESSAGING_PROVISIONING_DENIED` with the lane, subscription name, AWS error code, and the action set for that stage. Use the denied AWS API operation to find the exact missing action.
 - A publisher denial returns a failed publish with the AWS exception message and retries as described in [Publish retries](retries.md#publish-retries). A receive denial is logged and retried with back-off.
-- Do not grant delete, wildcard SNS/SQS administration, or unrelated IAM actions. The transport does not call them.
+- Do not grant delete, purge, wildcard SNS/SQS administration, or unrelated IAM actions to the running host. It does not call them.
 
 ### Design and runtime behavior
 
