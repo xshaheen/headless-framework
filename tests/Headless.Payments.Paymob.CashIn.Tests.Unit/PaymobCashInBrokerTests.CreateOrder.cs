@@ -22,7 +22,7 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
         var request = _CreateOrderRequest();
         var token = CashInTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
-        authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(token);
+        authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(PaymobCashInResult.Succeeded(token));
         var internalRequest = new CashInCreateOrderInternalRequest(token, request);
         var internalRequestJson = JsonSerializer.Serialize(internalRequest, _IgnoreNullOptions);
         var response = CashInTestData.CreateOrderResponse(Faker);
@@ -38,17 +38,17 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
 
         // then
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
-        JsonSerializer.Serialize(result).Should().Be(responseJson);
+        JsonSerializer.Serialize(result.Value).Should().Be(responseJson);
     }
 
     [Fact]
-    public async Task should_throw_http_request_exception_when_create_order_request_not_success()
+    public async Task should_return_unknown_when_create_order_answers_5xx()
     {
         // given
         var request = _CreateOrderRequest();
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
         var token = CashInTestData.Text(Faker);
-        authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(token);
+        authenticator.GetAuthenticationTokenAsync(AbortToken).Returns(PaymobCashInResult.Succeeded(token));
         var body = CashInTestData.Text(Faker);
 
         fixture
@@ -60,7 +60,7 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
         var invocation = FluentActions.Awaiting(() => broker.CreateOrderAsync(request, AbortToken));
 
         // then
-        await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
+        await _ShouldBeUnknownAsync(invocation, HttpStatusCode.InternalServerError, body);
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 

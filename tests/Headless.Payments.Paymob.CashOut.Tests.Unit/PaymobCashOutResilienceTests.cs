@@ -36,11 +36,11 @@ public sealed class PaymobCashOutResilienceTests(PaymobCashOutFixture fixture)
         // when
         await using var scope = provider.CreateAsyncScope();
         var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
-        var act = async () => await broker.DisburseAsync(request, AbortToken);
+        var result = await broker.DisburseAsync(request, AbortToken);
 
-        // then - the first 503 surfaces and exactly one POST reached the wire.
-        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
-        assertion.Which.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        // then - the first 503 surfaces as an unknown outcome and exactly one POST reached the wire.
+        result.IsUnknown.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
 
         var attempts = fixture.Server.FindLogEntries(Request.Create().WithPath("/disburse").UsingPost()).ToList();
 
@@ -60,10 +60,10 @@ public sealed class PaymobCashOutResilienceTests(PaymobCashOutFixture fixture)
         // when
         await using var scope = provider.CreateAsyncScope();
         var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
-        var act = async () => await broker.GetBudgetAsync(AbortToken);
+        var result = await broker.GetBudgetAsync(AbortToken);
 
         // then - still failing after retries, but the wire saw more than one attempt.
-        await act.Should().ThrowAsync<PaymobCashOutException>();
+        result.IsUnknown.Should().BeTrue();
 
         var attempts = fixture.Server.FindLogEntries(Request.Create().WithPath("/budget/inquire/").UsingGet()).ToList();
 
@@ -73,7 +73,7 @@ public sealed class PaymobCashOutResilienceTests(PaymobCashOutFixture fixture)
     private ServiceProvider _BuildProvider()
     {
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
-        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns("token");
+        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(PaymobCashOutResult.Succeeded("token"));
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(

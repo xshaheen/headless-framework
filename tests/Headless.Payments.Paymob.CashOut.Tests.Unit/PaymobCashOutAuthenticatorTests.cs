@@ -39,7 +39,7 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         var result = await authenticator.GetAccessTokenAsync(AbortToken);
 
         // then
-        result.Should().Be(accessToken);
+        result.Value.Should().Be(accessToken);
     }
 
     [Fact]
@@ -71,8 +71,8 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // then
         callCount.Should().Be(1);
-        first.Should().Be(accessToken);
-        second.Should().Be(accessToken);
+        first.Value.Should().Be(accessToken);
+        second.Value.Should().Be(accessToken);
     }
 
     [Fact]
@@ -95,8 +95,8 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // then
         callCount.Should().Be(2);
-        first.Should().Be("token-1");
-        second.Should().Be("token-2");
+        first.Value.Should().Be("token-1");
+        second.Value.Should().Be("token-2");
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // then - double-checked lock allows exactly one refresh call
         callCount.Should().Be(1);
-        results.Should().AllBe(accessToken);
+        results.Select(r => r.Value).Should().AllBe(accessToken);
     }
 
     [Fact]
@@ -156,12 +156,12 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // then
         callCount.Should().Be(2);
-        first.Should().Be("token-1");
-        second.Should().Be("token-2");
+        first.Value.Should().Be("token-1");
+        second.Value.Should().Be("token-2");
     }
 
     [Fact]
-    public async Task should_throw_paymob_cash_out_exception_with_status_and_body_when_token_request_fails()
+    public async Task should_return_rejected_with_status_and_body_when_token_request_fails()
     {
         // given
         var (options, monitor) = _CreateOptions();
@@ -173,13 +173,21 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // when
         using var authenticator = _CreateAuthenticator(monitor);
-        var act = () => authenticator.GetAccessTokenAsync(AbortToken).AsTask();
+        var result = await authenticator.GetAccessTokenAsync(AbortToken);
+        var retry = await authenticator.GetAccessTokenAsync(AbortToken);
 
-        // then
-        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
-        assertion.Which.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        assertion.Which.Body.Should().Be(body);
-        assertion.Which.Message.Should().Be("Paymob Cash Out - Http request failed with status code (401).");
+        // then - the failure is reported, not cached, so the next call asks Paymob again
+        result.IsRejected.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        result.Error.Body.Should().Be(body);
+        result.Error.Message.Should().Be("Paymob Cash Out - Paymob rejected the request with status code (401).");
+        retry.IsRejected.Should().BeTrue();
+        fixture
+            .Server.FindLogEntries(
+                Request.Create().WithPath("/o/token/").UsingPost().WithBody(_PasswordGrantBody(options))
+            )
+            .Should()
+            .HaveCount(2);
     }
 
     [Fact]
@@ -221,17 +229,17 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         var cached = await authenticator.GetAccessTokenAsync(AbortToken);
 
         // then - the refreshed token is cached, so no password-grant request is made
-        response.AccessToken.Should().Be(accessToken);
-        response.RefreshToken.Should().Be(newRefreshToken);
-        cached.Should().Be(accessToken);
+        response.Value!.AccessToken.Should().Be(accessToken);
+        response.Value!.RefreshToken.Should().Be(newRefreshToken);
+        cached.Value.Should().Be(accessToken);
         passwordGrantCalls.Should().Be(0);
     }
 
     [Fact]
-    public async Task should_throw_paymob_cash_out_exception_when_refresh_token_request_fails()
+    public async Task should_return_rejected_when_refresh_token_request_fails()
     {
         // given
-        var (options, monitor) = _CreateOptions();
+        var (_, monitor) = _CreateOptions();
         var refreshToken = CashOutTestData.Text(Faker);
         var body = CashOutTestData.Text(Faker);
 
@@ -247,16 +255,16 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
 
         // when
         using var authenticator = _CreateAuthenticator(monitor);
-        var act = () => authenticator.RefreshTokenAsync(refreshToken, AbortToken);
+        var result = await authenticator.RefreshTokenAsync(refreshToken, AbortToken);
 
         // then
-        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
-        assertion.Which.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        assertion.Which.Body.Should().Be(body);
+        result.IsRejected.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        result.Error.Body.Should().Be(body);
     }
 
     [Fact]
-    public async Task should_cancel_token_request_when_cancellation_requested()
+    public async Task should_report_unknown_when_cancelled_after_token_request_sent()
     {
         // given
         var (options, monitor) = _CreateOptions();
@@ -268,10 +276,11 @@ public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         using var authenticator = _CreateAuthenticator(monitor);
-        var act = () => authenticator.GetAccessTokenAsync(cts.Token).AsTask();
+        var result = await authenticator.GetAccessTokenAsync(cts.Token);
 
-        // then
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        // then - the request already left, so its outcome is unknown rather than a thrown cancellation
+        result.IsUnknown.Should().BeTrue();
+        result.Error!.Exception.Should().BeAssignableTo<OperationCanceledException>();
     }
 
     [Fact]

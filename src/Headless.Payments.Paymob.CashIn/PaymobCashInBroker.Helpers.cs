@@ -8,107 +8,69 @@ namespace Headless.Payments.Paymob.CashIn;
 
 internal partial class PaymobCashInBroker
 {
-    private async Task<TResponse> _PostAsync<TRequest, TResponse>(
+    private async Task<PaymobCashInResult<TResponse>> _PostAsync<TRequest, TResponse>(
         string url,
         TRequest request,
-        CancellationToken cancellationToken = default
+        Func<TResponse, PaymobCashInOutcome>? classify,
+        CancellationToken cancellationToken
     )
     {
-        using var response = await httpClient
-            .PostAsJsonAsync(url, request, CashInJsonOptions.JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        var result =
-            await response
-                .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-                .ConfigureAwait(false)
-            ?? throw new PaymobCashInException(
-                "Paymob CashIn returned null response body.",
-                response.StatusCode,
-                body: null
-            );
-
-        return result;
-    }
-
-    private async Task<TResponse> _PostWithBearerAuthAsync<TRequest, TResponse>(
-        string url,
-        TRequest request,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
-
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        var result =
-            await response
-                .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-                .ConfigureAwait(false)
-            ?? throw new PaymobCashInException(
-                "Paymob CashIn returned null response body.",
-                response.StatusCode,
-                body: null
-            );
-
-        return result;
+        return await PaymobCashInHttp
+            .SendAsync(httpClient, httpRequest, classify, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private async Task<TResponse?> _PostWithTokenAuthAsync<TRequest, TResponse>(
+    private async Task<PaymobCashInResult<TResponse>> _PostWithTokenAuthAsync<TRequest, TResponse>(
         string url,
         TRequest request,
-        CancellationToken cancellationToken = default
+        Func<TResponse, PaymobCashInOutcome>? classify,
+        CancellationToken cancellationToken
     )
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Token", Options.SecretKey);
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        return await response
-            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
+        return await PaymobCashInHttp
+            .SendAsync(httpClient, httpRequest, classify, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task<TResponse?> _GetWithBearerAuthAsync<TResponse>(
+    private async Task<PaymobCashInResult<TResponse>> _GetWithBearerAuthAsync<TResponse>(
         string url,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
-
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
+        if (!authToken.IsSucceeded)
         {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return PaymobCashInHttp.NotSent<TResponse>(authToken.Error);
         }
 
-        return await response
-            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken.Value);
+
+        return await PaymobCashInHttp
+            .SendAsync<TResponse>(httpClient, request, classify: null, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    // Paymob answers a declined charge, refund, or void with 200 and a transaction whose success and pending
+    // flags are both false, so the body decides. A pending transaction (3-D Secure, a wallet OTP, a kiosk bill)
+    // was accepted; its final state arrives by callback.
+    private static PaymobCashInOutcome _ClassifyTransaction(bool success, bool pending)
+    {
+        return success || pending ? PaymobCashInOutcome.Succeeded : PaymobCashInOutcome.Rejected;
+    }
+
+    private static bool _IsTrue(string? flag)
+    {
+        return string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -52,4 +52,13 @@
   <data name="CashOutInsufficientFunds" xml:space="preserve">
     <value>Insufficient funds.</value><comment>General | The balance does not cover a withdrawal request</comment>
   </data>
+  <data name="CashInDeclined" xml:space="preserve">
+    <value>The payment provider declined the request.</value><comment>General | Paymob answered but refused the charge, refund, or void</comment>
+  </data>
+  <data name="CashInOutcomeUnknown" xml:space="preserve">
+    <value>The payment provider did not confirm the result. Check the payment status before you try again.</value><comment>General | The charge, refund, or void may have applied</comment>
+  </data>
+  <data name="CashOutOutcomeUnknown" xml:space="preserve">
+    <value>The payment provider did not confirm the transfer. Check the transfer status before you try again.</value><comment>General | The payout may have applied</comment>
+  </data>
 </root>

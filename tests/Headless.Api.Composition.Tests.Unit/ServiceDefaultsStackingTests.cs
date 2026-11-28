@@ -80,11 +80,10 @@ public sealed class ServiceDefaultsStackingTests : TestBase
         var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
 
         // when
-        var act = async () =>
-            await broker.DisburseAsync(CashOutDisburseRequest.Vodafone(100m, "01012345678"), AbortToken);
+        var result = await broker.DisburseAsync(CashOutDisburseRequest.Vodafone(100m, "01012345678"), AbortToken);
 
-        // then - the payout POST reached the wire exactly once.
-        await act.Should().ThrowAsync<PaymobCashOutException>();
+        // then - the payout POST reached the wire exactly once, and its 5xx is reported as unresolved.
+        result.IsUnknown.Should().BeTrue();
         counter.Count(HttpMethod.Post).Should().Be(1, "a payout POST must never be retried automatically");
     }
 
@@ -104,10 +103,10 @@ public sealed class ServiceDefaultsStackingTests : TestBase
         var broker = scope.ServiceProvider.GetRequiredService<IPaymobCashOutBroker>();
 
         // when
-        var act = async () => await broker.GetBudgetAsync(AbortToken);
+        var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<PaymobCashOutException>();
+        result.IsSucceeded.Should().BeFalse();
         counter.Count(HttpMethod.Get).Should().BeGreaterThan(1);
     }
 
@@ -303,7 +302,7 @@ public sealed class ServiceDefaultsStackingTests : TestBase
 
         // Registered after AddPaymobCashOut so the last registration wins and no real token call is made.
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
-        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns("token");
+        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(PaymobCashOutResult.Succeeded("token"));
         services.AddSingleton(authenticator);
     }
 

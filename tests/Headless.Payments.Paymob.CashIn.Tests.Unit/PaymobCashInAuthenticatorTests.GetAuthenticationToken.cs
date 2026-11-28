@@ -28,7 +28,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
         var result2 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // then
-        result1.Should().NotBe(result2);
+        result1.Value.Should().NotBe(result2.Value);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
         var result2 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // then
-        result1.Should().Be(result2);
+        result1.Value.Should().Be(result2.Value);
     }
 
     private void _SetupRandomResponse()

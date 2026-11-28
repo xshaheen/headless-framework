@@ -16,9 +16,12 @@ public interface IPaymobCashInAuthenticator
 {
     /// <summary>Exchanges the configured API key for a new authentication token unconditionally.</summary>
     /// <param name="cancellationToken">Token to cancel the network call.</param>
-    /// <returns>The full authentication response including the bearer token and merchant profile.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync(
+    /// <returns>
+    /// A succeeded result with the bearer token and merchant profile, or a rejected or unknown result with the
+    /// status and body Paymob answered with. A new token is cached only on success.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">The token was canceled before the request was sent.</exception>
+    Task<PaymobCashInResult<CashInAuthenticationTokenResponse>> RequestAuthenticationTokenAsync(
         CancellationToken cancellationToken = default
     );
 
@@ -27,14 +30,15 @@ public interface IPaymobCashInAuthenticator
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the network call if a refresh is needed.</param>
     /// <returns>
-    /// A bearer token string that is valid for use in Paymob API requests. The cached token is
-    /// returned when it remains valid; otherwise a fresh token is fetched and cached.
+    /// A succeeded result with a bearer token that is valid for Paymob API requests. The cached token is
+    /// returned when it remains valid; otherwise a fresh token is fetched and cached. A failed refresh returns
+    /// its rejected or unknown result and caches nothing.
     /// </returns>
     /// <remarks>
     /// Token lifetime is controlled by <c>PaymobCashInOptions.TokenRefreshBuffer</c>, which defaults
     /// to 55 minutes (5 minutes before Paymob's 60-minute expiry). Changing the options at runtime
     /// invalidates the cached token on the next call.
     /// </remarks>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed during a token refresh.</exception>
-    ValueTask<string> GetAuthenticationTokenAsync(CancellationToken cancellationToken = default);
+    /// <exception cref="OperationCanceledException">The token was canceled before a refresh request was sent.</exception>
+    ValueTask<PaymobCashInResult<string>> GetAuthenticationTokenAsync(CancellationToken cancellationToken = default);
 }

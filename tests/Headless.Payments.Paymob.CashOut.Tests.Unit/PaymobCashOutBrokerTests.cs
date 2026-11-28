@@ -4,6 +4,8 @@ using System.Net;
 using System.Text.Encodings.Web;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Testing.Tests;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -49,11 +51,11 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
-        result.TransactionId.Should().Be(transactionId);
-        result.Amount.Should().Be(150.25m);
-        result.IsSuccess().Should().BeTrue();
-        result.IsFailed().Should().BeFalse();
-        result.IsPending().Should().BeFalse();
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Succeeded);
+        result.Error.Should().BeNull();
+        result.Value!.TransactionId.Should().Be(transactionId);
+        result.Value.Amount.Should().Be(150.25m);
+        result.Value.IsSuccess().Should().BeTrue();
     }
 
     [Fact]
@@ -75,16 +77,21 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.DisburseAsync(request, AbortToken);
 
-        // then
-        result.TransactionId.Should().Be("tx-quirks");
-        result.Amount.Should().Be(75.5m);
-        result.IsRequestValidationError().Should().BeTrue();
-        result.StatusDescription.Should().NotBeNull();
-        result.ExtensionData.Should().ContainKey("unknown_field");
+        // then - a "failed" disbursement is a definite rejection that still carries Paymob's answer
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Rejected);
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.OK);
+        result.Value!.TransactionId.Should().Be("tx-quirks");
+        result.Value.Amount.Should().Be(75.5m);
+        result.Value.IsRequestValidationError().Should().BeTrue();
+        result.Value.StatusDescription.Should().NotBeNull();
+        result.Value.ExtensionData.Should().ContainKey("unknown_field");
     }
 
-    [Fact]
-    public async Task should_throw_paymob_cash_out_exception_with_status_and_body_when_disburse_fails()
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.UnprocessableEntity)]
+    public async Task should_return_rejected_with_status_and_body_when_disburse_answers_4xx(HttpStatusCode status)
     {
         // given
         var (authenticator, token) = _SetupAuthenticator();
@@ -95,17 +102,221 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
             .Server.Given(
                 Request.Create().WithPath("/disburse").UsingPost().WithHeader("Authorization", $"Bearer {token}")
             )
-            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(errorBody));
+            .RespondWith(Response.Create().WithStatusCode(status).WithBody(errorBody));
 
         // when
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var act = () => broker.DisburseAsync(request, AbortToken);
+        var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
-        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
-        assertion.Which.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        assertion.Which.Body.Should().Be(errorBody);
-        assertion.Which.Message.Should().Be("Paymob Cash Out - Http request failed with status code (500).");
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Rejected);
+        result.Error!.StatusCode.Should().Be(status);
+        result.Error.Body.Should().Be(errorBody);
+        result.Error.Message.Should().NotContain(errorBody, "the body may carry recipient data and stays out of logs");
+        result.Value.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task should_return_unknown_with_status_and_body_when_disburse_answers_5xx(HttpStatusCode status)
+    {
+        // given
+        var (authenticator, token) = _SetupAuthenticator();
+        var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
+        var errorBody = CashOutTestData.Text(Faker);
+
+        fixture
+            .Server.Given(
+                Request.Create().WithPath("/disburse").UsingPost().WithHeader("Authorization", $"Bearer {token}")
+            )
+            .RespondWith(Response.Create().WithStatusCode(status).WithBody(errorBody));
+
+        // when
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(request, AbortToken);
+
+        // then - Paymob may have paid before failing, so the payout is unresolved, not rejected
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Unknown);
+        result.IsRejected.Should().BeFalse();
+        result.Error!.StatusCode.Should().Be(status);
+        result.Error.Body.Should().Be(errorBody);
+    }
+
+    [Theory]
+    [MemberData(nameof(FaultsAfterSend))]
+    public async Task should_return_unknown_when_disburse_times_out_or_loses_the_response(TransportFault kind)
+    {
+        // given
+        var fault = _Fault(kind);
+        var (authenticator, _) = _SetupAuthenticator();
+        using var handler = new ThrowingHandler(fault);
+        using var httpClient = new HttpClient(handler);
+        var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
+
+        // when
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(request, AbortToken);
+
+        // then
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Unknown);
+        result.Error!.StatusCode.Should().BeNull();
+        result.Error.Exception.Should().BeSameAs(fault);
+    }
+
+    public enum TransportFault
+    {
+        HttpClientTimeout,
+        PipelineTimeout,
+        ConnectionReset,
+        ResponseStreamClosed,
+    }
+
+    public static readonly TheoryData<TransportFault> FaultsAfterSend =
+    [
+        TransportFault.HttpClientTimeout,
+        TransportFault.PipelineTimeout,
+        TransportFault.ConnectionReset,
+        TransportFault.ResponseStreamClosed,
+    ];
+
+    private static Exception _Fault(TransportFault kind)
+    {
+        return kind switch
+        {
+            // HttpClient.Timeout surfaces as a TaskCanceledException wrapping a TimeoutException.
+            TransportFault.HttpClientTimeout => new TaskCanceledException("timed out", new TimeoutException()),
+            TransportFault.PipelineTimeout => new TimeoutRejectedException("resilience pipeline timeout"),
+            TransportFault.ConnectionReset => new HttpRequestException("connection reset"),
+            TransportFault.ResponseStreamClosed => new IOException("response stream closed"),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+    }
+
+    [Fact]
+    public async Task should_return_rejected_when_the_circuit_breaker_refuses_to_send_the_disbursement()
+    {
+        // given - an open circuit rejects before the request reaches the network
+        var (authenticator, _) = _SetupAuthenticator();
+        var fault = new BrokenCircuitException("circuit open");
+        using var handler = new ThrowingHandler(fault);
+        using var httpClient = new HttpClient(handler);
+        var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
+
+        // when
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(request, AbortToken);
+
+        // then
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Rejected);
+        result.Error!.Exception.Should().BeSameAs(fault);
+    }
+
+    [Fact]
+    public async Task should_return_unknown_when_disburse_reports_an_unrecognized_status()
+    {
+        // given
+        var (authenticator, token) = _SetupAuthenticator();
+        var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
+        const string responseJson =
+            """{"transaction_id":"tx-odd","issuer":"vodafone","amount":10,"disbursement_status":"processing","status_code":"7000"}""";
+
+        fixture
+            .Server.Given(
+                Request.Create().WithPath("/disburse").UsingPost().WithHeader("Authorization", $"Bearer {token}")
+            )
+            .RespondWith(Response.Create().WithBody(responseJson));
+
+        // when
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(request, AbortToken);
+
+        // then
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Unknown);
+        result.Value!.TransactionId.Should().Be("tx-odd");
+    }
+
+    [Fact]
+    public async Task should_return_unknown_when_disburse_answers_2xx_with_an_unreadable_body()
+    {
+        // given
+        var (authenticator, token) = _SetupAuthenticator();
+        var request = CashOutDisburseRequest.Vodafone(amount: 10m, phoneNumber: "01099999999");
+
+        fixture
+            .Server.Given(
+                Request.Create().WithPath("/disburse").UsingPost().WithHeader("Authorization", $"Bearer {token}")
+            )
+            .RespondWith(Response.Create().WithBody("<html>gateway</html>"));
+
+        // when
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(request, AbortToken);
+
+        // then
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Unknown);
+        result.Error!.Exception.Should().BeOfType<JsonException>();
+    }
+
+    [Fact]
+    public async Task should_return_rejected_without_sending_when_authentication_fails()
+    {
+        // given
+        var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
+        authenticator
+            .GetAccessTokenAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                PaymobCashOutResult.Unknown<string>(
+                    new PaymobCashOutResultError("token timeout", HttpStatusCode.GatewayTimeout)
+                )
+            );
+        using var handler = new ThrowingHandler(new InvalidOperationException("must not be sent"));
+        using var httpClient = new HttpClient(handler);
+
+        // when
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.DisburseAsync(CashOutDisburseRequest.Vodafone(10m, "01099999999"), AbortToken);
+
+        // then - no payout request left, so the payout is a definite rejection even though the token call was unknown
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Rejected);
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        result.Error.Message.Should().Contain("not sent");
+        handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_operation_canceled_without_sending_when_canceled_before_disburse()
+    {
+        // given
+        var (authenticator, _) = _SetupAuthenticator();
+        using var handler = new ThrowingHandler(new InvalidOperationException("must not be sent"));
+        using var httpClient = new HttpClient(handler);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+        var act = () => broker.DisburseAsync(CashOutDisburseRequest.Vodafone(10m, "01099999999"), cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_argument_null_exception_when_disburse_request_is_null()
+    {
+        // given
+        var (authenticator, _) = _SetupAuthenticator();
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
+
+        // when
+        var act = () => broker.DisburseAsync(null!, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
@@ -126,11 +337,12 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
-        result.CurrentBudget.Should().Be("Your current budget is 888.25 LE");
+        result.IsSucceeded.Should().BeTrue();
+        result.Value!.CurrentBudget.Should().Be("Your current budget is 888.25 LE");
     }
 
     [Fact]
-    public async Task should_throw_paymob_cash_out_exception_with_status_and_body_when_budget_fails()
+    public async Task should_return_rejected_with_status_and_body_when_budget_answers_4xx()
     {
         // given
         var (authenticator, _) = _SetupAuthenticator();
@@ -141,12 +353,12 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
 
         // when
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var act = () => broker.GetBudgetAsync(AbortToken);
+        var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
-        var assertion = await act.Should().ThrowAsync<PaymobCashOutException>();
-        assertion.Which.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        assertion.Which.Body.Should().Be("throttled");
+        result.IsRejected.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        result.Error.Body.Should().Be("throttled");
     }
 
     [Fact]
@@ -199,12 +411,13 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.GetTransactionsAsync(ids, isBankTransactions: true, page: 3, AbortToken);
 
-        // then
-        result.Count.Should().Be(2);
-        result.Results.Should().HaveCount(2);
-        result.Results[0].TransactionId.Should().Be("tx-1");
-        result.Results[0].IsSuccess().Should().BeTrue();
-        result.Results[1].TransactionId.Should().Be("tx-2");
+        // then - an inquiry succeeds as a call even when it reports a failed payout
+        result.IsSucceeded.Should().BeTrue();
+        result.Value!.Count.Should().Be(2);
+        result.Value.Results.Should().HaveCount(2);
+        result.Value.Results[0].TransactionId.Should().Be("tx-1");
+        result.Value.Results[0].IsSuccess().Should().BeTrue();
+        result.Value.Results[1].TransactionId.Should().Be("tx-2");
     }
 
     [Fact]
@@ -237,12 +450,46 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         _ = await authenticator.DidNotReceive().GetAccessTokenAsync(Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task should_return_unknown_when_transactions_inquiry_answers_5xx()
+    {
+        // given
+        var (authenticator, _) = _SetupAuthenticator();
+
+        fixture
+            .Server.Given(Request.Create().WithPath("/transaction/inquire/").UsingGet().WithParam("page", "9"))
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.BadGateway));
+
+        // when
+        var broker = new PaymobCashOutBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
+        var result = await broker.GetTransactionsAsync(["tx-1"], isBankTransactions: false, page: 9, AbortToken);
+
+        // then
+        result.IsUnknown.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+    }
+
     private (IPaymobCashOutAuthenticator authenticator, string token) _SetupAuthenticator()
     {
         var token = CashOutTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
-        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
+        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(PaymobCashOutResult.Succeeded(token));
 
         return (authenticator, token);
+    }
+
+    private sealed class ThrowingHandler(Exception fault) : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            Calls++;
+
+            return Task.FromException<HttpResponseMessage>(fault);
+        }
     }
 }

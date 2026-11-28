@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Json;
+using Headless.Checks;
 using Headless.Http;
 using Headless.Payments.Paymob.CashOut.Internal;
 using Headless.Urls;
@@ -31,12 +31,18 @@ public interface IPaymobCashOutAuthenticator
     /// Returns a valid OAuth access token, using a cached value when it has not yet expired.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the network call if a refresh is needed.</param>
-    /// <returns>A bearer access token string for use in Paymob CashOut API requests.</returns>
+    /// <returns>
+    /// The bearer access token on <c>Succeeded</c>. <c>Rejected</c> means Paymob refused the credentials
+    /// (4xx); <c>Unknown</c> means the token endpoint gave no usable answer. A token request moves no money,
+    /// so either is safe to retry.
+    /// </returns>
     /// <remarks>
     /// The fast path (valid cached token) avoids all locking overhead. When the cached token is
-    /// expired or absent, a double-checked lock ensures only one refresh call is made.
+    /// expired or absent, a double-checked lock ensures only one refresh call is made. A failed
+    /// request caches nothing.
     /// </remarks>
-    ValueTask<string> GetAccessTokenAsync(CancellationToken cancellationToken = default);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the request was sent.</exception>
+    ValueTask<PaymobCashOutResult<string>> GetAccessTokenAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Exchanges a refresh token for a new access token using the OAuth refresh_token grant.
@@ -44,10 +50,13 @@ public interface IPaymobCashOutAuthenticator
     /// <param name="refreshToken">The refresh token received from a previous authentication response.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// A new authentication response containing a fresh access token, refresh token, and expiry.
-    /// The new access token is also stored in the internal cache.
+    /// On <c>Succeeded</c>, a new authentication response containing a fresh access token, refresh token,
+    /// and expiry; the new access token is also stored in the internal cache. <c>Rejected</c> or
+    /// <c>Unknown</c> leaves the cache unchanged.
     /// </returns>
-    Task<CashOutAuthenticationResponse> RefreshTokenAsync(
+    /// <exception cref="ArgumentException"><paramref name="refreshToken"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the request was sent.</exception>
+    Task<PaymobCashOutResult<CashOutAuthenticationResponse>> RefreshTokenAsync(
         string refreshToken,
         CancellationToken cancellationToken = default
     );
@@ -86,14 +95,16 @@ internal sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, 
         _tokenLock.Dispose();
     }
 
-    public async ValueTask<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+    public async ValueTask<PaymobCashOutResult<string>> GetAccessTokenAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         // Fast path - no lock needed for cached valid token
         var cached = _cachedToken;
 
         if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
         {
-            return cached.Token;
+            return PaymobCashOutResult.Succeeded(cached.Token);
         }
 
         await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -104,11 +115,24 @@ internal sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, 
 
             if (cached is not null && cached.Expiration > _timeProvider.GetUtcNow())
             {
-                return cached.Token;
+                return PaymobCashOutResult.Succeeded(cached.Token);
             }
 
-            var response = await _GenerateTokenAsync(cancellationToken).ConfigureAwait(false);
-            return response.AccessToken;
+            var options = _options.CurrentValue;
+
+            var response = await _SendTokenRequestAsync(
+                    options,
+                    "o/token/",
+                    [
+                        new("grant_type", "password"),
+                        new("username", options.UserName),
+                        new("password", options.Password),
+                    ],
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return response.Map(content => content.AccessToken);
         }
         finally
         {
@@ -116,81 +140,49 @@ internal sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, 
         }
     }
 
-    private async Task<CashOutAuthenticationResponse> _GenerateTokenAsync(CancellationToken cancellationToken)
-    {
-        var options = _options.CurrentValue;
-        var httpClient = _httpClientFactory.CreateClient(SetupPaymobCashOut.HttpClientName);
-
-        using var request = new HttpRequestMessage();
-
-        request.Method = HttpMethod.Post;
-        request.RequestUri = new Uri(Url.Combine(options.ApiBaseUrl, "o/token/"), UriKind.Absolute);
-        request.Content = new FormUrlEncodedContent([
-            new("grant_type", "password"),
-            new("username", options.UserName),
-            new("password", options.Password),
-        ]);
-        request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
-
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        var content = (
-            await response
-                .Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(
-                    CashOutJsonOptions.JsonOptions,
-                    cancellationToken
-                )
-                .ConfigureAwait(false)
-        )!;
-
-        _cachedToken = new CachedToken(content.AccessToken, _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer));
-
-        return content;
-    }
-
-    public async Task<CashOutAuthenticationResponse> RefreshTokenAsync(
+    public Task<PaymobCashOutResult<CashOutAuthenticationResponse>> RefreshTokenAsync(
         string refreshToken,
         CancellationToken cancellationToken = default
     )
     {
-        var options = _options.CurrentValue;
-        var requestUrl = Url.Combine(options.ApiBaseUrl, "o/token");
+        Argument.IsNotNullOrEmpty(refreshToken);
+
+        return _SendTokenRequestAsync(
+            _options.CurrentValue,
+            "o/token",
+            [new("grant_type", "refresh_token"), new("refresh_token", refreshToken)],
+            cancellationToken
+        );
+    }
+
+    private async Task<PaymobCashOutResult<CashOutAuthenticationResponse>> _SendTokenRequestAsync(
+        PaymobCashOutOptions options,
+        string path,
+        KeyValuePair<string, string>[] form,
+        CancellationToken cancellationToken
+    )
+    {
         var httpClient = _httpClientFactory.CreateClient(SetupPaymobCashOut.HttpClientName);
 
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Post;
-        request.RequestUri = new Uri(requestUrl, UriKind.Absolute);
+        request.RequestUri = new Uri(Url.Combine(options.ApiBaseUrl, path), UriKind.Absolute);
+        request.Content = new FormUrlEncodedContent(form);
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
-        request.Content = new FormUrlEncodedContent([
-            new("grant_type", "refresh_token"),
-            new("refresh_token", refreshToken),
-        ]);
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var result = await PaymobCashOutHttp
+            .SendAsync<CashOutAuthenticationResponse>(httpClient, request, classify: null, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
+        if (result.IsSucceeded)
         {
-            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
+            _cachedToken = new CachedToken(
+                result.Value.AccessToken,
+                _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer)
+            );
         }
 
-        var content = (
-            await response
-                .Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(
-                    CashOutJsonOptions.JsonOptions,
-                    cancellationToken
-                )
-                .ConfigureAwait(false)
-        )!;
-
-        // Update cache with refreshed token
-        _cachedToken = new CachedToken(content.AccessToken, _timeProvider.GetUtcNow().Add(options.TokenRefreshBuffer));
-
-        return content;
+        return result;
     }
 }

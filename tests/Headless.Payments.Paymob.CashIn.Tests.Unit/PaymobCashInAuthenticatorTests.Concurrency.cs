@@ -50,7 +50,7 @@ public sealed partial class PaymobCashInAuthenticatorTests
 
         // then
         callCount.Should().Be(1);
-        results.Should().AllBe(token);
+        results.Select(r => r.Value).Should().AllBe(token);
     }
 
     [Fact]
@@ -95,11 +95,11 @@ public sealed partial class PaymobCashInAuthenticatorTests
 
         // then - no additional API calls should be made
         callCount.Should().Be(0);
-        results.Should().AllBe(token);
+        results.Select(r => r.Value).Should().AllBe(token);
     }
 
     [Fact]
-    public async Task should_cancel_waiting_requests_when_cancellation_requested()
+    public async Task should_report_unknown_when_cancelled_after_token_request_sent()
     {
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -133,8 +133,10 @@ public sealed partial class PaymobCashInAuthenticatorTests
         var token = cts.Token;
 
         // then
-        var act = () => authenticator.GetAuthenticationTokenAsync(token).AsTask();
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        // the request already left, so its outcome is unknown rather than a thrown cancellation
+        var result = await authenticator.GetAuthenticationTokenAsync(token);
+        result.IsUnknown.Should().BeTrue();
+        result.Error!.Exception.Should().BeAssignableTo<OperationCanceledException>();
     }
 
     [Fact]

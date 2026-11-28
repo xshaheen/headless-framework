@@ -13,21 +13,27 @@ public sealed partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture)
     {
         var token = CashInTestData.Text(Faker);
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
-        authenticator.GetAuthenticationTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
+        authenticator
+            .GetAuthenticationTokenAsync(Arg.Any<CancellationToken>())
+            .Returns(PaymobCashInResult.Succeeded(token));
         return (authenticator, token);
     }
 
-    private static async Task _ShouldThrowPaymobRequestExceptionAsync<T>(
-        Func<Task<T>> invocation,
+    private static async Task _ShouldBeUnknownAsync<T>(
+        Func<Task<PaymobCashInResult<T>>> invocation,
         HttpStatusCode statusCode,
         string? body
     )
     {
-        var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();
-        assertions.Which.StatusCode.Should().Be(statusCode);
-        assertions
-            .Which.Message.Should()
-            .Be($"Paymob Cash In - Http request failed with status code ({(int)statusCode}).");
-        assertions.Which.Body.Should().Be(body);
+        var result = await invocation();
+
+        result.IsUnknown.Should().BeTrue("Paymob may have applied the request before failing");
+        result.Error!.StatusCode.Should().Be(statusCode);
+        result
+            .Error.Message.Should()
+            .Be(
+                $"Paymob Cash In - Paymob answered with status code ({(int)statusCode}); the request may have been applied."
+            );
+        result.Error.Body.Should().Be(body);
     }
 }

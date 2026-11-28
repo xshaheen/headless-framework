@@ -30,7 +30,7 @@ public sealed partial class PaymobCashInBrokerTests
 
     [Theory]
     [MemberData(nameof(PayRequests))]
-    public async Task should_throw_http_request_exception_when_create_pay_request_not_success(PayRequestKind kind)
+    public async Task should_return_unknown_when_create_pay_request_answers_5xx(PayRequestKind kind)
     {
         // given
         var body = CashInTestData.Text(Faker);
@@ -44,21 +44,30 @@ public sealed partial class PaymobCashInBrokerTests
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.OptionsAccessor);
 
-        Func<Task<object>> func = kind switch
+        Func<Task<PaymobCashInOutcome>> func = kind switch
         {
             PayRequestKind.Wallet => async () =>
-                await broker.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
-            PayRequestKind.Kiosk => async () => await broker.CreateKioskPayAsync(Guid.NewGuid().ToString()),
+                (
+                    await broker.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), AbortToken)
+                ).Outcome,
+            PayRequestKind.Kiosk => async () =>
+                (await broker.CreateKioskPayAsync(Guid.NewGuid().ToString(), AbortToken)).Outcome,
             PayRequestKind.CashCollection => async () =>
-                await broker.CreateCashCollectionPayAsync(Guid.NewGuid().ToString()),
+                (await broker.CreateCashCollectionPayAsync(Guid.NewGuid().ToString(), AbortToken)).Outcome,
             PayRequestKind.SavedToken => async () =>
-                await broker.CreateSavedTokenPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
+                (
+                    await broker.CreateSavedTokenPayAsync(
+                        Guid.NewGuid().ToString(),
+                        Guid.NewGuid().ToString(),
+                        AbortToken
+                    )
+                ).Outcome,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
-        var invocation = FluentActions.Awaiting(func);
+        var outcome = await func();
 
-        // then
-        await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
+        // then - a 5xx leaves the charge open, so it must not read as a rejection
+        outcome.Should().Be(PaymobCashInOutcome.Unknown);
     }
 }

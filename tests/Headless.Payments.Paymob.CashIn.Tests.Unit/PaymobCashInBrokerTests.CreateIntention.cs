@@ -56,7 +56,7 @@ public sealed partial class PaymobCashInBrokerTests
         var result = await broker.CreateIntentionAsync(request, AbortToken);
 
         // then — the read-only List/Dictionary properties still serialize into the outbound request body
-        result.Should().NotBeNull();
+        result.IsSucceeded.Should().BeTrue();
         var sentBody = fixture.Server.LogEntries[^1].RequestMessage?.Body;
         sentBody.Should().NotBeNull();
         sentBody.Should().Contain("payment_methods").And.Contain("4534567");
