@@ -676,8 +676,16 @@ public sealed class CronExpressionCacheTests : TestBase
 
         public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
             string key,
-            int? pageIndex = null,
+            int pageIndex = 1,
             int pageSize = 100,
+            CancellationToken cancellationToken = default
+        )
+        {
+            throw new NotSupportedException();
+        }
+
+        public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+            string key,
             CancellationToken cancellationToken = default
         )
         {

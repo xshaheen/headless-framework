@@ -267,8 +267,16 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return new(CacheValue<ICollection<T>>.NoValue);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
         CancellationToken cancellationToken = default
     )
     {

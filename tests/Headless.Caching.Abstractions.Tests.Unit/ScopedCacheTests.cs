@@ -248,6 +248,30 @@ public sealed class ScopedCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_scope_paged_and_full_set_reads()
+    {
+        // given
+        var sut = _CreateSut();
+
+        _currentScope = "scope-a";
+        await sut.SetAddAsync("key", ["a", "b", "c"], _DefaultExpiration, AbortToken);
+
+        // when
+        var page = await sut.GetSetAsync("key", pageSize: 2, cancellationToken: AbortToken);
+        var all = await sut.GetAllSetMembersAsync("key", AbortToken);
+
+        _currentScope = "scope-b";
+        var otherPage = await sut.GetSetAsync("key", cancellationToken: AbortToken);
+        var otherAll = await sut.GetAllSetMembersAsync("key", AbortToken);
+
+        // then
+        page.Value.Should().HaveCount(2);
+        all.Value.Should().BeEquivalentTo("a", "b", "c");
+        otherPage.HasValue.Should().BeFalse();
+        otherAll.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_scope_key_for_refresh()
     {
         // given

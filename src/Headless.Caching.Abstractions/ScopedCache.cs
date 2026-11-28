@@ -248,13 +248,23 @@ public sealed class ScopedCache<T> : ICache<T>
     /// <inheritdoc />
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
         return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.GetAllSetMembersAsync<T>(_ScopeKey(key), cancellationToken);
     }
 
     /// <inheritdoc />

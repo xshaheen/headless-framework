@@ -441,7 +441,7 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
 
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
@@ -449,6 +449,16 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public async ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetAllSetMembersAsync<T>(key, cancellationToken);
     }
 
     public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)

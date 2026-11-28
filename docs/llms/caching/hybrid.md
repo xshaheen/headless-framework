@@ -131,7 +131,7 @@ At startup the hybrid logs warnings, never failures, for valid but questionable 
 - A read checks L1, then L2. A fresh L2 value fills L1, unless a local write, removal, or invalidation of that key landed after the L2 read began; then the fill is dropped, so an older value never lands in L1 after a peer's newer invalidation.
 - A logically stale L2 entry does not fill L1 on a plain read. Fail-safe activation and background refresh still write through both tiers.
 - A Redis sliding hit without a current idle deadline is served from L2. Hybrid caches it in L1 only when both expiry deadlines are known.
-- An L1 miss on `GetSetAsync` serves straight from L2 without filling L1, so a paged read never replaces a full local set. Sets enter L1 only through the hybrid's `SetAddAsync`.
+- An L1 miss on `GetSetAsync` or `GetAllSetMembersAsync` serves straight from L2 without filling L1, so a paged read never replaces a full local set. Sets enter L1 only through the hybrid's `SetAddAsync`.
 - A sliding L1 hit is checked against L2 before the re-arm, so L2 keeps `Duration` as the absolute cap. With L2 unreachable, a fresh L1 sliding value still returns but is not re-armed.
 - Fail-safe, factory timeouts, eager refresh, and conditional refresh behave as in [Factory-backed reads](factory.md); a stale reserve can come from L1 or L2, and every refresh writes both tiers.
 

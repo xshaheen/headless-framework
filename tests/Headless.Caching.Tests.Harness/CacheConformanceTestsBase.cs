@@ -1430,8 +1430,8 @@ public abstract class CacheConformanceTestsBase : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // #553: an absent key is a miss on every provider — CacheValue.NoValue (Value is null), never a non-null
-        // empty collection. The unpaged and paged reads must agree.
-        var unpaged = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        // empty collection. The full and paged reads must agree.
+        var unpaged = await cache.GetAllSetMembersAsync<string>(key, AbortToken);
         var paged = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 10, cancellationToken: AbortToken);
 
         unpaged.HasValue.Should().BeFalse();
@@ -1471,13 +1471,63 @@ public abstract class CacheConformanceTestsBase : TestBase
         // non-null empty collection, no extra existence probe.
         await AdvancePastExpirationAsync(expiration);
 
-        var unpaged = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var unpaged = await cache.GetAllSetMembersAsync<string>(key, AbortToken);
         var paged = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 10, cancellationToken: AbortToken);
 
         unpaged.HasValue.Should().BeFalse();
         unpaged.Value.Should().BeNull();
         paged.HasValue.Should().BeFalse();
         paged.Value.Should().BeNull();
+    }
+
+    public virtual async Task should_read_at_most_the_default_page_size_from_get_set()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var members = Enumerable.Range(0, 150).Select(i => $"member-{i:D3}").ToArray();
+        await cache.SetAddAsync(key, members, TimeSpan.FromMinutes(5), AbortToken);
+
+        // A call that names no page reads page 1 at the default size of 100, never the whole set.
+        var defaultPage = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var smallPage = await cache.GetSetAsync<string>(key, pageSize: 10, cancellationToken: AbortToken);
+        var secondPage = await cache.GetSetAsync<string>(key, pageIndex: 2, cancellationToken: AbortToken);
+
+        defaultPage.HasValue.Should().BeTrue();
+        defaultPage.Value.Should().HaveCount(100).And.OnlyHaveUniqueItems().And.BeSubsetOf(members);
+        smallPage.Value.Should().HaveCount(10);
+        secondPage.Value.Should().HaveCount(50);
+        defaultPage.Value.Concat(secondPage.Value!).Should().BeEquivalentTo(members);
+    }
+
+    public virtual async Task should_read_every_live_member_from_get_all_set_members()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var members = Enumerable.Range(0, 150).Select(i => $"member-{i:D3}").ToArray();
+        await cache.SetAddAsync(key, members, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.SetAddAsync(key, new[] { "short-lived" }, TimeSpan.FromMilliseconds(250), AbortToken);
+        await AdvancePastExpirationAsync(TimeSpan.FromMilliseconds(250));
+
+        // The explicit full read returns every live member past the default page size and drops expired members.
+        var all = await cache.GetAllSetMembersAsync<string>(key, AbortToken);
+
+        all.HasValue.Should().BeTrue();
+        all.Value.Should().BeEquivalentTo(members);
+    }
+
+    public virtual async Task should_reject_a_page_index_or_size_below_one_from_get_set()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        var zeroIndex = async () => await cache.GetSetAsync<string>(key, pageIndex: 0, cancellationToken: AbortToken);
+        var zeroSize = async () => await cache.GetSetAsync<string>(key, pageSize: 0, cancellationToken: AbortToken);
+
+        await zeroIndex.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        await zeroSize.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     public virtual async Task should_keep_zero_total_after_decrementing_to_zero()

@@ -338,6 +338,24 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     }
 
     [Fact]
+    public override Task should_read_at_most_the_default_page_size_from_get_set()
+    {
+        return base.should_read_at_most_the_default_page_size_from_get_set();
+    }
+
+    [Fact]
+    public override Task should_read_every_live_member_from_get_all_set_members()
+    {
+        return base.should_read_every_live_member_from_get_all_set_members();
+    }
+
+    [Fact]
+    public override Task should_reject_a_page_index_or_size_below_one_from_get_set()
+    {
+        return base.should_reject_a_page_index_or_size_below_one_from_get_set();
+    }
+
+    [Fact]
     public override Task should_return_no_value_from_get_set_when_all_members_expired()
     {
         return base.should_return_no_value_from_get_set_when_all_members_expired();

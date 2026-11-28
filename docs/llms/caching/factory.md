@@ -28,7 +28,7 @@ The mechanisms combine freely, except that sliding expiration excludes both fail
 
 ## Rules
 
-- Enable fail-safe per entry with `CacheEntryOptions.IsFailSafeEnabled = true`. Only `GetOrAddAsync` reads a fail-safe reserve. `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, and `ExistsAsync` see only logical expiration.
+- Enable fail-safe per entry with `CacheEntryOptions.IsFailSafeEnabled = true`. Only `GetOrAddAsync` reads a fail-safe reserve. `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `GetAllSetMembersAsync`, and `ExistsAsync` see only logical expiration.
 - Set `FactorySoftTimeout` only together with fail-safe. Without fail-safe a soft timeout does nothing, and the cache logs that once per key.
 - Set `FactoryHardTimeout` to bound a cold-cache wait. With no stale value to serve, it throws `CacheFactoryTimeoutException`.
 - Set a finite `BackgroundFactoryCeiling` whenever fail-safe is on together with a finite `FactorySoftTimeout`. That combination detaches the factory, and options validation throws when the ceiling is left infinite.
