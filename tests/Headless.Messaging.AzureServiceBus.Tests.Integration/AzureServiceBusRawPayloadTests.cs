@@ -92,7 +92,6 @@ public sealed class AzureServiceBusRawPayloadTests(AzureServiceBusFixture fixtur
             setup.UseAzureServiceBus(options =>
             {
                 options.ConnectionString = connectionString;
-                options.AutoProvision = false;
                 options.MaxAutoLockRenewalDuration = TimeSpan.Zero;
 
                 // Runs once per broker delivery, so it records redeliveries the handler never sees.

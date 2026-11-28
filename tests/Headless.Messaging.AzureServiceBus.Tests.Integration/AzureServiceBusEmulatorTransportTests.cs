@@ -54,7 +54,6 @@ public sealed class AzureServiceBusEmulatorTransportTests(AzureServiceBusEmulato
                 setup.UseAzureServiceBus(options =>
                 {
                     options.ConnectionString = connectionString;
-                    options.AutoProvision = false;
                 }),
             static _ => { },
             AzureServiceBusEmulatorFixture.KeySequencingQueueName,

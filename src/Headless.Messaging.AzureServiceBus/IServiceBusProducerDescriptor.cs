@@ -18,8 +18,8 @@ public interface IServiceBusProducerDescriptor
     string MessageTypeName { get; }
 
     /// <summary>
-    /// When <see langword="true"/>, the framework auto-creates a subscription for this producer's
-    /// topic on startup (subject to <see cref="AzureServiceBusMessagingOptions.AutoProvision"/>).
+    /// When <see langword="true"/>, <c>resources provision</c> also creates, on this producer's topic, a subscription
+    /// for each competing Bus consumer identity of the host.
     /// </summary>
     bool CreateSubscription { get; }
 

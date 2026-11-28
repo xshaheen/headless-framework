@@ -1002,8 +1002,8 @@ public static class TransportConformanceManifest
     }
 
     /// <summary>
-    /// Gets the Azure Service Bus emulator's profile: the provider with <c>AutoProvision = false</c> on the fixed entities
-    /// its <c>Config.json</c> declares. A scenario that creates an entity at run time is not applicable here and stays the
+    /// Gets the Azure Service Bus emulator's profile: the provider at its defaults, which only check the topology, on the
+    /// fixed entities its <c>Config.json</c> declares. A scenario that creates an entity at run time is not applicable here and stays the
     /// real namespace's to prove. Its leaves skip on any machine that has not accepted the emulator's license, and it has no
     /// routing-affinity evidence, so it does not count as a real broker leaf: no simulator cell or drift verdict rests on it.
     /// </summary>
@@ -1040,7 +1040,7 @@ public static class TransportConformanceManifest
                 supportsBus: true,
                 supportsQueue: true,
                 supportsIndependentLaneTopology: true,
-                supportsEveryInstance: false
+                supportsEveryInstance: true
             )
             .WithMalformedEnvelopeBound("Service Bus dead-letter settlement", 1, TimeSpan.FromSeconds(10));
 
@@ -1054,7 +1054,7 @@ public static class TransportConformanceManifest
             profile = profile.WithScenario(
                 scenario,
                 ConformanceSupport.NotApplicable(
-                    "The scenario creates its queues, topics, or subscriptions at run time, and the emulator profile runs with provisioning off on fixed entities; the real-namespace profile proves it."
+                    "The scenario creates its queues, topics, or subscriptions at run time, and the emulator profile runs on fixed entities through a connection string that reaches no administration endpoint; the real-namespace profile proves it."
                 )
             );
         }
@@ -1085,8 +1085,8 @@ public static class TransportConformanceManifest
                     _EmulatorDeadLetterDuplicateIssueUrl
                 )
             )
-            // Provisioning off takes every-instance subscriptions away, and request/reply has no reply channel yet; both
-            // are refused at bootstrap, before any connection opens.
+            // A Queue route that requires routing affinity has no native key mapping without sessions, and request/reply
+            // has no reply channel yet; both are refused at bootstrap, before any connection opens.
             .WithScenario(TransportConformanceScenario.StartupRejectionBeforeSideEffects, ConformanceSupport.Supported)
             .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
             .WithScenario(

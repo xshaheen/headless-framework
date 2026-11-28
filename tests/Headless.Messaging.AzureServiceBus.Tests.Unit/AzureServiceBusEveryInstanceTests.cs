@@ -96,21 +96,6 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
     }
 
     [Fact]
-    public async Task should_refuse_an_every_instance_client_without_auto_provision()
-    {
-        // given
-        await using var factory = _CreateFactory(autoProvision: false);
-
-        // when
-        var act = async () => await factory.CreateAsync(_Request(_instanceId), AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*'{_Identity}'*AutoProvision*");
-        _pool.DidNotReceive().GetClient();
-        _pool.DidNotReceive().GetAdministrationClient();
-    }
-
-    [Fact]
     public async Task should_create_no_subscription_for_a_client_that_never_subscribes()
     {
         // given
@@ -403,21 +388,17 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
         await _admin.DidNotReceiveWithAnyArgs().SubscriptionExistsAsync(default!, default!, AbortToken);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task should_declare_every_instance_support_only_with_auto_provision(bool autoProvision)
+    [Fact]
+    public async Task should_declare_every_instance_support()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
             setup.UseAzureServiceBus(options =>
-            {
                 options.ConnectionString =
-                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
-                options.AutoProvision = autoProvision;
-            })
+                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey"
+            )
         );
         await using var provider = services.BuildServiceProvider();
 
@@ -425,42 +406,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
         var capabilities = provider.GetRequiredService<MessagingProviderCapabilities>();
 
         // then
-        capabilities.SupportsEveryInstance.Should().Be(autoProvision);
-    }
-
-    [Fact]
-    public async Task should_fail_startup_before_any_client_exists_when_auto_provision_is_off()
-    {
-        // given
-        var clientsCreated = 0;
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.ConfigureMessaging(messaging => messaging.AddModule<PriceCacheModule>());
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseAzureServiceBus(options =>
-            {
-                options.ConnectionString =
-                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
-                options.AutoProvision = false;
-            });
-            setup.UseInMemoryStorage();
-        });
-        services.AddSingleton<IAzureServiceBusClientPool>(_ =>
-        {
-            clientsCreated++;
-            return Substitute.For<IAzureServiceBusClientPool>();
-        });
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<MessagingConfigurationException>()
-            .WithMessage($"*'{PriceCacheModule.Identity}'*'Azure Service Bus'*");
-        clientsCreated.Should().Be(0);
+        capabilities.SupportsEveryInstance.Should().BeTrue();
     }
 
     private string _SubscriptionName => AzureServiceBusConsumerClientFactory.BusSubscriptionName(_Request(_instanceId));
@@ -468,10 +414,7 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
     private static ConsumerClientRequest _Request(Guid instanceId) =>
         new(_Identity, 1, MessageLane.Bus, ConsumerSubscriptionKind.EveryInstance, instanceId);
 
-    private AzureServiceBusConsumerClientFactory _CreateFactory(
-        bool autoProvision = true,
-        TimeProvider? timeProvider = null
-    ) =>
+    private AzureServiceBusConsumerClientFactory _CreateFactory(TimeProvider? timeProvider = null) =>
         new(
             NullLoggerFactory.Instance,
             Options.Create(
@@ -480,7 +423,6 @@ public sealed class AzureServiceBusEveryInstanceTests : TestBase
                     ConnectionString =
                         "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
                     TopicPath = _TopicPath,
-                    AutoProvision = autoProvision,
                 }
             ),
             _Services(timeProvider),

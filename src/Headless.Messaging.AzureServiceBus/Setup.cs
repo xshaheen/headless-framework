@@ -7,6 +7,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
@@ -16,12 +17,20 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// Both a bus (topic/subscription fan-out) and a queue (point-to-point) transport are registered.
-/// Topics, subscriptions, and subscription filter rules are auto-provisioned by default using the
-/// Azure Service Bus administration API; set <see cref="AzureServiceBusMessagingOptions.AutoProvision"/>
-/// to <see langword="false"/> to skip auto-provisioning when entities are managed externally.
+/// The shared topics, subscriptions, subscription filter rules, and queues are the deployment's:
+/// <c>resources provision</c> creates them through the Azure Service Bus administration API, and a starting host only
+/// checks them, holding readiness until they exist. An every-instance consumer still creates and deletes its own subscription, so
+/// its credentials need Manage rights.
 /// </remarks>
 public static class SetupMessagingAzureServiceBus
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the Azure Service Bus topology (topics, subscriptions with their
+    /// rules, and queues), which <c>resources provision -k</c> selects and a provisioner that needs the topology selects
+    /// in its <c>DependsOn</c>.
+    /// </summary>
+    public const string TopologyResourceKind = "AzureServiceBus";
+
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
@@ -150,10 +159,8 @@ public static class SetupMessagingAzureServiceBus
                             AzureServiceBusRoutingAffinity.Mapping
                         ))
                         .ToArray(),
-                    // Each process creates and deletes a subscription of its own, which takes AutoProvision.
-                    supportsEveryInstance: sp.GetRequiredService<
-                        IOptions<AzureServiceBusMessagingOptions>
-                    >().Value.AutoProvision
+                    // Each process creates and deletes a subscription of its own through the administration API.
+                    supportsEveryInstance: true
                 )
             );
 
@@ -170,6 +177,11 @@ public static class SetupMessagingAzureServiceBus
             services.AddSingleton<AzureServiceBusQueueTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<AzureServiceBusTransport>());
             services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<AzureServiceBusQueueTransport>());
+
+            // The shared topology is the deployment's: resources provision creates it, and the transport only checks it.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ITransportTopologyProvisioner, AzureServiceBusTopologyProvisioner>()
+            );
         }
     }
 }

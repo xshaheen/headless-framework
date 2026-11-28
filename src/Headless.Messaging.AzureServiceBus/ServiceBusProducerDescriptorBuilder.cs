@@ -25,8 +25,8 @@ public sealed class ServiceBusProducerDescriptorBuilder<T>
     }
 
     /// <summary>
-    /// Instructs the framework to auto-create a subscription for this topic on startup
-    /// (when <see cref="AzureServiceBusMessagingOptions.AutoProvision"/> is enabled).
+    /// Makes <c>resources provision</c> also create, on this topic, a subscription for each competing Bus consumer
+    /// identity of the host.
     /// </summary>
     /// <returns>The same builder for chaining.</returns>
     public ServiceBusProducerDescriptorBuilder<T> WithSubscription()

@@ -52,17 +52,6 @@ internal sealed class AzureServiceBusConsumerClientFactory(
 
         var everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
 
-        // The capability declaration already refuses this at startup; the factory repeats it with the reason, for a
-        // caller that creates clients without the messaging core.
-        if (everyInstance && !asbOptions.Value.AutoProvision)
-        {
-            throw new InvalidOperationException(
-                $"Every-instance consumer '{request.SubscriptionName}' needs AutoProvision on the Azure Service Bus "
-                    + "transport, because each process creates and deletes a subscription of its own. Enable "
-                    + "AutoProvision with Manage rights on the namespace, or remove EveryInstance from the consumer."
-            );
-        }
-
         // A Bus consumer identity becomes an Azure subscription name. Queue subscription names are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.
         var subscriptionName = request.SubscriptionName;
@@ -95,7 +84,8 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 serviceProvider,
                 clientPool,
                 request.Lane,
-                request.Kind
+                request.Kind,
+                request.ProvisionsTopology
             );
 
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);

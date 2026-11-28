@@ -195,7 +195,7 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
                 TransportConformanceScenario.StartupRejectionBeforeSideEffects,
                 typeof(AzureServiceBusStartupRejectionTests),
                 nameof(
-                    AzureServiceBusStartupRejectionTests.should_reject_an_every_instance_consumer_at_startup_when_provisioning_is_off
+                    AzureServiceBusStartupRejectionTests.should_reject_a_route_requiring_routing_affinity_at_startup_before_any_side_effect
                 )
             ),
             new(
