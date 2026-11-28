@@ -1336,6 +1336,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Revoked)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .StampUntimedChainDescendant()
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             CancellationToken.None
                         )
@@ -1353,6 +1354,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Revoked)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .StampUntimedChainDescendant()
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             _StoreAttemptEnd(JobAttemptOutcome.Lost, _NodeNotAliveReason),
                             chargeAttemptInFlight: true
@@ -1706,6 +1708,7 @@ internal abstract partial class BasePersistenceProvider<TDbContext, TTimeJob, TC
                                     .SetChangedAt()
                                     .EndLease(RowLeaseState.Abandoned)
                                     .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .StampUntimedChainDescendant()
                                     .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
                             _StoreAttemptEnd(JobAttemptOutcome.Lost, _LeaseLapsedReason),
                             chargeAttemptInFlight: true

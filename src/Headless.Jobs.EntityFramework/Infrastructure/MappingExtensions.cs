@@ -312,6 +312,35 @@ internal static class MappingExtensions
             );
     }
 
+    /// <summary>
+    /// Stamps the database clock's now as the execution time of an untimed chain descendant a reclaim hands back to
+    /// <c>Idle</c>. Such a row ran in-tree under its root's claim, so after the reclaim no claim selects it again. As a
+    /// timed descendant it waits behind the parent-terminal claim gate and is skipped by the timed-child reconcile
+    /// when its parent ends in the other terminal state. A root, a timed row, and a descendant whose run condition the
+    /// gate does not hold keep their execution time, because the gate would not stop them running before the parent.
+    /// </summary>
+    internal static UpdateSettersBuilder<TTimeJob> StampUntimedChainDescendant<TTimeJob>(
+        this UpdateSettersBuilder<TTimeJob> setters
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        return setters.SetProperty(
+            x => x.ExecutionTime,
+            x =>
+                x.ExecutionTime == null
+                && x.ParentId != null
+                && (
+                    x.RunCondition == RunCondition.OnSuccess
+                    || x.RunCondition == RunCondition.OnFailure
+                    || x.RunCondition == RunCondition.OnCancelled
+                    || x.RunCondition == RunCondition.OnFailureOrCancelled
+                    || x.RunCondition == RunCondition.OnAnyCompletedStatus
+                )
+                    ? (DateTime?)DateTime.UtcNow
+                    : x.ExecutionTime
+        );
+    }
+
     /// <inheritdoc cref="EndLease{TTimeJob}(UpdateSettersBuilder{TTimeJob},RowLeaseState)"/>
     internal static UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> EndLease<TCronJob>(
         this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,

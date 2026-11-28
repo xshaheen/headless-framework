@@ -203,4 +203,16 @@ public abstract class SqlServerChainConformanceTestsBase<TFixture>(TFixture fixt
     {
         return base.running_chain_child_records_its_start();
     }
+
+    [Fact]
+    public override Task dead_node_reclaim_lets_another_node_run_an_untimed_chain_child()
+    {
+        return base.dead_node_reclaim_lets_another_node_run_an_untimed_chain_child();
+    }
+
+    [Fact]
+    public override Task stalled_reclaim_lets_another_node_run_an_untimed_chain_child()
+    {
+        return base.stalled_reclaim_lets_another_node_run_an_untimed_chain_child();
+    }
 }
