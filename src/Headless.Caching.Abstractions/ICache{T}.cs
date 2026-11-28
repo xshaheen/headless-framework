@@ -152,16 +152,31 @@ public interface ICache<T>
     ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads a page of members from the set stored at <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/>
-    /// (<c>Value</c> is <see langword="null"/>) whenever the requested page has no members: absent key, empty set,
-    /// all members expired, or page past the last live member; <see cref="CacheValue{T}.HasValue"/> reflects whether
-    /// the requested page has members, not whether the key exists. <paramref name="pageIndex"/> is 1-based; pass
-    /// <see langword="null"/> to return all members.
+    /// Reads one page of members from the set stored at <paramref name="key"/>, at most <paramref name="pageSize"/>
+    /// members. Returns <see cref="CacheValue{T}.NoValue"/> (<c>Value</c> is <see langword="null"/>) whenever the
+    /// requested page has no members: absent key, empty set, all members expired, or page past the last live member;
+    /// <see cref="CacheValue{T}.HasValue"/> reflects whether the requested page has members, not whether the key
+    /// exists. <paramref name="pageIndex"/> is 1-based. To read every member, call
+    /// <see cref="GetAllSetMembersAsync"/>.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="pageIndex"/> or <paramref name="pageSize"/> is less than 1.
+    /// </exception>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads every live member of the set stored at <paramref name="key"/> in one call, with no page bound. Returns
+    /// <see cref="CacheValue{T}.NoValue"/> when the key is absent, the set is empty, or its live members are all
+    /// expired. The cost grows with the set: prefer <see cref="GetSetAsync"/> for a set whose size callers or
+    /// request input control.
+    /// </summary>
+    ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync(
+        string key,
         CancellationToken cancellationToken = default
     );
 
@@ -413,12 +428,20 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         return cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.GetAllSetMembersAsync<T>(key, cancellationToken);
     }
 
     public ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default)

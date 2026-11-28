@@ -873,12 +873,20 @@ public sealed class HybridCacheTests : TestBase
 
         public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
             string key,
-            int? pageIndex = null,
+            int pageIndex = 1,
             int pageSize = 100,
             CancellationToken ct = default
         )
         {
             return _cache.GetSetAsync<T>(key, pageIndex, pageSize, ct);
+        }
+
+        public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+            string key,
+            CancellationToken ct = default
+        )
+        {
+            return _cache.GetAllSetMembersAsync<T>(key, ct);
         }
 
         public ValueTask RefreshAsync(string key, CancellationToken ct = default)
@@ -1018,7 +1026,7 @@ public sealed class HybridCacheTests : TestBase
 
         // then - the miss must not disturb the full L1 set (the old seed could clobber it with page data)
         pastEnd.HasValue.Should().BeFalse();
-        var full = await l1.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        var full = await l1.GetAllSetMembersAsync<string>(key, AbortToken);
         full.HasValue.Should().BeTrue();
         full.Value.Should().BeEquivalentTo("a", "b", "c");
     }

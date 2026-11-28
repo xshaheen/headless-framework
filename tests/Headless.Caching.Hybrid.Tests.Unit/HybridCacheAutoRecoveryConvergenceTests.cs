@@ -828,12 +828,20 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
 
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         return backend.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return backend.GetAllSetMembersAsync<T>(key, cancellationToken);
     }
 
     public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)

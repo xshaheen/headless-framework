@@ -565,10 +565,29 @@ public sealed partial class HybridCache
     }
 
     /// <inheritdoc />
-    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsPositive(pageIndex);
+        Argument.IsPositive(pageSize);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return _GetSetMembersAsync(
+            key,
+            (cache, ct) => cache.GetSetAsync<T>(key, pageIndex, pageSize, ct),
+            cancellationToken
+        );
+    }
+
+    /// <inheritdoc />
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
         CancellationToken cancellationToken = default
     )
     {
@@ -576,9 +595,18 @@ public sealed partial class HybridCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheValue = await LocalCache
-            .GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken)
-            .ConfigureAwait(false);
+        return _GetSetMembersAsync(key, (cache, ct) => cache.GetAllSetMembersAsync<T>(key, ct), cancellationToken);
+    }
+
+    // One read path for the paged and the full set read, so both tiers apply the same page bound and the same
+    // degrade contract.
+    private async ValueTask<CacheValue<ICollection<T>>> _GetSetMembersAsync<T>(
+        string key,
+        Func<ICache, CancellationToken, ValueTask<CacheValue<ICollection<T>>>> read,
+        CancellationToken cancellationToken
+    )
+    {
+        var cacheValue = await read(LocalCache, cancellationToken).ConfigureAwait(false);
         if (cacheValue.HasValue)
         {
             _logger.LogLocalCacheHit(key);
@@ -590,13 +618,13 @@ public sealed partial class HybridCache
 
         // Serve straight from L2 without seeding L1. InMemory stores sets as per-member dictionaries
         // (SetAddAsync), so upserting the bare collection returned here would poison the key for the next local
-        // GetSetAsync (InvalidCastException on read-back) — and a paged read returns one page, never the whole
+        // set read (InvalidCastException on read-back) — and a paged read returns one page, never the whole
         // set, so a seed could also clobber the full set with a single page. Locally-written sets (Hybrid
         // SetAddAsync writes both tiers) still hit L1 above; cold set reads stay L2-authoritative, which also
         // makes this a single L2 round-trip (no companion GetExpirationAsync needed for a seed TTL).
         var l2Read = await _ReadFromL2Async(
                 key,
-                ct => l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct),
+                ct => read(l2Cache, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken

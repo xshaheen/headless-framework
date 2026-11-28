@@ -346,12 +346,20 @@ public sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
 
     public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         return cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.GetAllSetMembersAsync<T>(key, cancellationToken);
     }
 
     public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)

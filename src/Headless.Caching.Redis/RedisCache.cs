@@ -1691,18 +1691,40 @@ public sealed class RedisCache(
         }
     }
 
-    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(pageSize);
         Argument.IsPositive(pageIndex);
+        Argument.IsPositive(pageSize);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _GetSetMembersAsync<T>(key, skip: (pageIndex - 1L) * pageSize, take: pageSize, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A negative take tells the live-members script to return the whole set.
+        return _GetSetMembersAsync<T>(key, skip: 0, take: -1, cancellationToken);
+    }
+
+    private async ValueTask<CacheValue<ICollection<T>>> _GetSetMembersAsync<T>(
+        string key,
+        long skip,
+        long take,
+        CancellationToken cancellationToken
+    )
+    {
         var redisKey = (RedisKey)_GetKey(key);
         var generation = await _ReadNativeFlushGenerationAsync(cancellationToken).ConfigureAwait(false);
         var generationKey = _NativeGenerationKey(redisKey, generation);
@@ -1710,14 +1732,7 @@ public sealed class RedisCache(
         // Members expire by Redis's clock (the set-add script scores and prunes them with TIME), so the live-member
         // cutoff is computed there too rather than from the app clock.
         var set = await SetGetLiveMembersScriptDefinition
-            .EvaluateAsync(
-                _database,
-                redisKey,
-                generationKey,
-                skip: pageIndex.HasValue ? (pageIndex.Value - 1L) * pageSize : 0,
-                take: pageIndex.HasValue ? pageSize : -1,
-                generation
-            )
+            .EvaluateAsync(_database, redisKey, generationKey, skip, take, generation)
             .ConfigureAwait(false);
 
         return _RedisValuesToCacheValue<T>(set);

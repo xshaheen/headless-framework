@@ -1311,19 +1311,41 @@ public sealed class InMemoryCache
         );
     }
 
-    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(pageSize);
         Argument.IsPositive(pageIndex);
+        Argument.IsPositive(pageSize);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _GetSetMembersAsync<T>(key, skip: (pageIndex - 1L) * pageSize, take: pageSize, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return _GetSetMembersAsync<T>(key, skip: 0, take: int.MaxValue, cancellationToken);
+    }
+
+    private async ValueTask<CacheValue<ICollection<T>>> _GetSetMembersAsync<T>(
+        string key,
+        long skip,
+        int take,
+        CancellationToken cancellationToken
+    )
+    {
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (typeof(T) == typeof(string))
@@ -1331,27 +1353,28 @@ public sealed class InMemoryCache
             var dictionaryCacheValue = await GetAsync<IDictionary<string, DateTime?>>(key, cancellationToken)
                 .ConfigureAwait(false);
 
-            return _GetSetItems<string, T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
+            return _GetSetItems<string, T>(dictionaryCacheValue, skip, take, utcNow);
         }
 
         {
             var dictionaryCacheValue = await GetAsync<IDictionary<object, DateTime?>>(key, cancellationToken)
                 .ConfigureAwait(false);
 
-            return _GetSetItems<object, T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
+            return _GetSetItems<object, T>(dictionaryCacheValue, skip, take, utcNow);
         }
     }
 
     // Shared set-read projection for both the string- and object-keyed member dictionaries (the cast
     // (T)(object)kvp.Key handles both backings). A live member is one whose expiry is null or strictly after now
-    // (Redis Exclude.Start parity: a member expiring exactly at now is excluded). Any empty resolved result reads as
-    // CacheValue.NoValue (Value:null) — an absent key, a set whose live members are all expired, and a page past the
-    // last live member all read as a miss, matching Redis. HasValue reflects whether the requested page has members,
-    // not whether the key exists.
+    // (Redis Exclude.Start parity: a member expiring exactly at now is excluded). It streams one pass, skipping the
+    // first `skip` live members and taking up to `take`, instead of materializing the full set and then paging it.
+    // Any empty result reads as CacheValue.NoValue (Value:null): an absent key, a set whose live members are all
+    // expired, and a page past the last live member all read as a miss, matching Redis. HasValue reflects whether
+    // the requested page has members, not whether the key exists.
     private static CacheValue<ICollection<T>> _GetSetItems<TKey, T>(
         CacheValue<IDictionary<TKey, DateTime?>> dictionaryCacheValue,
-        int? pageIndex,
-        int pageSize,
+        long skip,
+        int take,
         DateTime utcNow
     )
         where TKey : notnull
@@ -1362,26 +1385,9 @@ public sealed class InMemoryCache
         }
 
         var dictionary = dictionaryCacheValue.Value!;
-
-        if (!pageIndex.HasValue)
-        {
-            var liveMembers = dictionary
-                .Where(kvp => kvp.Value is null || kvp.Value > utcNow)
-                .Select(kvp => (T)(object)kvp.Key)
-                .ToArray();
-
-            return liveMembers.Length is 0
-                ? CacheValue<ICollection<T>>.NoValue
-                : new CacheValue<ICollection<T>>(liveMembers, hasValue: true);
-        }
-
-        // Paginated: stream a single pass instead of materializing the full set then Skip/Take-ing it. Skip the
-        // first (pageIndex-1)*pageSize live members, then take up to pageSize. An empty page reads as NoValue whether
-        // the set has no live members at all or the requested page simply ran past the last live member — both are a
-        // miss for that page (Redis parity; HasValue reflects the requested page's members, not key existence).
-        var skip = (pageIndex.Value - 1) * pageSize;
-        var skipped = 0;
-        var page = new List<T>(pageSize);
+        var skipped = 0L;
+        // The full read passes int.MaxValue, so size the buffer from the set rather than from the page bound.
+        var page = new List<T>(Math.Min(take, dictionary.Count));
 
         foreach (var kvp in dictionary)
         {
@@ -1398,7 +1404,7 @@ public sealed class InMemoryCache
 
             page.Add((T)(object)kvp.Key);
 
-            if (page.Count >= pageSize)
+            if (page.Count >= take)
             {
                 break;
             }

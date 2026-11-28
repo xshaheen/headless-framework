@@ -104,7 +104,8 @@ public sealed class HybridCacheOptions : CacheOptions
     /// </summary>
     /// <remarks>
     /// Scope: governs the central L2 read chokepoint (direct <see cref="ICache.GetAsync{T}"/>,
-    /// <c>GetAllAsync</c>, <c>ExistsAsync</c>, <c>GetExpirationAsync</c>, <c>GetSetAsync</c>) and the
+    /// <c>GetAllAsync</c>, <c>ExistsAsync</c>, <c>GetExpirationAsync</c>, <c>GetSetAsync</c>,
+    /// <c>GetAllSetMembersAsync</c>) and the
     /// factory/<c>UpsertEntryAsync</c> store-write chokepoint. It does NOT change three things: a
     /// timeout or open circuit still degrades (no exception to re-throw); a sliding re-arm hiccup stays
     /// best-effort (never fails a successful read); and a <c>GetOrAddAsync</c> store-read

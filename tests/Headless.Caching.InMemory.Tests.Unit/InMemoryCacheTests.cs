@@ -1391,6 +1391,22 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_one_default_page_when_get_set_names_no_page()
+    {
+        // given - a set larger than the default page size of 100
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, Enumerable.Range(0, 150).ToArray(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.GetSetAsync<object>(key, cancellationToken: AbortToken);
+
+        // then - the default call is bounded by the page size, never the whole set
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().HaveCount(100);
+    }
+
+    [Fact]
     public async Task should_return_no_value_when_set_does_not_exist()
     {
         // given

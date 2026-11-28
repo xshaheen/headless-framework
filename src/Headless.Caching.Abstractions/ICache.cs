@@ -400,22 +400,37 @@ public interface ICache
     ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads an optionally paginated page of members from the set stored at <paramref name="key"/>. Members
-    /// that have individually expired within the set are excluded. Returns <see cref="CacheValue{T}.NoValue"/>
-    /// (so <see cref="CacheValue{T}.HasValue"/> is <see langword="false"/> and <see cref="CacheValue{T}.Value"/>
-    /// is <see langword="null"/>) whenever the requested page has no members: the key is absent, the set is empty,
-    /// its live members are all expired, or <paramref name="pageIndex"/> is past the last live member.
-    /// <see cref="CacheValue{T}.HasValue"/> reflects whether the requested page has members, not whether the key
-    /// exists (no extra existence round-trip is issued). <paramref name="pageIndex"/> is 1-based; pass
-    /// <see langword="null"/> to return all members.
+    /// Reads one page of members from the set stored at <paramref name="key"/>, at most <paramref name="pageSize"/>
+    /// members. Members that have individually expired within the set are excluded. Returns
+    /// <see cref="CacheValue{T}.NoValue"/> (so <see cref="CacheValue{T}.HasValue"/> is <see langword="false"/> and
+    /// <see cref="CacheValue{T}.Value"/> is <see langword="null"/>) whenever the requested page has no members: the key
+    /// is absent, the set is empty, its live members are all expired, or <paramref name="pageIndex"/> is past the last
+    /// live member. <see cref="CacheValue{T}.HasValue"/> reflects whether the requested page has members, not whether
+    /// the key exists (no extra existence round-trip is issued). <paramref name="pageIndex"/> is 1-based. To read every
+    /// member, call <see cref="GetAllSetMembersAsync{T}"/>.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="key"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="key"/> is empty.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageSize"/> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="pageIndex"/> or <paramref name="pageSize"/> is less than 1.
+    /// </exception>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
-        int? pageIndex = null,
+        int pageIndex = 1,
         int pageSize = 100,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads every live member of the set stored at <paramref name="key"/> in one call, with no page bound. Members
+    /// that have individually expired within the set are excluded. Returns <see cref="CacheValue{T}.NoValue"/> when the
+    /// key is absent, the set is empty, or its live members are all expired. The cost grows with the set: prefer
+    /// <see cref="GetSetAsync{T}"/> for a set whose size callers or request input control.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is empty.</exception>
+    ValueTask<CacheValue<ICollection<T>>> GetAllSetMembersAsync<T>(
+        string key,
         CancellationToken cancellationToken = default
     );
 
