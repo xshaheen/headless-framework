@@ -20,7 +20,6 @@ public sealed class AzureServiceBusEmulatorConsumerClientHarnessTests(AzureServi
         setup.UseAzureServiceBus(options =>
         {
             options.ConnectionString = connectionString;
-            options.AutoProvision = false;
         });
     }
 

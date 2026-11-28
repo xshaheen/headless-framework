@@ -57,7 +57,7 @@ internal sealed class AzureServiceBusEmulatorContainer : IAsyncDisposable
 
     /// <summary>
     /// Gets the connection string for the emulator's AMQP endpoint. It names no management port, so a client built from
-    /// it cannot provision entities, which matches running the provider with <c>AutoProvision = false</c>.
+    /// it cannot provision entities. The provider only receives from the ones that exist, as it does at its defaults.
     /// </summary>
     public string ConnectionString { get; private set; } = string.Empty;
 

@@ -401,8 +401,6 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
         request ??= new ConsumerClientRequest(group, 2, lane);
         var headerBuilder = sessionOptions?.HeaderBuilder;
 
-        // Every-instance subscriptions are created by the consumer itself, which takes AutoProvision.
-        var autoProvision = request.Kind is ConsumerSubscriptionKind.EveryInstance;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -410,7 +408,6 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
             {
                 options.ConnectionString = connectionString;
                 options.TopicPath = topicPath;
-                options.AutoProvision = autoProvision;
                 options.EnableSessions = enableSessions;
                 if (enableSessions)
                 {

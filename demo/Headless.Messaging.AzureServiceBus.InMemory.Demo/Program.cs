@@ -2,6 +2,7 @@ using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
 using Headless.Dashboard;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 
@@ -38,6 +39,10 @@ builder.Services.AddHeadlessMessaging(setup =>
         );
     });
 });
+
+// The host start only verifies its topics, subscriptions, and queues, so this demo creates them as it starts; a deployed
+// app runs `dotnet <app>.dll resources provision` instead.
+builder.Services.AddDeployStepsOnStartup();
 
 // The Messaging module of the Headless dashboard, at /headless/messaging. No auth: a local demo only.
 builder.Services.AddHeadlessDashboard(dashboard => dashboard.WithNoAuth().AddMessaging());

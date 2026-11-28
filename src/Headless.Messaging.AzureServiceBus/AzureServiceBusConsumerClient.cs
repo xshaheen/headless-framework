@@ -20,7 +20,8 @@ internal sealed class AzureServiceBusConsumerClient(
     IServiceProvider serviceProvider,
     IAzureServiceBusClientPool clientPool,
     MessageLane lane = MessageLane.Bus,
-    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
+    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing,
+    bool provisionsTopology = false
 ) : IConsumerClient
 {
     // Headless must settle only after durable receive storage and handler outcome are known.
@@ -133,24 +134,21 @@ internal sealed class AzureServiceBusConsumerClient(
         // rule name is not a message name, so it never names an arrival.
         Volatile.Write(ref _arrivalNames, new HashSet<string>(names, StringComparer.Ordinal));
 
-        if (!_asbOptions.AutoProvision)
+        var ruleNames = AzureServiceBusTopology.RuleNames(_asbOptions, names);
+
+        if (_everyInstance)
         {
+            _subscribedMessageNames = ruleNames;
+            await _ProvisionEveryInstanceSubscriptionAsync(ruleNames, cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        var ruleNames = names
-            .Concat(_asbOptions.SqlFilters.Select(o => o.Key))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        if (!_everyInstance)
+        // A registered subscription's rules are the deployment's: resources provision reconciles them, and the host
+        // only checks them. Only a subscription an IRuntimeSubscriber added writes its own.
+        if (provisionsTopology)
         {
             await _SyncRulesAsync(ruleNames, cancellationToken).ConfigureAwait(false);
-            return;
         }
-
-        _subscribedMessageNames = ruleNames;
-        await _ProvisionEveryInstanceSubscriptionAsync(ruleNames, cancellationToken).ConfigureAwait(false);
     }
 
     // An every-instance subscription belongs to this process, so it is created on first subscribe rather than when the
@@ -163,45 +161,23 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         try
         {
-            var created = false;
-
-            if (
-                !await _administrationClient!
-                    .SubscriptionExistsAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                var subscription = new CreateSubscriptionOptions(_asbOptions.TopicPath, subscriptionName)
-                {
-                    RequiresSession = _asbOptions.EnableSessions,
-                    AutoDeleteOnIdle = EveryInstanceAutoDeleteOnIdle,
-                    LockDuration = _asbOptions.SubscriptionMessageLockDuration,
-                    DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
-                    MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
-                };
-
-                // Created with its first rule instead of the default match-all rule, so the subscription never
-                // receives messages this process does not consume.
-                if (ruleNames.Count == 0)
-                {
-                    await _administrationClient
-                        .CreateSubscriptionAsync(subscription, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await _administrationClient
-                        .CreateSubscriptionAsync(
-                            subscription,
-                            new CreateRuleOptions { Name = ruleNames[0], Filter = _CreateRuleFilter(ruleNames[0]) },
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-                }
-
-                logger.SubscriptionCreated(_asbOptions.TopicPath, subscriptionName);
-                created = true;
-            }
+            // Created with its first rule instead of the default match-all rule, so the subscription never receives
+            // messages this process does not consume.
+            var created = await AzureServiceBusTopology
+                .EnsureSubscriptionAsync(
+                    _administrationClient!,
+                    _asbOptions,
+                    AzureServiceBusTopology.SubscriptionOptions(
+                        _asbOptions,
+                        _asbOptions.TopicPath,
+                        subscriptionName,
+                        EveryInstanceAutoDeleteOnIdle
+                    ),
+                    ruleNames.Count == 0 ? null : ruleNames[0],
+                    logger,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             await _SyncRulesAsync(ruleNames, cancellationToken).ConfigureAwait(false);
 
@@ -218,65 +194,16 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private async Task _SyncRulesAsync(IReadOnlyCollection<string> ruleNames, CancellationToken cancellationToken)
-    {
-        var allRuleNames = new List<string>();
-
-        await foreach (
-#pragma warning disable MA0079 // False positive
-            var rule in _administrationClient!
-                .GetRulesAsync(_asbOptions.TopicPath, subscriptionName, cancellationToken)
-                .ConfigureAwait(false)
-#pragma warning restore MA0079
-        )
-        {
-            allRuleNames.Add(rule.Name);
-        }
-
-        foreach (var newRule in ruleNames.Except(allRuleNames, StringComparer.Ordinal))
-        {
-            await _administrationClient
-                .CreateRuleAsync(
-                    _asbOptions.TopicPath,
-                    subscriptionName,
-                    new CreateRuleOptions { Name = newRule, Filter = _CreateRuleFilter(newRule) },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            logger.RuleAdded(newRule);
-        }
-
-        foreach (var oldRule in allRuleNames.Except(ruleNames, StringComparer.Ordinal))
-        {
-            await _administrationClient
-                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule, cancellationToken)
-                .ConfigureAwait(false);
-
-            logger.RuleRemoved(oldRule);
-        }
-    }
-
-    private RuleFilter _CreateRuleFilter(string ruleName)
-    {
-        var sqlExpression = _asbOptions
-            .SqlFilters.FirstOrDefault(o => string.Equals(o.Key, ruleName, StringComparison.Ordinal))
-            .Value;
-
-        if (sqlExpression is not null)
-        {
-            return new SqlRuleFilter(sqlExpression);
-        }
-
-        var correlationRule = new CorrelationRuleFilter { Subject = ruleName };
-
-        foreach (var correlationHeader in _asbOptions.DefaultCorrelationHeaders)
-        {
-            correlationRule.ApplicationProperties.Add(correlationHeader.Key, correlationHeader.Value);
-        }
-
-        return correlationRule;
-    }
+    private Task _SyncRulesAsync(IReadOnlyCollection<string> ruleNames, CancellationToken cancellationToken) =>
+        AzureServiceBusTopology.SyncRulesAsync(
+            _administrationClient!,
+            _asbOptions,
+            _asbOptions.TopicPath,
+            subscriptionName,
+            ruleNames,
+            logger,
+            cancellationToken
+        );
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -870,62 +797,17 @@ internal sealed class AzureServiceBusConsumerClient(
                 // same AMQP connection as the publish senders. This client is never disposed here.
                 _serviceBusClient = clientPool.GetClient();
 
-                if (_asbOptions.AutoProvision)
+                // A process creates its own every-instance subscription, and a runtime subscription its shared
+                // entities; every other client only receives from what resources provision created.
+                if (provisionsTopology || _everyInstance)
                 {
                     _administrationClient = clientPool.GetAdministrationClient();
                 }
 
-                if (lane == MessageLane.Bus && _asbOptions.AutoProvision)
+                if (lane == MessageLane.Bus && provisionsTopology)
                 {
-                    var administrationClient = _administrationClient!;
-                    var topicConfigs = _asbOptions
-                        .CustomProducers.Select(producer =>
-                            (topicPaths: producer.TopicPath, subscribe: producer.CreateSubscription)
-                        )
-                        .Append((topicPaths: _asbOptions.TopicPath, subscribe: true))
-                        .GroupBy(n => n.topicPaths, StringComparer.OrdinalIgnoreCase)
-                        .Select(n => (topicPaths: n.Key, subscribe: n.Max(o => o.subscribe)));
-
-                    foreach (var (topicPath, subscribe) in topicConfigs)
-                    {
-                        if (
-                            !await administrationClient
-                                .TopicExistsAsync(topicPath, cancellationToken)
-                                .ConfigureAwait(false)
-                        )
-                        {
-                            await administrationClient
-                                .CreateTopicAsync(topicPath, cancellationToken)
-                                .ConfigureAwait(false);
-                            logger.TopicCreated(topicPath);
-                        }
-
-                        // An every-instance subscription is created by SubscribeAsync, and only on the topic the
-                        // processor reads, so the per-process name never lands on a topic nothing receives from.
-                        if (
-                            subscribe
-                            && !_everyInstance
-                            && !await administrationClient
-                                .SubscriptionExistsAsync(topicPath, subscriptionName, cancellationToken)
-                                .ConfigureAwait(false)
-                        )
-                        {
-                            var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
-                            {
-                                RequiresSession = _asbOptions.EnableSessions,
-                                AutoDeleteOnIdle = _asbOptions.SubscriptionAutoDeleteOnIdle,
-                                LockDuration = _asbOptions.SubscriptionMessageLockDuration,
-                                DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
-                                MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
-                            };
-
-                            await administrationClient
-                                .CreateSubscriptionAsync(subscriptionDescription, cancellationToken)
-                                .ConfigureAwait(false);
-
-                            logger.SubscriptionCreated(topicPath, subscriptionName);
-                        }
-                    }
+                    await _ProvisionRuntimeBusTopologyAsync(_administrationClient!, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 if (lane == MessageLane.Queue)
@@ -942,25 +824,55 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
+    // The topics a runtime subscription publishes through and its subscription on each, as resources provision would
+    // create them for a registered one. An every-instance subscription is created by SubscribeAsync, and only on the
+    // topic the processor reads, so the per-process name never lands on a topic nothing receives from.
+    private async Task _ProvisionRuntimeBusTopologyAsync(
+        ServiceBusAdministrationClient administrationClient,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var (topicPath, subscribe) in AzureServiceBusTopologyProvisioner.Topics(_asbOptions))
+        {
+            await AzureServiceBusTopology
+                .EnsureTopicAsync(administrationClient, topicPath, logger, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (subscribe && !_everyInstance)
+            {
+                await AzureServiceBusTopology
+                    .EnsureSubscriptionAsync(
+                        administrationClient,
+                        _asbOptions,
+                        AzureServiceBusTopology.SubscriptionOptions(
+                            _asbOptions,
+                            topicPath,
+                            subscriptionName,
+                            _asbOptions.SubscriptionAutoDeleteOnIdle
+                        ),
+                        firstRule: null,
+                        logger,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
     private async Task _EnsureQueueProcessorAsync(string queueName, CancellationToken cancellationToken)
     {
         await ConnectAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_asbOptions.AutoProvision && _administrationClient is not null)
+        // A registered consumer's queue is the deployment's; only a runtime subscription creates its own.
+        if (provisionsTopology && _administrationClient is not null)
         {
-            if (!await _administrationClient.QueueExistsAsync(queueName, cancellationToken).ConfigureAwait(false))
-            {
-                var queueOptions = new CreateQueueOptions(queueName)
-                {
-                    RequiresSession = _asbOptions.EnableSessions,
-                    AutoDeleteOnIdle = _asbOptions.SubscriptionAutoDeleteOnIdle,
-                    LockDuration = _asbOptions.SubscriptionMessageLockDuration,
-                    DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
-                    MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
-                };
-
-                await _administrationClient.CreateQueueAsync(queueOptions, cancellationToken).ConfigureAwait(false);
-            }
+            await AzureServiceBusTopology
+                .EnsureQueueAsync(
+                    _administrationClient,
+                    AzureServiceBusTopology.QueueOptions(_asbOptions, queueName),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         var processor = _CreateProcessor(queueName, topicSubscription: null);
@@ -1199,26 +1111,6 @@ internal sealed class AzureServiceBusConsumerClient(
 
 internal static partial class AzureServiceBusConsumerClientLog
 {
-    [LoggerMessage(EventId = 3008, Level = LogLevel.Information, Message = "Azure Service Bus add rule: {NewRule}")]
-    internal static partial void RuleAdded(this ILogger logger, string newRule);
-
-    [LoggerMessage(EventId = 3009, Level = LogLevel.Information, Message = "Azure Service Bus remove rule: {OldRule}")]
-    internal static partial void RuleRemoved(this ILogger logger, string oldRule);
-
-    [LoggerMessage(
-        EventId = 3010,
-        Level = LogLevel.Information,
-        Message = "Azure Service Bus created topic: {TopicPath}"
-    )]
-    internal static partial void TopicCreated(this ILogger logger, string topicPath);
-
-    [LoggerMessage(
-        EventId = 3011,
-        Level = LogLevel.Information,
-        Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
-    )]
-    internal static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
-
     [LoggerMessage(
         EventId = 3030,
         Level = LogLevel.Warning,

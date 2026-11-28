@@ -7,8 +7,8 @@ using Headless.Messaging.AzureServiceBus;
 namespace Tests;
 
 /// <summary>
-/// Runs the Azure Service Bus provider against the local emulator with <c>AutoProvision = false</c>, on the fixed entities
-/// <c>Emulator/Config.json</c> declares. The real namespace stays the evidence for provisioning, the administration API,
+/// Runs the Azure Service Bus provider against the local emulator at its defaults, which only check the topology, on the
+/// fixed entities <c>Emulator/Config.json</c> declares. The real namespace stays the evidence for provisioning, the administration API,
 /// and every-instance subscriptions, which the emulator cannot stand in for.
 /// </summary>
 /// <remarks>

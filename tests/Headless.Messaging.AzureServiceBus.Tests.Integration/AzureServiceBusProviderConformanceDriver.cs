@@ -32,7 +32,6 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
         {
             options.ConnectionString = fixture.ConnectionString;
             options.EnableSessions = true;
-            options.AutoProvision = false;
         });
 
     public override async Task AssertNativePublisherPathsAsync(CancellationToken cancellationToken)
@@ -54,7 +53,6 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
                     setup.UseAzureServiceBus(options =>
                     {
                         options.ConnectionString = fixture.ConnectionString;
-                        options.AutoProvision = false;
                         options.EnableSessions = false;
                         options.CustomProducers.Add(
                             new ServiceBusProducerDescriptor(

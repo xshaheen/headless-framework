@@ -268,12 +268,7 @@ public sealed class AzureServiceBusRawPayloadTests : TestBase
         Action<AzureServiceBusMessagingOptions>? configure = null
     )
     {
-        // AutoProvision off keeps the administration client out: these tests drive the receive path only.
-        var options = new AzureServiceBusMessagingOptions
-        {
-            ConnectionString = _ConnectionString,
-            AutoProvision = false,
-        };
+        var options = new AzureServiceBusMessagingOptions { ConnectionString = _ConnectionString };
         configure?.Invoke(options);
 
         var services = new ServiceCollection();

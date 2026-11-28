@@ -121,12 +121,7 @@ public sealed class AzureServiceBusConsumerConcurrencyTests : TestBase
         Action<AzureServiceBusMessagingOptions>? configure = null
     )
     {
-        // AutoProvision off keeps the administration client out: these tests only read the processor options.
-        var options = new AzureServiceBusMessagingOptions
-        {
-            ConnectionString = _ConnectionString,
-            AutoProvision = false,
-        };
+        var options = new AzureServiceBusMessagingOptions { ConnectionString = _ConnectionString };
         configure?.Invoke(options);
 
         return new AzureServiceBusConsumerClient(
