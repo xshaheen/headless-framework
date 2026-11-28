@@ -108,8 +108,7 @@ public sealed class RedisRawPayloadTests(RedisMessagingFixture fixture) : TestBa
         });
 
         var provider = services.BuildServiceProvider();
-        await provider.ApplyMessagingSchemaAsync(AbortToken);
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        await provider.SetupResourcesAndBootstrapAsync(AbortToken);
 
         return provider;
     }

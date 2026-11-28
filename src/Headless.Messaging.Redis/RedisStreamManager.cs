@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Headless.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -46,12 +47,8 @@ internal sealed class RedisStreamManager(
         return deleted
         """;
 
-    // Consumer groups already confirmed to exist, so a poll does not re-check them (KeyExists + XINFO GROUPS per stream).
-    // An entry is dropped when the server answers NOGROUP, which is how a deleted stream or group shows up.
-    private readonly ConcurrentDictionary<(string Stream, string Group), byte> _ensuredGroups = new();
-
-    // Whether each published-to stream has a consumer group. A stream with one keeps it for good (the transport never
-    // deletes a group), so that answer is cached for good; a stream without one is checked again later.
+    // Whether each published-to stream has a consumer group. A stream with one keeps it while the host runs (only the
+    // deploy step deletes a group), so that answer is cached for good; a stream without one is checked again later.
     private readonly ConcurrentDictionary<string, StreamGroupCheck> _streamGroups = new(StringComparer.Ordinal);
 
     private readonly RedisMessagingOptions _options = options.Value;
@@ -70,11 +67,9 @@ internal sealed class RedisStreamManager(
         var database = _redis!.GetDatabase();
 
         await database
-            .TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup)
+            .EnsureConsumerGroupAsync(stream, consumerGroup)
             .WaitAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        _ensuredGroups[(stream, consumerGroup)] = 0;
     }
 
     public async Task PublishAsync(
@@ -386,13 +381,20 @@ internal sealed class RedisStreamManager(
 
             var database = _redis!.GetDatabase();
 
-            var readSet = await _ReadGroupRecoveringAsync(database, consumerGroup, consumerName, positions, token)
-                .ConfigureAwait(false);
+            // A multi-key XREADGROUP must stay within one hash slot on a cluster.
+            var reads = positions
+                .GroupBy(s => _redis.GetHashSlot(s.Key))
+                .Select(group =>
+                    database.StreamReadGroupAsync(
+                        [.. group],
+                        consumerGroup,
+                        consumerName,
+                        _options.StreamEntriesCount,
+                        noAck: false
+                    )
+                );
 
-            if (readSet is null)
-            {
-                return (Failure: null, Streams: []);
-            }
+            var readSet = await Task.WhenAll(reads).ConfigureAwait(false);
 
             return (
                 Failure: null,
@@ -406,6 +408,12 @@ internal sealed class RedisStreamManager(
             // Cancellation is not a read failure; the caller's next Delay(token) ends the poll loop.
             return (Failure: null, Streams: []);
         }
+        catch (RedisServerException ex) when (ex.IsNoGroup())
+        {
+            // The deployment never provisioned the group, or something deleted it while the host ran. The host does
+            // not create it: the read ends instead of retrying, which fails the subscription and holds readiness.
+            throw RedisStreamManagerExtensions.MissingConsumerGroup(consumerGroup, _StreamNames(positions), ex);
+        }
         catch (Exception ex)
         {
             logger.LogReadConsumerGroupFailed(ex, consumerGroup);
@@ -413,70 +421,9 @@ internal sealed class RedisStreamManager(
         }
     }
 
-    // Reads the group's streams, re-creating a group the server reports missing (NOGROUP) and reading once more, so a
-    // deleted stream recovers within the poll that found it. Null when no stream has a group to read.
-    private async Task<RedisStream[][]?> _ReadGroupRecoveringAsync(
-        IDatabase database,
-        string consumerGroup,
-        string consumerName,
-        StreamPosition[] positions,
-        CancellationToken token
-    )
+    private static string _StreamNames(IEnumerable<StreamPosition> positions)
     {
-        for (var attempt = 0; ; attempt++)
-        {
-            List<StreamPosition> createdPositions = [];
-
-            await foreach (
-                var position in database
-                    .TryGetOrCreateConsumerGroupPositionsAsync(positions, consumerGroup, _ensuredGroups, logger)
-                    .ConfigureAwait(false)
-                    .WithCancellation(token)
-            )
-            {
-                createdPositions.Add(position);
-            }
-
-            if (createdPositions.Count == 0)
-            {
-                return null;
-            }
-
-            try
-            {
-                //calculate keys HashSlots to start reading per HashSlot
-                var groupedPositions = createdPositions
-                    .GroupBy(s => _redis!.GetHashSlot(s.Key))
-                    .Select(group =>
-                        database.StreamReadGroupAsync(
-                            [.. group],
-                            consumerGroup,
-                            consumerName,
-                            _options.StreamEntriesCount,
-                            noAck: false
-                        )
-                    );
-
-                return await Task.WhenAll(groupedPositions).ConfigureAwait(false);
-            }
-            catch (RedisServerException ex) when (attempt == 0 && _IsNoGroup(ex))
-            {
-                _ForgetGroups(createdPositions, consumerGroup);
-            }
-        }
-    }
-
-    private static bool _IsNoGroup(RedisServerException exception)
-    {
-        return exception.Message.StartsWith("NOGROUP", StringComparison.Ordinal);
-    }
-
-    private void _ForgetGroups(IEnumerable<StreamPosition> positions, string consumerGroup)
-    {
-        foreach (var position in positions)
-        {
-            _ensuredGroups.TryRemove((position.Key.ToString(), consumerGroup), out _);
-        }
+        return string.Join("', '", positions.Select(position => position.Key.ToString()));
     }
 
     private async Task<(Exception? Failure, RedisStreamMessages[] Streams)> _TryReadAsync(
@@ -558,13 +505,10 @@ internal sealed class RedisStreamManager(
             var database = _redis!.GetDatabase();
             var minIdleTimeMilliseconds = _ToRedisMilliseconds(claimMinIdleTime);
 
-            await foreach (
-                var position in database
-                    .TryGetOrCreateConsumerGroupPositionsAsync(positions, consumerGroup, _ensuredGroups, logger)
-                    .ConfigureAwait(false)
-                    .WithCancellation(token)
-            )
+            foreach (var position in positions)
             {
+                token.ThrowIfCancellationRequested();
+
                 if (!nextStartIds.TryGetValue(position.Key, out var startId))
                 {
                     startId = StreamPosition.Beginning;
@@ -584,11 +528,10 @@ internal sealed class RedisStreamManager(
                         )
                         .ConfigureAwait(false);
                 }
-                catch (RedisServerException ex) when (_IsNoGroup(ex))
+                catch (RedisServerException ex) when (ex.IsNoGroup())
                 {
-                    // The stream or group was deleted: forget it so the next pass re-creates it before claiming.
-                    _ForgetGroups([position], consumerGroup);
-                    throw;
+                    // As in the group read: a missing group ends the read, and the host does not create it.
+                    throw RedisStreamManagerExtensions.MissingConsumerGroup(consumerGroup, position.Key.ToString(), ex);
                 }
 
                 if (result.IsNull)
@@ -610,7 +553,7 @@ internal sealed class RedisStreamManager(
         {
             return (Failure: null, Streams: []);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ResourceProvisioningException)
         {
             logger.LogAutoClaimConsumerGroupFailed(ex, consumerGroup);
             return (Failure: ex, Streams: []);

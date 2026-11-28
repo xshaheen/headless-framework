@@ -56,6 +56,42 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         client.BrokerAddress.Name.Should().Be("redis");
     }
 
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 1)]
+    public async Task should_create_the_consumer_group_only_for_a_request_that_provisions_its_topology(
+        bool provisionsTopology,
+        int expectedCreates
+    )
+    {
+        // given
+        var mockStreamManager = Substitute.For<IRedisStreamManager>();
+        var options = Options.Create(
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+        );
+        var factory = new RedisConsumerClientFactory(
+            options,
+            mockStreamManager,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        await using var client = await factory.CreateAsync(
+            new ConsumerClientRequest("orders", 1, MessageLane.Queue) { ProvisionsTopology = provisionsTopology },
+            AbortToken
+        );
+
+        // when
+        await client.SubscribeAsync(["orders"], AbortToken);
+
+        // then
+        await mockStreamManager
+            .Received(expectedCreates)
+            .CreateStreamWithConsumerGroupAsync(
+                "headless:messaging:queue:orders",
+                "orders",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Fact]
     public async Task should_create_client_with_zero_concurrency()
     {

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Runtime.ExceptionServices;
-using Microsoft.Extensions.Logging;
+using Headless.Hosting;
 using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
@@ -10,100 +8,10 @@ namespace Headless.Messaging.Redis;
 internal static class RedisStreamManagerExtensions
 {
     /// <summary>
-    /// Yields the positions whose consumer group exists, creating a missing group on first sight. A pair confirmed
-    /// once is remembered in <paramref name="ensuredGroups"/> and not checked again until the caller forgets it, which
-    /// it does on a <c>NOGROUP</c> reply; checking on every poll costs two round trips per stream.
+    /// Creates <paramref name="consumerGroup"/> on <paramref name="stream"/>, and the stream with it, in one
+    /// <c>XGROUP CREATE ... MKSTREAM</c>. A group that already exists is left as it is, so the call is idempotent.
     /// </summary>
-    /// <remarks>
-    /// Only an error the server answered with skips a stream. A connection or timeout failure propagates so the read
-    /// fails as a whole and counts toward the broker's reachability; swallowing it would report a successful empty
-    /// read and reset the failure count after every real failure. When the server refuses the group of every stream
-    /// (an ACL without <c>XGROUP</c> rights, <c>LOADING</c>, <c>OOM</c>), the last refusal propagates too: a read
-    /// that can consume nothing is no success, and reporting it as one would keep readiness healthy indefinitely.
-    /// </remarks>
-    public static async IAsyncEnumerable<StreamPosition> TryGetOrCreateConsumerGroupPositionsAsync(
-        this IDatabase database,
-        StreamPosition[] positions,
-        string consumerGroup,
-        ConcurrentDictionary<(string Stream, string Group), byte> ensuredGroups,
-        ILogger logger
-    )
-    {
-        RedisServerException? lastRefusal = null;
-        var yieldedAny = false;
-
-        foreach (var position in positions)
-        {
-            var key = (position.Key.ToString(), consumerGroup);
-
-            if (!ensuredGroups.ContainsKey(key))
-            {
-                var created = false;
-                try
-                {
-                    await database
-                        .TryGetOrCreateStreamConsumerGroupAsync(position.Key, consumerGroup)
-                        .ConfigureAwait(false);
-
-                    ensuredGroups[key] = 0;
-                    created = true;
-                }
-                // Only an error the server answered with skips the stream: the others still read. A connection
-                // failure propagates, so the read fails as a whole and its caller counts the outage instead of an empty
-                // success.
-                catch (RedisServerException ex)
-                {
-                    lastRefusal = ex;
-
-                    if (ex.GetRedisErrorType() == RedisErrorTypes.Unknown)
-                    {
-                        logger?.LogCreateConsumerGroupFailed(ex, consumerGroup, position.Key);
-                    }
-                }
-
-                if (!created)
-                {
-                    continue;
-                }
-            }
-
-            yieldedAny = true;
-
-            yield return position;
-        }
-
-        if (!yieldedAny && lastRefusal is not null)
-        {
-            ExceptionDispatchInfo.Throw(lastRefusal);
-        }
-    }
-
-    public static async Task TryGetOrCreateStreamConsumerGroupAsync(
-        this IDatabase database,
-        RedisKey stream,
-        RedisValue consumerGroup
-    )
-    {
-        var streamExist = await database.KeyExistsAsync(stream).ConfigureAwait(false);
-        if (streamExist)
-        {
-            await database._TryGetOrCreateStreamGroupAsync(stream, consumerGroup).ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            await database
-                .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex.GetRedisErrorType() == RedisErrorTypes.GroupAlreadyExists)
-        {
-            // ignore, group already exists
-        }
-    }
-
-    private static async Task _TryGetOrCreateStreamGroupAsync(
+    public static async Task EnsureConsumerGroupAsync(
         this IDatabase database,
         RedisKey stream,
         RedisValue consumerGroup
@@ -111,42 +19,35 @@ internal static class RedisStreamManagerExtensions
     {
         try
         {
-            var groupInfo = await database.StreamGroupInfoAsync(stream).ConfigureAwait(false);
-
-            if (groupInfo.Any(g => g.Name == consumerGroup))
-            {
-                return;
-            }
-
             await database
-                .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages)
+                .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages, createStream: true)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (RedisServerException ex) when (ex.GetRedisErrorType() == RedisErrorTypes.GroupAlreadyExists)
         {
-            if (ex.GetRedisErrorType() is RedisErrorTypes.NoGroupInfoExists)
-            {
-                await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
-                return;
-            }
-
-            throw;
+            // BUSYGROUP: another process, or an earlier run, created it first.
         }
     }
-}
 
-internal static partial class RedisStreamManagerExtensionsLog
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "CreateConsumerGroupFailed",
-        Level = LogLevel.Error,
-        Message = "Redis error while creating consumer group [{ConsumerGroup}] of stream [{Position}]"
-    )]
-    internal static partial void LogCreateConsumerGroupFailed(
-        this ILogger logger,
-        Exception exception,
+    /// <summary>Whether the server answered <c>NOGROUP</c>: the stream or its consumer group does not exist.</summary>
+    public static bool IsNoGroup(this RedisServerException exception)
+    {
+        return exception.Message.StartsWith("NOGROUP", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The failure a missing stream or consumer group raises: the running host never creates it, so the message
+    /// names the deploy step that does.
+    /// </summary>
+    public static ResourceProvisioningException MissingConsumerGroup(
         string consumerGroup,
-        RedisKey position
-    );
+        string streams,
+        Exception? innerException = null
+    )
+    {
+        return new ResourceProvisioningException(
+            $"Redis Streams consumer group '{consumerGroup}' on stream '{streams}' does not exist. Run 'resources provision' (dotnet <app>.dll resources provision) in the deployment, or call AddDeployStepsOnStartup() in development.",
+            innerException
+        );
+    }
 }
