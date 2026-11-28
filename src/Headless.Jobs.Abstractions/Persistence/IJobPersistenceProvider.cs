@@ -629,7 +629,9 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
     /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Every transition ends the
     /// lapsed lease as abandoned in the same write, so the stalled attempt's late completion is refused. Returns the
-    /// rows moved, by transition.
+    /// rows moved, by transition. A released chain descendant with no execution time and a parent-terminal run
+    /// condition gets the store's now as its execution time, because no claim selects an untimed row once the claim
+    /// that would have run it in-tree is gone.
     /// </summary>
     /// <param name="cancellationToken">Token that aborts the sweep.</param>
     /// <returns>The rows this sweep moved, by transition; all zero when nothing had stalled.</returns>
@@ -897,7 +899,8 @@ public partial interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <summary>
     /// Recovers the time jobs held by a node that coordination has declared dead, applying each row's
     /// <c>OnNodeDeath</c> policy: <c>Retry</c> → released to <c>Idle</c>, <c>MarkFailed</c> → <c>Failed</c>,
-    /// <c>Skip</c> → <c>Skipped</c>.
+    /// <c>Skip</c> → <c>Skipped</c>. A released chain descendant with no execution time and a parent-terminal run
+    /// condition gets the store's now as its execution time, as <see cref="ReclaimStalledTimeJobsAsync"/> does.
     /// </summary>
     /// <param name="instanceIdentifier">
     /// The dead node's <c>cluster/node@incarnation</c> owner identity. Only rows owned by exactly this identity are

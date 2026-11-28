@@ -240,7 +240,8 @@ Timed and run-condition behavior:
 
 Operational limits:
 
-- The whole chain runs on the node that claimed the root, under the root's claim. If that node crashes mid-chain after the root completed, a descendant without its own execution time can be stranded: reclaim returns it to `Idle` with no execution time, and nothing picks it up again. Treat this as a known limitation. Each node's `OnNodeDeath` policy still applies.
+- The whole chain runs on the node that claimed the root, under the root's claim. If that node dies or stops renewing mid-chain, reclaim returns each descendant without its own execution time to `Idle` and gives it the store's current time as its execution time, so any live node claims it. A `Then`, `Catch`, or other parent-terminal run condition still holds it until its parent reaches the matching state, and a mismatch skips it with its subtree. Each node's `OnNodeDeath` policy still applies.
+- A descendant added through the entity API with `RunCondition.InProgress` or no run condition keeps no execution time after a reclaim, because no claim gate holds it behind its parent. Give it an execution time if it must survive a node death.
 - A descendant without its own execution time stays `Idle` under the root's claim until it runs, and its start moves it from `Idle` to `InProgress` on every store, so the row and the dashboard show it running. A start the store refuses (the row was cancelled, released, reclaimed, or is already running) ends that child as lease loss (`start_rejected`) without running it.
 - Lowering `MaxChainDepth` after deeper chains were stored stops the scheduler from claiming nodes below the new limit. Nothing rejects those chains.
 - Deleting a time job deletes its whole descendant subtree. Deleting a non-root node removes only its subtree.

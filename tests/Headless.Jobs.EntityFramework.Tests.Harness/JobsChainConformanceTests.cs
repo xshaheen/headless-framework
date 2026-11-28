@@ -1706,6 +1706,86 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>
+    /// The node running a chain dies after the root succeeded, while the root's untimed child runs. The dead-node
+    /// reclaim gives the child a due time, so another node claims and runs it, its own child after it.
+    /// </summary>
+    public virtual Task dead_node_reclaim_lets_another_node_run_an_untimed_chain_child()
+    {
+        return _RunChainReclaimScenarioAsync(
+            "chain-reclaim-dead",
+            JobsChainReclaimScenarios.DeadNodeChildRunsOnAnotherNodeAsync
+        );
+    }
+
+    /// <summary>
+    /// The node running a chain stops renewing after the root succeeded, while the root's untimed child runs. The
+    /// stalled-lease reclaim gives the child a due time, so another node claims and runs it.
+    /// </summary>
+    public virtual Task stalled_reclaim_lets_another_node_run_an_untimed_chain_child()
+    {
+        return _RunChainReclaimScenarioAsync(
+            "chain-reclaim-stalled",
+            JobsChainReclaimScenarios.StalledChildRunsOnAnotherNodeAsync
+        );
+    }
+
+    private async Task _RunChainReclaimScenarioAsync(
+        string nodePrefix,
+        Func<IChainReclaimScenarioBackend, CancellationToken, Task> scenario
+    )
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        using var deadHost = fixture.BuildHost($"{nodePrefix}-a");
+        using var liveHost = fixture.BuildHost($"{nodePrefix}-b");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(deadHost, ct);
+        await deadHost.StartAsync(ct);
+        await liveHost.StartAsync(ct);
+
+        try
+        {
+            await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(deadHost, ct);
+            await JobsCoordinationFixtureExtensions.WaitForStampOwnerAsync(liveHost, ct);
+            await scenario(new _ChainReclaimBackend(fixture, deadHost, liveHost), ct);
+        }
+        finally
+        {
+            await liveHost.StopAsync(CancellationToken.None);
+            await deadHost.StopAsync(CancellationToken.None);
+        }
+    }
+
+    // Two hosts on one database are two nodes. A lease is judged on the database clock, so a lapse rewrites the
+    // stored deadline into the past instead of moving an application clock.
+    private sealed class _ChainReclaimBackend(TFixture fixture, IHost deadHost, IHost liveHost)
+        : IChainReclaimScenarioBackend
+    {
+        public IJobPersistenceProvider<TimeJobEntity, CronJobEntity> DeadNode { get; } =
+            deadHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        public IJobPersistenceProvider<TimeJobEntity, CronJobEntity> LiveNode { get; } =
+            liveHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        public async Task LapseLeasesAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+        {
+            foreach (var id in ids)
+            {
+                var row = await LiveNode.GetTimeJobByIdAsync(id, cancellationToken);
+                var lease = row!.Lease;
+                await fixture.OverwriteLeaseAsync(
+                    fixture.QualifiedTimeJobsTable,
+                    id,
+                    lease with
+                    {
+                        ExpiresAt = lease.ExpiresAt!.Value.AddHours(-1),
+                    },
+                    cancellationToken
+                );
+            }
+        }
+    }
+
+    /// <summary>
     /// A chain persisted while the depth limit was higher, then claimed under a LOWER
     /// <c>MaxChainDepth</c> (the default 10 here), truncates: the claim leases root..depth-10 and leaves deeper nodes
     /// Idle rather than erroring. Seeded directly because <c>EnqueueAsync</c> rejects an over-depth chain — this is the

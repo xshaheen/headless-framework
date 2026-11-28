@@ -194,6 +194,23 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             && ChainRunConditionRules.ParentTerminalMatches(job.RunCondition, parent.Status);
     }
 
+    // A reclaim hands an untimed chain descendant back without the claim that would have run it in-tree, and no claim
+    // selects a row with no execution time. Stamping the store's now makes it a timed descendant: the parent-terminal
+    // gate still holds it until its parent reaches the matching state, and the timed-child reconcile skips it when the
+    // parent ends in the other one. Ungated conditions stay untimed, because the gate would not stop them running before
+    // their parent. Mirrors the EF StampUntimedChainDescendant setter.
+    private static void _StampUntimedChainDescendant(TTimeJob job, DateTimeOffset now)
+    {
+        if (
+            job.ParentId is not null
+            && job.ExecutionTime is null
+            && ChainRunConditionRules.IsParentTerminalGated(job.RunCondition)
+        )
+        {
+            job.ExecutionTime = now.UtcDateTime;
+        }
+    }
+
     // E1: the reconcile-candidate predicate — a row currently eligible for the terminal-timed-child reconcile. Mirrors
     // the first filter in _ReconcileTerminalTimedChildren exactly so the index and the reconcile agree on membership.
     private static bool _IsReconcileCandidate(TTimeJob job)
@@ -1373,6 +1390,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Lease = _Abandoned(t.Lease, now);
                             t.Status = JobStatus.Idle;
+                            _StampUntimedChainDescendant(t, now);
                             if (attemptInFlight)
                             {
                                 t.RetryCount++;
@@ -2036,6 +2054,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                         {
                             t.Lease = _Revoked(t.Lease);
                             t.Status = JobStatus.Idle;
+                            _StampUntimedChainDescendant(t, now);
                             if (consumesBudget)
                             {
                                 t.RetryCount++;
