@@ -120,7 +120,11 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
                     : provider.GetRequiredService<IQueueTransport>();
             var factory = provider.GetRequiredService<IConsumerClientFactory>();
             var consumer = await factory.CreateAsync(
-                request ?? new ConsumerClientRequest(group, 1, lane),
+                // These sessions stand in for a deployed host and its topology at once, so the client creates it.
+                (request ?? new ConsumerClientRequest(group, 1, lane)) with
+                {
+                    ProvisionsTopology = true,
+                },
                 cancellationToken
             );
             await consumer.SubscribeAsync([destination], cancellationToken);

@@ -22,7 +22,8 @@ internal sealed class RedisConsumerClient(
     TimeProvider? timeProvider = null,
     ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing,
     RedisConsumerNameLease? consumerName = null,
-    IServiceProvider? serviceProvider = null
+    IServiceProvider? serviceProvider = null,
+    bool provisionsTopology = false
 ) : IConsumerClient
 {
     private const string _TransportName = "Redis";
@@ -123,15 +124,20 @@ internal sealed class RedisConsumerClient(
             return;
         }
 
-        foreach (var messageName in arr)
+        // A deployed subscription's groups are the deployment's: resources provision creates them, and the client only
+        // reads them. Only a subscription that owns its topology, such as a runtime one, creates its own. Readiness
+        // waits for the first group read, so a missing group fails it naming resources provision.
+        if (provisionsTopology)
         {
-            await redis
-                .CreateStreamWithConsumerGroupAsync(messageName, _groupName, cancellationToken)
-                .ConfigureAwait(false);
+            foreach (var messageName in arr)
+            {
+                await redis
+                    .CreateStreamWithConsumerGroupAsync(messageName, _groupName, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         _messageNames = arr;
-        _ready.TrySetResult();
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -181,6 +187,12 @@ internal sealed class RedisConsumerClient(
             try
             {
                 await reads.ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!readCts.IsCancellationRequested)
+            {
+                // A read that ended before it ever reached the group, such as on a missing group, fails readiness too.
+                _ready.TrySetException(ex);
+                throw;
             }
             catch (Exception ex) when (readCts.IsCancellationRequested)
             {
@@ -302,6 +314,17 @@ internal sealed class RedisConsumerClient(
         }
     }
 
+    // The first group read that reaches the server proves the groups exist, which is when the subscription is ready.
+    private void _ReportGroupRead(Exception? failure)
+    {
+        _ReportRead(failure);
+
+        if (failure is null)
+        {
+            _ready.TrySetResult();
+        }
+    }
+
     private void _ReportEveryInstanceRead(Exception? failure)
     {
         _ReportRead(failure);
@@ -360,7 +383,7 @@ internal sealed class RedisConsumerClient(
             _groupName,
             _consumerName.Name,
             timeout,
-            _ReportRead,
+            _ReportGroupRead,
             cancellationToken
         );
 
@@ -376,7 +399,7 @@ internal sealed class RedisConsumerClient(
             _consumerName.Name,
             options.Value.PendingClaimMinIdleTime,
             timeout,
-            _ReportRead,
+            _ReportGroupRead,
             readsCts.Token
         );
         var stalePendingReads = _ConsumeMessages(stalePendingMsgs, StreamPosition.Beginning, readsCts.Token);
@@ -387,7 +410,7 @@ internal sealed class RedisConsumerClient(
             _groupName,
             _consumerName.Name,
             timeout,
-            _ReportRead,
+            _ReportGroupRead,
             readsCts.Token
         );
 

@@ -6,6 +6,10 @@ namespace Headless.Messaging.Redis;
 
 internal interface IRedisStreamManager
 {
+    /// <summary>
+    /// Creates the consumer group, and its stream, when absent. Only a subscription that owns its topology calls it; a
+    /// deployed subscription reads a group that <c>resources provision</c> created.
+    /// </summary>
     Task CreateStreamWithConsumerGroupAsync(
         string stream,
         string consumerGroup,
@@ -15,7 +19,8 @@ internal interface IRedisStreamManager
     Task PublishAsync(string stream, NameValueEntry[] message, CancellationToken cancellationToken = default);
 
     // onRead hears of each read the token did not end: null when it reached the server, or the failure the loop logged
-    // and retries through. It is how a consumer learns of an outage the loop otherwise hides.
+    // and retries through. It is how a consumer learns of an outage the loop otherwise hides. A missing stream or group
+    // is not retried: the group reads end with a ResourceProvisioningException that names resources provision.
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsLatestMessagesAsync(
         string[] streams,
         string consumerGroup,

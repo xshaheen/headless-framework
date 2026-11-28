@@ -41,7 +41,8 @@ internal sealed class RedisConsumerClientFactory(
             request.Lane,
             kind: request.Kind,
             consumerName: consumerName,
-            serviceProvider: serviceProvider
+            serviceProvider: serviceProvider,
+            provisionsTopology: request.ProvisionsTopology
         );
         return Task.FromResult<IConsumerClient>(client);
     }

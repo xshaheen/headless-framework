@@ -9,7 +9,7 @@ packages: Messaging.Redis
 
 ## Headless.Messaging.Redis
 
-Use this transport when Redis is already in the stack and you accept no broker-native dead-letter queue. Both lanes use retained Streams with Redis consumer groups, which the provider creates on subscribe.
+Use this transport when Redis is already in the stack and you accept no broker-native dead-letter queue. Both lanes use retained Streams with Redis consumer groups, which the deployment creates with `resources provision`.
 
 ### Setup
 
@@ -28,7 +28,13 @@ setup.UseRedis();
 setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("localhost:6379"));
 ```
 
-**Verify:** the `messaging-broker` readiness check reports `Healthy` once a consumer reads its streams ([Broker reachability](operations.md#broker-reachability)), and the `describe` host manifest's `messaging.transports` shows `"redis"` for both lanes.
+Then create the consumer groups as a deploy step, before the new release serves traffic. Their kind is `RedisStreams` (`SetupMessagingRedis.TopologyResourceKind`):
+
+```bash
+dotnet MyApp.dll resources provision -k RedisStreams
+```
+
+**Verify:** `resources provision` prints the `RedisStreams` `topology` line with status `Ok`, then the `warmup` readiness check turns `Healthy` once the host's [topology check](transports.md#topology-check) passes, and `messaging-broker` reports `Healthy` once a consumer reads its streams ([Broker reachability](operations.md#broker-reachability)). Until provisioning runs, `warmup` stays `Unhealthy` and names the first missing group, such as `Redis Streams consumer group 'orders.created' on stream 'headless:messaging:queue:orders.created' does not exist. Run 'resources provision' ...`. The `describe` host manifest's `messaging.transports` shows `"redis"` for both lanes.
 
 ### Names and topology
 
@@ -36,6 +42,22 @@ setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("lo
 - **Bus:** the consumer group on each Bus stream is named after the consumer identity, so each identity gets one copy and its replicas compete inside the group.
 - **Queue:** the consumer group on the Queue stream is named after the message, so each message has one copy and its replicas compete.
 - **Wire format:** a stream entry has two fields, `headers` (a JSON object) and `body` (the raw bytes).
+
+**What the topology resource does:**
+
+- `provision` creates one consumer group, together with its stream, per stream a competing subscription reads (a Bus consumer identity's group on each of its messages' streams) and per registered Queue-lane message, consumed on this host or not. A group that already exists is left as it is, so running it twice is safe. A new group starts at entries added after it was created.
+- `verify` only reads: one `XINFO GROUPS` per stream, sent in one batch, and fails naming the first missing group.
+- `purge` re-creates each group this host consumes at the stream's end, which drops its backlog and its pending entries, and trims a Queue-lane stream to empty. A Bus stream is shared by every consumer identity that subscribes to the message, so purge never trims it and other identities' groups keep their entries.
+- `delete` deletes the groups this host consumes, and a stream only once no group reads it.
+- `status` reports each group's consumer and pending-entry counts, or `missing`.
+- Purge and delete never touch a group the host only publishes to, because it belongs to the service that consumes it.
+- Purge and delete need `EVAL`, because each group's check and change run as one script.
+
+**What the running host does:**
+
+- Consumer clients create no consumer group and no stream. A read that the server answers with `NOGROUP`, because the group or its stream is missing or was deleted while the host runs, ends the subscription with a `ResourceProvisioningException` naming `resources provision`. The client does not re-create the group.
+- A group subscription counts as established only after its first successful group read, so `IOnSubscriptionEstablished` never runs for a subscription whose group is missing.
+- The host still reads without a group for every-instance consumers, uses pub/sub for request/reply, and creates the groups of an `IRuntimeSubscriber` subscription when it subscribes. See [Runtime create rights](transports.md#runtime-create-rights) for the commands they need.
 
 ### Connection sharing
 
@@ -68,18 +90,18 @@ Configure Redis connection and stream behavior through `RedisMessagingOptions`:
 - **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription acknowledges after an inline handler returns, so set the option above that handler's longest run. Keep the time to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting, and the inbox discards the duplicates.
 - **Rejects stay in place.** A rejected delivery stays pending at its position and is delivered again by the claim. The stream does not grow.
 - **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read it. A group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once older than `StreamMaxAge`. Age is measured on the publishing process's clock. Approximate trimming can let entries outlive the limit slightly but never removes them early. No length cap (`MAXLEN`) is applied.
-- **Streams without a consumer group keep entries for minutes.** A consumer group starts at entries added after its creation, and an every-instance reader starts at the tail it found on subscribe. A publisher learns whether a stream has a group with one `XINFO GROUPS` per stream: once for a stream that has one, and again every half `EveryInstanceStreamMaxAge` for a stream that has none. A server that refuses `XINFO` (an ACL without it) keeps `StreamMaxAge` and logs a warning per stream. Keep clock skew between publishers and the Redis server below half `EveryInstanceStreamMaxAge`.
+- **Streams without a consumer group keep entries for minutes.** Run `resources provision` before the first publish to a Queue-lane message, or its entries get this short retention until the group exists. A consumer group starts at entries added after its creation, and an every-instance reader starts at the tail it found on subscribe. A publisher learns whether a stream has a group with one `XINFO GROUPS` per stream: once for a stream that has one, and again every half `EveryInstanceStreamMaxAge` for a stream that has none. A server that refuses `XINFO` (an ACL without it) keeps `StreamMaxAge` and logs a warning per stream. Keep clock skew between publishers and the Redis server below half `EveryInstanceStreamMaxAge`.
 - **Every-instance reads.** A group-less every-instance reader resumes from the last id it read after a failed read. When it could not read for half `EveryInstanceStreamMaxAge` or longer, the trim may have removed unread entries, so it raises the reconnect signal (`IOnSubscriptionEstablished` with `IsReconnect = true`) before it dispatches. On a stream that also has a consumer group, the reader skips entries older than `StreamMaxAge`.
-- **Reads poll, woken by publishes.** StackExchange.Redis never sends a blocking `XREADGROUP BLOCK` over its shared multiplexer, so each consumer polls at `MessagingOptions.ConsumerPollTimeout` (default 1 s; each poll is an `XREADGROUP` plus a group check per stream). A wake-up ends the wait early. Under steady traffic a loop reads at most once every 50 milliseconds, so a busy stream adds at most 20 reads a second per loop. Each publish costs one `PUBLISH`, which a Redis Cluster forwards to every node. Pub/sub delivers at most once, so a lost wake-up only delays an entry to the next poll. Wake-ups need `PUBLISH` and `SUBSCRIBE` on the `{stream}:wake` channels. Where an ACL denies them, set `WakeConsumersOnPublish` to `false`, or consumers log one warning and keep polling. Set the same value on every process.
+- **Reads poll, woken by publishes.** StackExchange.Redis never sends a blocking `XREADGROUP BLOCK` over its shared multiplexer, so each consumer polls at `MessagingOptions.ConsumerPollTimeout` (default 1 s; each poll is one `XREADGROUP`). A wake-up ends the wait early. Under steady traffic a loop reads at most once every 50 milliseconds, so a busy stream adds at most 20 reads a second per loop. Each publish costs one `PUBLISH`, which a Redis Cluster forwards to every node. Pub/sub delivers at most once, so a lost wake-up only delays an entry to the next poll. Wake-ups need `PUBLISH` and `SUBSCRIBE` on the `{stream}:wake` channels. Where an ACL denies them, set `WakeConsumersOnPublish` to `false`, or consumers log one warning and keep polling. Set the same value on every process.
 - **No broker delivery limit.** A `CustomHeadersBuilder` that keeps throwing leaves the entry pending and redelivered until `StreamMaxAge` trims it.
 - **Delivery deadline.** Redis Streams have no per-message TTL. A late message is dropped by the consumer's `DeliverWithin` check.
 
 ### Design and runtime behavior
 
-- **Consumer groups** are checked once per process and stream, not on every poll. A stream or group deleted while the host runs is re-created when the server answers `NOGROUP`. A connection or timeout failure while checking a group fails the read and counts toward [broker reachability](operations.md#broker-reachability). An error the server answered skips only that stream. When the server refuses the group of every subscribed stream (an ACL user without `XGROUP` rights, `LOADING`, `OOM`), the read fails and counts toward reachability.
+- **Consumer groups** belong to the deployment. A read never checks or creates one. A `NOGROUP` answer ends the read as described in [What the running host does](#names-and-topology). Any other failed group read, whether a connection or timeout failure or an error the server answered (an ACL user without `XREADGROUP` rights, `LOADING`, `OOM`), is retried and counts toward [broker reachability](operations.md#broker-reachability).
 - **Consumer names.** A process reads each group as `{group}:{machine name}:{slot}`. After a restart on the same machine, such as a StatefulSet pod, it scans the entries it left pending before reading new ones. If a pending entry remains unacknowledged, the scan advances past it and the regular claim loop handles recovery. A process whose machine name changes, such as a Deployment pod, leaves its pending entries to the claim after `PendingClaimMinIdleTime`. Two processes that share a machine name redeliver each other's pending entries at startup, and the inbox discards the duplicates.
 - **Idle-consumer sweep.** Every `PendingClaimMinIdleTime`, each client runs one Lua script per stream that deletes consumers idle longer than `IdleConsumerDeleteAfter` with no pending entries. The sweep needs `EVAL`. Where an ACL denies it, set `IdleConsumerDeleteAfter` to `TimeSpan.Zero`.
-- **Read loops.** A failed Redis call is retried with a back-off and counts toward [broker reachability](operations.md#broker-reachability); it never stops the subscription. A group subscription runs two reads: one claims stale pending entries and one reads new entries. When either read ends for any reason other than shutdown, the other stops too, and the consumer client stops listening with the read's exception. The subscription then reports unhealthy, the host logs EventId 37 with that exception (EventId 4146 when the read ended without one), and the transport check rebuilds it. An every-instance read that ends behaves the same way.
+- **Read loops.** A failed Redis call is retried with a back-off and counts toward [broker reachability](operations.md#broker-reachability); only a missing consumer group stops the subscription. A group subscription runs two reads: one claims stale pending entries and one reads new entries. When either read ends for any reason other than shutdown, the other stops too, and the consumer client stops listening with the read's exception. The subscription then reports unhealthy, the host logs EventId 37 with that exception (EventId 4146 when the read ended without one), and the transport check rebuilds it. An every-instance read that ends behaves the same way.
 - **Shutdown** stops the read loops, then waits within the shutdown budget for them and for in-flight handlers to settle. An entry read after shutdown began, and an entry a handler never settles, stay pending for the claim.
 - **Every-instance consumers** use a group-less polled read from the stream tail; see [Every-instance Bus delivery](consumers.md#every-instance-bus-delivery).
 - **Request/reply** uses pub/sub on the literal channel `headless.reply.{32 hex}`, writes no key, and needs the same StackExchange.Redis `ChannelPrefix` on every host that exchanges requests; see [Provider support](request-reply.md#provider-support).

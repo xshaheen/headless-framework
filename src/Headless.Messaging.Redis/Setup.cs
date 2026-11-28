@@ -26,6 +26,13 @@ namespace Headless.Messaging;
 /// </remarks>
 public static class SetupMessagingRedis
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the Redis Streams topology (the streams and their consumer
+    /// groups), which <c>resources provision -k</c> selects and a provisioner that needs the topology selects in its
+    /// <c>DependsOn</c>.
+    /// </summary>
+    public const string TopologyResourceKind = "RedisStreams";
+
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
@@ -141,6 +148,12 @@ public static class SetupMessagingRedis
             services.AddSingleton<IQueueTransport, RedisTransport>();
             services.AddSingleton<IReplyTransport, RedisReplyTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
+
+            // The consumer groups are the deployment's: resources provision creates them, and the transport only reads
+            // them.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ITransportTopologyProvisioner, RedisTopologyProvisioner>()
+            );
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<
                     IPostConfigureOptions<RedisMessagingOptions>,

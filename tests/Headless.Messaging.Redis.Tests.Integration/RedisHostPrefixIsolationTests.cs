@@ -130,7 +130,7 @@ public sealed class RedisHostPrefixIsolationTests(RedisMessagingFixture fixture)
                     : provider.GetRequiredService<IQueueTransport>();
             var consumer = await provider
                 .GetRequiredService<IConsumerClientFactory>()
-                .CreateAsync(new ConsumerClientRequest(group, 1, lane), AbortToken);
+                .CreateAsync(new ConsumerClientRequest(group, 1, lane) { ProvisionsTopology = true }, AbortToken);
             await consumer.SubscribeAsync(await consumer.FetchMessageNamesAsync([name], AbortToken), AbortToken);
             session = new TransportConsumerConformanceSession(
                 name,

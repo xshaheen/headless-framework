@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
@@ -40,11 +41,27 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_consumer_group_when_subscribing()
+    public async Task should_create_no_consumer_group_when_subscribing_to_the_deployed_topology()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
         await using var client = new RedisConsumerClient("my-group", 1, _mockStreamManager, _options, logger);
+
+        // when
+        await client.SubscribeAsync(["messageName-1", "messageName-2"], AbortToken);
+
+        // then - resources provision creates the groups; the host only reads them
+        await _mockStreamManager
+            .DidNotReceiveWithAnyArgs()
+            .CreateStreamWithConsumerGroupAsync(default!, default!, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_create_its_consumer_groups_when_subscribing_with_a_topology_of_its_own()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = _CreateProvisioningClient("my-group", logger);
 
         var messageNames = new[] { "messageName-1", "messageName-2" };
 
@@ -67,6 +84,103 @@ public sealed class RedisConsumerClientTests : TestBase
                 Arg.Any<CancellationToken>()
             );
     }
+
+    [Fact]
+    public async Task should_be_ready_once_the_first_group_read_reaches_the_server()
+    {
+        // given a pending read that fails once, then reaches the server
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsPendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(callInfo => _ReadsAfterOneFailure(callInfo.ArgAt<Action<Exception?>?>(4), firstRead, release));
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listen = client.ListeningAsync(TimeSpan.FromMilliseconds(10), listening.Token).AsTask();
+        await firstRead.Task.Bounded();
+        var readyBeforeSuccess = client.WaitUntilReadyAsync(AbortToken).AsTask();
+
+        // then - a failed read proves nothing about the group; the first one that reaches it does
+        readyBeforeSuccess.IsCompleted.Should().BeFalse();
+        release.TrySetResult();
+        await readyBeforeSuccess.Bounded();
+
+        await listening.CancelAsync();
+        await listen;
+    }
+
+    [Fact]
+    public async Task should_fail_readiness_naming_resources_provision_when_the_consumer_group_is_missing()
+    {
+        // given a deployment that never provisioned the group
+        var missing = new ResourceProvisioningException("Run 'resources provision'");
+        _SetupGroupReads();
+        _mockStreamManager
+            .PollStreamsPendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<Action<Exception?>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_FaultingReads(missing));
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks((_, _) => Task.CompletedTask, onLog: null);
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // when
+        var listen = () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), AbortToken).Bounded();
+        var ready = () => client.WaitUntilReadyAsync(AbortToken).AsTask().Bounded();
+
+        // then
+        await listen.Should().ThrowExactlyAsync<ResourceProvisioningException>();
+        (await ready.Should().ThrowExactlyAsync<ResourceProvisioningException>()).Which.Should().BeSameAs(missing);
+    }
+
+    private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _ReadsAfterOneFailure(
+        Action<Exception?>? onRead,
+        TaskCompletionSource firstRead,
+        TaskCompletionSource release
+    )
+    {
+        onRead?.Invoke(new RedisException("No connection is available"));
+        firstRead.TrySetResult();
+        yield return [];
+
+        await release.Task;
+        onRead?.Invoke(null);
+    }
+
+    private RedisConsumerClient _CreateProvisioningClient(
+        string subscriptionName,
+        ILogger<RedisConsumerClient> logger,
+        MessageLane lane = MessageLane.Queue
+    ) => new(subscriptionName, 1, _mockStreamManager, _options, logger, lane, provisionsTopology: true);
 
     [Fact]
     public async Task should_start_every_instance_reads_at_stream_tails_without_creating_a_consumer_group()
@@ -331,7 +445,7 @@ public sealed class RedisConsumerClientTests : TestBase
     public async Task should_propagate_exact_token_when_subscribing()
     {
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("my-group", 1, _mockStreamManager, _options, logger);
+        await using var client = _CreateProvisioningClient("my-group", logger);
         using var cts = new CancellationTokenSource();
 
         await client.SubscribeAsync(["orders"], cts.Token);
@@ -345,14 +459,7 @@ public sealed class RedisConsumerClientTests : TestBase
     public async Task should_lane_qualify_bus_streams()
     {
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient(
-            "billing",
-            1,
-            _mockStreamManager,
-            _options,
-            logger,
-            MessageLane.Bus
-        );
+        await using var client = _CreateProvisioningClient("billing", logger, MessageLane.Bus);
 
         await client.SubscribeAsync(["orders"], AbortToken);
 
