@@ -17,6 +17,31 @@ internal static class CashInTestData
     /// theory row draws a stable sequence: a failure reproduces on re-run, and tests that share the
     /// class fixture's WireMock server do not generate the same request bodies.
     /// </summary>
+    /// <summary>A complete callback transaction, the shape Paymob answers a refund or void with.</summary>
+    public const string CallbackTransactionJson = """
+        {
+          "id": 192,
+          "amount_cents": 1000,
+          "integration_id": 1111,
+          "currency": "EGP",
+          "created_at": "2021-08-02T15:45:26.988117",
+          "owner": 1188,
+          "error_occured": false,
+          "has_parent_transaction": true,
+          "order": { "id": 7, "amount_cents": 1000, "paid_amount_cents": 1000, "payment_method": "tbc" },
+          "source_data": { "pan": "1234", "type": "card", "sub_type": "MasterCard" },
+          "data": {},
+          "pending": false,
+          "success": true,
+          "is_auth": false,
+          "is_capture": false,
+          "is_voided": false,
+          "is_refunded": true,
+          "is_3d_secure": false,
+          "is_standalone_payment": true
+        }
+        """;
+
     public static Faker CreateFaker()
     {
         var testName = TestContext.Current.Test?.TestDisplayName ?? nameof(CashInTestData);

@@ -45,7 +45,8 @@ public sealed class SetupPaymobCashOutTests(PaymobCashOutFixture fixture)
         var result = await broker.DisburseAsync(request, AbortToken);
 
         // then
-        result.TransactionId.Should().Be("tx-di");
+        result.IsSucceeded.Should().BeTrue();
+        result.Value!.TransactionId.Should().Be("tx-di");
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public sealed class SetupPaymobCashOutTests(PaymobCashOutFixture fixture)
         var result = await broker.GetBudgetAsync(AbortToken);
 
         // then
-        result.CurrentBudget.Should().Be("Your current budget is 12.5 LE");
+        result.Value!.CurrentBudget.Should().Be("Your current budget is 12.5 LE");
     }
 
     [Fact]
@@ -104,13 +105,13 @@ public sealed class SetupPaymobCashOutTests(PaymobCashOutFixture fixture)
         var result = await broker.GetTransactionsAsync(["tx-1"], isBankTransactions: false, page: 2, AbortToken);
 
         // then
-        result.Count.Should().Be(0);
+        result.Value!.Count.Should().Be(0);
     }
 
     private ServiceProvider _BuildProvider()
     {
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
-        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(_Token);
+        authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns(PaymobCashOutResult.Succeeded(_Token));
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(

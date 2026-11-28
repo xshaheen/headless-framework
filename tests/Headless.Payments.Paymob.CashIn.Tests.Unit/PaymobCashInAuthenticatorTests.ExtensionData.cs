@@ -36,7 +36,7 @@ public sealed partial class PaymobCashInAuthenticatorTests : TestBase
         var result = await authenticator.RequestAuthenticationTokenAsync(AbortToken);
 
         // then
-        result.Token.Should().Be(token);
-        result.ExtensionData.Should().ContainKey("unknown_field");
+        result.Value!.Token.Should().Be(token);
+        result.Value.ExtensionData.Should().ContainKey("unknown_field");
     }
 }

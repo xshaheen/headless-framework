@@ -90,17 +90,19 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
 
         var result = await _CoreDisburseAsync(disburseRequest, cancellationToken).ConfigureAwait(false);
 
-        if (!result.Succeeded)
+        if (!result.IsSucceeded)
         {
-            return CashOutResult.Failure<KioskCashOutResponse>(result.Error, result.Response);
+            return _Forward<CashOutTransaction, KioskCashOutResponse>(result);
         }
 
         if (result.Data.AmanCashingDetails?.BillingReference is null)
         {
             logger.LogUnexpectedAcceptCashOutResponse(result.Data);
 
-            return CashOutResult.Failure<KioskCashOutResponse>(
-                PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
+            // Paymob accepted the payout, so the money is committed even though the recipient has no reference to
+            // collect it with. A second payout would pay twice; the caller must look the first one up instead.
+            return CashOutResult.Unknown<KioskCashOutResponse>(
+                PaymobMessageDescriptor.CashOut.OutcomeUnknown(),
                 result.Response
             );
         }
@@ -121,29 +123,36 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
         CancellationToken cancellationToken
     )
     {
-        CashOutTransaction result;
+        var result = await broker.DisburseAsync(request, cancellationToken).ConfigureAwait(false);
 
-        try
+        var json = result.Value is null
+            ? result.Error?.Body
+            : JsonSerializer.Serialize(result.Value, CashOutJsonOptions.JsonOptions);
+
+        if (result.IsSucceeded)
         {
-            result = await broker.DisburseAsync(request, cancellationToken).ConfigureAwait(false);
+            return CashOutResult.Success(result.Value, json!);
         }
-        catch (PaymobCashOutException e)
+
+        if (result.IsRejected)
         {
-            logger.LogFailedToStartCashOut(e, e.StatusCode);
-            return CashOutResult.Failure<CashOutTransaction>(
+            // A parsed rejection names its reason; a bare 4xx, or a request that was never sent, does not.
+            if (result.Value is not null)
+            {
+                return CashOutResult.Rejected<CashOutTransaction>(_GetError(result.Value), json);
+            }
+
+            logger.LogCashOutRejected(result.Error.Exception, result.Error.StatusCode, result.Error.Message);
+
+            return CashOutResult.Rejected<CashOutTransaction>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
-                response: null
+                json
             );
         }
 
-        var json = JsonSerializer.Serialize(result, CashOutJsonOptions.JsonOptions);
+        logger.LogCashOutOutcomeUnknown(result.Error.Exception, result.Error.StatusCode, result.Error.Message);
 
-        if (result.IsPending() || result.IsSuccess())
-        {
-            return CashOutResult.Success(result, json);
-        }
-
-        return CashOutResult.Failure<CashOutTransaction>(_GetError(result), json);
+        return CashOutResult.Unknown<CashOutTransaction>(PaymobMessageDescriptor.CashOut.OutcomeUnknown(), json);
     }
 
     private ErrorDescriptor _GetError(CashOutTransaction result)
@@ -216,15 +225,22 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
 
     private static CashOutResult<CashOutResponse> _ToCashOutCashOutResult(CashOutResult<CashOutTransaction> result)
     {
-        if (!result.Succeeded)
+        if (!result.IsSucceeded)
         {
-            return CashOutResult.Failure<CashOutResponse>(result.Error, result.Response);
+            return _Forward<CashOutTransaction, CashOutResponse>(result);
         }
 
         var status = result.Data.IsSuccess() ? CashOutResponseStatus.Success : CashOutResponseStatus.Pending;
         var response = new CashOutResponse(result.Data.TransactionId!, status);
 
         return CashOutResult.Success(response, result.Response);
+    }
+
+    private static CashOutResult<TOut> _Forward<TIn, TOut>(CashOutResult<TIn> result)
+    {
+        return result.IsRejected
+            ? CashOutResult.Rejected<TOut>(result.Error, result.Response)
+            : CashOutResult.Unknown<TOut>(result.Error!, result.Response);
     }
 
     #endregion
@@ -237,14 +253,13 @@ internal sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<
 /// <remarks>
 /// <para>
 /// Each overload builds the appropriate <c>CashOutDisburseRequest</c>, calls the broker's
-/// <c>DisburseAsync</c> method, and maps the raw response to a domain result. Transport errors are
-/// caught and returned as <c>CashOutResult.Failure</c> with a structured error descriptor rather
-/// than propagated as exceptions, so callers do not need try/catch for Paymob API failures.
+/// <c>DisburseAsync</c> method, and maps its outcome to a domain result. Paymob failures never throw.
 /// </para>
 /// <para>
-/// Inspect <c>CashOutResult.Succeeded</c> to determine the outcome. When false, <c>Error</c>
-/// carries a localised, code-tagged descriptor. When true, <c>Data</c> contains the transaction
-/// ID and status.
+/// Branch on <c>CashOutResult.Outcome</c>. <c>Succeeded</c> carries the transaction ID and status.
+/// <c>Rejected</c> means nothing was paid, and <c>Error</c> says why. <c>Unknown</c>
+/// (<c>cash_out:outcome_unknown</c>) means the payout may have gone through: resolve it with the payout
+/// callback or <c>IPaymobCashOutBroker.GetTransactionsAsync</c> before you disburse again, or you can pay twice.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -253,7 +268,7 @@ public interface ICashOutService
     /// <summary>Disburses funds to a Vodafone Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
+    /// <returns>A succeeded result with the transaction ID and status, or a rejected or unknown result with an error descriptor.</returns>
     Task<CashOutResult<CashOutResponse>> DisburseAsync(
         VodafoneCashOutRequest request,
         CancellationToken cancellationToken = default
@@ -262,7 +277,7 @@ public interface ICashOutService
     /// <summary>Disburses funds to an Etisalat Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
+    /// <returns>A succeeded result with the transaction ID and status, or a rejected or unknown result with an error descriptor.</returns>
     Task<CashOutResult<CashOutResponse>> DisburseAsync(
         EtisalatCashOutRequest request,
         CancellationToken cancellationToken = default
@@ -271,7 +286,7 @@ public interface ICashOutService
     /// <summary>Disburses funds to an Orange Money mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
+    /// <returns>A succeeded result with the transaction ID and status, or a rejected or unknown result with an error descriptor.</returns>
     Task<CashOutResult<CashOutResponse>> DisburseAsync(
         OrangeCashOutRequest request,
         CancellationToken cancellationToken = default
@@ -280,7 +295,7 @@ public interface ICashOutService
     /// <summary>Disburses funds to a bank-linked mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
+    /// <returns>A succeeded result with the transaction ID and status, or a rejected or unknown result with an error descriptor.</returns>
     Task<CashOutResult<CashOutResponse>> DisburseAsync(
         BankWalletCashOutRequest request,
         CancellationToken cancellationToken = default
@@ -289,7 +304,7 @@ public interface ICashOutService
     /// <summary>Disburses funds directly to a bank account or card.</summary>
     /// <param name="request">Recipient account number, bank code, transaction type, full name, and amount.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
+    /// <returns>A succeeded result with the transaction ID and status, or a rejected or unknown result with an error descriptor.</returns>
     Task<CashOutResult<CashOutResponse>> DisburseAsync(
         BankAccountCashOutRequest request,
         CancellationToken cancellationToken = default
@@ -321,18 +336,19 @@ internal static partial class PaymobCashOutLoggerExtensions
     )]
     internal static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
 
-    // Logs the provider HTTP status (non-PII) instead of the raw response body, which may carry recipient
-    // PII / provider internal detail. The exception still carries the full message and stack.
+    // Logs the provider HTTP status and the result summary (both free of PII) instead of the raw response body,
+    // which may carry recipient PII or provider internal detail.
     [LoggerMessage(
         EventId = 2,
-        EventName = "FailedToStartCashOut",
-        Level = LogLevel.Critical,
-        Message = "Failed to start cash out. Provider responded with status {StatusCode}"
+        EventName = "CashOutRejected",
+        Level = LogLevel.Error,
+        Message = "Cash out rejected. Provider responded with status {StatusCode}: {Reason}"
     )]
-    internal static partial void LogFailedToStartCashOut(
+    internal static partial void LogCashOutRejected(
         this ILogger logger,
-        Exception exception,
-        HttpStatusCode statusCode
+        Exception? exception,
+        HttpStatusCode? statusCode,
+        string reason
     );
 
     [LoggerMessage(
@@ -342,4 +358,17 @@ internal static partial class PaymobCashOutLoggerExtensions
         Message = "Cash out budget exceeded {Response}"
     )]
     internal static partial void LogCashOutBudgetExceeded(this ILogger logger, CashOutTransaction response);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "CashOutOutcomeUnknown",
+        Level = LogLevel.Critical,
+        Message = "Cash out outcome unknown; the payout may have applied. Provider status {StatusCode}: {Reason}"
+    )]
+    internal static partial void LogCashOutOutcomeUnknown(
+        this ILogger logger,
+        Exception? exception,
+        HttpStatusCode? statusCode,
+        string reason
+    );
 }

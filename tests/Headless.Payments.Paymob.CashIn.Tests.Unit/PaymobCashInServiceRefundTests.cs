@@ -20,7 +20,7 @@ public sealed class PaymobCashInServiceRefundTests : TestBase
                 Arg.Do<CashInRefundRequest>(r => _refundedCents.Add(r.AmountCents)),
                 Arg.Any<CancellationToken>()
             )
-            .Returns((CashInCallbackTransaction?)null);
+            .Returns(PaymobCashInResult.Unknown<CashInCallbackTransaction>(new PaymobCashInResultError("no response")));
     }
 
     [Fact]

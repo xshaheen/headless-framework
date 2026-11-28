@@ -15,9 +15,15 @@ namespace Headless.Payments.Paymob.CashOut;
 /// </summary>
 /// <remarks>
 /// <para>
-/// All methods authenticate automatically using <c>IPaymobCashOutAuthenticator.GetAccessTokenAsync</c>.
-/// Errors from the API throw <c>PaymobCashOutException</c>, which carries the HTTP status code and
-/// raw response body.
+/// Every operation returns a <c>PaymobCashOutResult</c> instead of throwing for what Paymob did:
+/// <c>Succeeded</c>, <c>Rejected</c> (a 4xx, a failed disbursement, or a failed authentication, so
+/// nothing was applied), or <c>Unknown</c> (a 5xx, an unreadable body, a timeout, a transport fault,
+/// or your cancellation after the request was sent). Only invalid arguments throw.
+/// </para>
+/// <para>
+/// Paymob takes no idempotency key on <c>/disburse</c>, and this broker never retries a POST. After an
+/// <c>Unknown</c> payout, wait for the payout callback or call <c>GetTransactionsAsync</c> before you send
+/// the payout again; sending it blind can pay the recipient twice.
 /// </para>
 /// <para>
 /// Use the static factory methods on <c>CashOutDisburseRequest</c> (e.g., <c>CashOutDisburseRequest.Vodafone</c>,
@@ -40,13 +46,18 @@ public interface IPaymobCashOutBroker
     /// The disburse request built with one of the <c>CashOutDisburseRequest</c> factory methods:
     /// <c>Vodafone</c>, <c>Etisalat</c>, <c>Orange</c>, <c>BankWallet</c>, <c>BankCard</c>, or <c>Accept</c>.
     /// </param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <param name="cancellationToken">
+    /// Token to cancel the operation. Cancelling after the request was sent returns <c>Unknown</c>, not an exception.
+    /// </param>
     /// <returns>
-    /// The transaction result from Paymob. Check <c>CashOutTransaction.IsSuccess</c>,
-    /// <c>IsPending</c>, and <c>IsFailed</c> to determine the disbursement outcome.
+    /// <c>Succeeded</c> when Paymob reports the payout successful or pending (check <c>CashOutTransaction.IsPending</c>);
+    /// <c>Rejected</c> when Paymob answered 4xx or reported <c>disbursement_status</c> <c>failed</c> (the transaction is
+    /// in <c>Value</c>); <c>Unknown</c> otherwise. Resolve <c>Unknown</c> by callback or <c>GetTransactionsAsync</c>
+    /// before you send the payout again.
     /// </returns>
-    /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    Task<CashOutTransaction> DisburseAsync(
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the request was sent.</exception>
+    Task<PaymobCashOutResult<CashOutTransaction>> DisburseAsync(
         CashOutDisburseRequest request,
         CancellationToken cancellationToken = default
     );
@@ -56,12 +67,13 @@ public interface IPaymobCashOutBroker
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The parsed budget response. Paymob reports the balance as a human-readable sentence in
+    /// The budget response on <c>Succeeded</c>. Paymob reports the balance as a human-readable sentence in
     /// <c>CashOutBudgetResponse.CurrentBudget</c> (for example, <c>"Your current budget is 888.25 LE"</c>).
+    /// A read moves no money, so it is safe to call again after <c>Rejected</c> or <c>Unknown</c>.
     /// </returns>
     /// <remarks>Paymob rate-limits this endpoint to 5 requests per minute.</remarks>
-    /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
-    Task<CashOutBudgetResponse> GetBudgetAsync(CancellationToken cancellationToken = default);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the request was sent.</exception>
+    Task<PaymobCashOutResult<CashOutBudgetResponse>> GetBudgetAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the status of one or more disbursement transactions by their Paymob transaction IDs.
@@ -74,14 +86,14 @@ public interface IPaymobCashOutBroker
     /// <param name="page">The 1-based page number for paginated results. Must be positive.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// A paginated page of matching transactions, including the total <c>Count</c> and next/previous
-    /// cursor URLs.
+    /// A paginated page of matching transactions on <c>Succeeded</c>, including the total <c>Count</c> and
+    /// next/previous cursor URLs. A read moves no money, so it is safe to call again after <c>Rejected</c> or <c>Unknown</c>.
     /// </returns>
     /// <remarks>Paymob rate-limits this endpoint to 5 requests per minute.</remarks>
-    /// <exception cref="PaymobCashOutException">The HTTP request to Paymob failed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="transactionsIds"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="page"/> is not positive.</exception>
-    Task<CashOutGetTransactionsResponse> GetTransactionsAsync(
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the request was sent.</exception>
+    Task<PaymobCashOutResult<CashOutGetTransactionsResponse>> GetTransactionsAsync(
         IReadOnlyList<string> transactionsIds,
         bool isBankTransactions,
         int page = 1,
@@ -97,64 +109,59 @@ internal sealed class PaymobCashOutBroker(
 {
     private PaymobCashOutOptions Options => options.CurrentValue;
 
-    public async Task<CashOutTransaction> DisburseAsync(
+    public async Task<PaymobCashOutResult<CashOutTransaction>> DisburseAsync(
         CashOutDisburseRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+
         var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var requestUrl = Url.Combine(Options.ApiBaseUrl, "disburse");
+
+        if (!accessToken.IsSucceeded)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return PaymobCashOutHttp.NotSent<CashOutTransaction>(accessToken.Error);
+        }
 
         using var requestMessage = new HttpRequestMessage();
 
         requestMessage.Method = HttpMethod.Post;
-        requestMessage.RequestUri = new Uri(requestUrl, UriKind.Absolute);
+        requestMessage.RequestUri = new Uri(Url.Combine(Options.ApiBaseUrl, "disburse"), UriKind.Absolute);
         requestMessage.Content = JsonContent.Create(request, options: CashOutJsonOptions.JsonOptions);
-        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
 
-        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        return (
-            await response
-                .Content.ReadFromJsonAsync<CashOutTransaction>(CashOutJsonOptions.JsonOptions, cancellationToken)
-                .ConfigureAwait(false)
-        )!;
+        return await PaymobCashOutHttp
+            .SendAsync<CashOutTransaction>(httpClient, requestMessage, _ClassifyDisbursement, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    /// <summary>Get the budget of the Paymob CashOut account.</summary>
-    /// <remarks>API limit is 5 requests per minute.</remarks>
-    public async Task<CashOutBudgetResponse> GetBudgetAsync(CancellationToken cancellationToken = default)
+    public async Task<PaymobCashOutResult<CashOutBudgetResponse>> GetBudgetAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!accessToken.IsSucceeded)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return PaymobCashOutHttp.NotSent<CashOutBudgetResponse>(accessToken.Error);
+        }
 
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
         request.RequestUri = new Uri(Url.Combine(Options.ApiBaseUrl, "budget/inquire/"), UriKind.Absolute);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
-        }
-
-        return (
-            await response
-                .Content.ReadFromJsonAsync<CashOutBudgetResponse>(CashOutJsonOptions.JsonOptions, cancellationToken)
-                .ConfigureAwait(false)
-        )!;
+        return await PaymobCashOutHttp
+            .SendAsync<CashOutBudgetResponse>(httpClient, request, classify: null, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    /// <summary>Get transactions by their Ids.</summary>
-    /// <remarks>API limit is 5 requests per minute.</remarks>
-    public async Task<CashOutGetTransactionsResponse> GetTransactionsAsync(
+    public async Task<PaymobCashOutResult<CashOutGetTransactionsResponse>> GetTransactionsAsync(
         IReadOnlyList<string> transactionsIds,
         bool isBankTransactions,
         int page = 1,
@@ -166,13 +173,20 @@ internal sealed class PaymobCashOutBroker(
 
         var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
+        if (!accessToken.IsSucceeded)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return PaymobCashOutHttp.NotSent<CashOutGetTransactionsResponse>(accessToken.Error);
+        }
+
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
         request.RequestUri = Url.Combine(Options.ApiBaseUrl, "transaction/inquire/")
             .SetQueryParam("page", page.ToString(CultureInfo.InvariantCulture))
             .ToUri();
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
 
         request.Content = JsonContent.Create(
             new CashOutGetTransactionsRequest
@@ -183,20 +197,20 @@ internal sealed class PaymobCashOutBroker(
             options: CashOutJsonOptions.JsonOptions
         );
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await PaymobCashOutHttp
+            .SendAsync<CashOutGetTransactionsResponse>(httpClient, request, classify: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
-        if (!response.IsSuccessStatusCode)
+    // Paymob answers a refused payout with 200 and disbursement_status "failed", so the body, not the status
+    // code, decides. A status this client does not know may still have paid, so it stays unknown.
+    private static PaymobCashOutOutcome _ClassifyDisbursement(CashOutTransaction transaction)
+    {
+        if (transaction.IsSuccess() || transaction.IsPending())
         {
-            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
+            return PaymobCashOutOutcome.Succeeded;
         }
 
-        return (
-            await response
-                .Content.ReadFromJsonAsync<CashOutGetTransactionsResponse>(
-                    CashOutJsonOptions.JsonOptions,
-                    cancellationToken
-                )
-                .ConfigureAwait(false)
-        )!;
+        return transaction.IsFailed() ? PaymobCashOutOutcome.Rejected : PaymobCashOutOutcome.Unknown;
     }
 }

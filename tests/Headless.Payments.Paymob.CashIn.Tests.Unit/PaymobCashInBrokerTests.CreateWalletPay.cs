@@ -34,6 +34,6 @@ public sealed partial class PaymobCashInBrokerTests
         var result = await broker.CreateWalletPayAsync(requestPaymentKey, requestPhoneNumber, AbortToken);
 
         // then
-        JsonSerializer.Serialize(result).Should().Be(responseJson);
+        JsonSerializer.Serialize(result.Value).Should().Be(responseJson);
     }
 }

@@ -22,6 +22,12 @@ namespace Headless.Payments.Paymob.CashIn;
 ///
 /// The newer Intention API (<c>CreateIntentionAsync</c>) condenses steps 2-4 into a single call
 /// using a secret key rather than the API-key auth flow.
+/// <para>
+/// Every call returns a <see cref="PaymobCashInResult{T}"/> instead of throwing for what Paymob did. A
+/// <see cref="PaymobCashInOutcome.Unknown"/> outcome on a charge, refund, or void means the money may have
+/// moved. Never send that request again until the callback, <c>GetOrderAsync</c>, or
+/// <c>GetTransactionAsync</c> shows that it did not apply. The client never retries a POST on its own.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IPaymobCashInBroker
@@ -33,11 +39,15 @@ public interface IPaymobCashInBroker
     /// <param name="request">The intention request, including amount, currency, billing data, and integration identifiers.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The intention response containing the client secret and per-integration payment keys, or
-    /// <see langword="null"/> when the response body is empty.
+    /// A succeeded result with the client secret and per-integration payment keys. An unknown result means
+    /// the intention may exist: create a new one only for a new checkout, never to retry this one blindly.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInCreateIntentionResponse?> CreateIntentionAsync(
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInCreateIntentionResponse>> CreateIntentionAsync(
         CashInCreateIntentionRequest request,
         CancellationToken cancellationToken = default
     );
@@ -48,10 +58,17 @@ public interface IPaymobCashInBroker
     /// <param name="request">The refund request containing the transaction ID and amount in cents.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The resulting refund transaction, or <see langword="null"/> when the response body is empty.
+    /// A succeeded result with the refund transaction when Paymob accepted it, a rejected result when Paymob
+    /// declined it or answered 4xx, or an unknown result after a 5xx, a timeout, or a lost response. Resolve an
+    /// unknown refund with the callback or <c>GetTransactionAsync</c> before you send it again: a resent refund can
+    /// return the money twice.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInCallbackTransaction?> RefundTransactionAsync(
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInCallbackTransaction>> RefundTransactionAsync(
         CashInRefundRequest request,
         CancellationToken cancellationToken = default
     );
@@ -62,10 +79,16 @@ public interface IPaymobCashInBroker
     /// <param name="request">The void request containing the transaction ID.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The resulting void transaction, or <see langword="null"/> when the response body is empty.
+    /// A succeeded result with the void transaction when Paymob accepted it, a rejected result when Paymob
+    /// declined it or answered 4xx, or an unknown result after a 5xx, a timeout, or a lost response. Resolve an
+    /// unknown void with the callback or <c>GetTransactionAsync</c> before you send it again.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInCallbackTransaction?> VoidTransactionAsync(
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInCallbackTransaction>> VoidTransactionAsync(
         CashInVoidRefundRequest request,
         CancellationToken cancellationToken = default
     );
@@ -79,9 +102,16 @@ public interface IPaymobCashInBroker
     /// <c>CashInCreateOrderRequest.CreateDeliveryOrder</c> when Accept's delivery service is required.
     /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The created order including its server-assigned numeric ID.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInCreateOrderResponse> CreateOrderAsync(
+    /// <returns>
+    /// A succeeded result with the order and its server-assigned numeric ID. An unknown result means the order
+    /// may exist; find it with <c>GetOrdersPageAsync</c> by your merchant order ID before you create another.
+    /// </returns>
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInCreateOrderResponse>> CreateOrderAsync(
         CashInCreateOrderRequest request,
         CancellationToken cancellationToken = default
     );
@@ -95,9 +125,16 @@ public interface IPaymobCashInBroker
     /// and expiration period in seconds.
     /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The response containing the payment key string.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInPaymentKeyResponse> RequestPaymentKeyAsync(
+    /// <returns>
+    /// A succeeded result with the payment key. A payment key moves no money, so after an unknown result you
+    /// may request a new one.
+    /// </returns>
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInPaymentKeyResponse>> RequestPaymentKeyAsync(
         CashInPaymentKeyRequest request,
         CancellationToken cancellationToken = default
     );
@@ -109,11 +146,17 @@ public interface IPaymobCashInBroker
     /// <param name="phoneNumber">The customer's wallet-registered phone number.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The wallet pay response, which includes a <c>RedirectUrl</c> the customer must follow to
-    /// enter their OTP and a flag indicating whether initiation succeeded.
+    /// A succeeded result when Paymob accepted or is holding the payment (its <c>RedirectUrl</c> takes the
+    /// customer to the OTP page), a rejected result when Paymob declined it or answered 4xx, or an unknown
+    /// result after a 5xx, a timeout, or a lost response. Resolve an unknown payment with the callback or
+    /// <c>GetOrderAsync</c> before you charge again.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInWalletPayResponse> CreateWalletPayAsync(
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInWalletPayResponse>> CreateWalletPayAsync(
         string paymentKey,
         string phoneNumber,
         CancellationToken cancellationToken = default
@@ -125,18 +168,37 @@ public interface IPaymobCashInBroker
     /// </summary>
     /// <param name="paymentKey">The payment key obtained from <c>RequestPaymentKeyAsync</c>.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The kiosk pay response containing the bill reference in <c>Data.BillReference</c>.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInKioskPayResponse> CreateKioskPayAsync(string paymentKey, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// A succeeded result with the bill reference in <c>Data.BillReference</c>, a rejected result when Paymob
+    /// declined it or answered 4xx, or an unknown result after a 5xx, a timeout, or a lost response. Resolve an
+    /// unknown payment with the callback or <c>GetOrderAsync</c> before you issue another bill.
+    /// </returns>
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInKioskPayResponse>> CreateKioskPayAsync(
+        string paymentKey,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Initiates a cash-collection payment, dispatching a courier to collect cash from the customer.
     /// </summary>
     /// <param name="paymentKey">The payment key obtained from <c>RequestPaymentKeyAsync</c>.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The cash-collection pay response.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInCashCollectionPayResponse> CreateCashCollectionPayAsync(
+    /// <returns>
+    /// A succeeded result when Paymob accepted or is holding the collection, a rejected result when Paymob
+    /// declined it or answered 4xx, or an unknown result after a 5xx, a timeout, or a lost response. Resolve an
+    /// unknown collection with the callback or <c>GetOrderAsync</c> before you request another courier.
+    /// </returns>
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInCashCollectionPayResponse>> CreateCashCollectionPayAsync(
         string paymentKey,
         CancellationToken cancellationToken = default
     );
@@ -148,11 +210,17 @@ public interface IPaymobCashInBroker
     /// <param name="savedToken">The saved card token issued by Paymob during the original card payment.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// The saved-token pay response. Check <c>ErrorOccured</c> and <c>IsSuccess</c> to determine the
-    /// outcome; a 3-D Secure redirect URL is present in <c>RedirectionUrl</c> when <c>Is3dSecure</c> is true.
+    /// A succeeded result when Paymob charged the card or is holding the charge for 3-D Secure (the redirect
+    /// URL is in <c>RedirectionUrl</c>), a rejected result when Paymob declined the card or answered 4xx, or an
+    /// unknown result after a 5xx, a timeout, or a lost response. Resolve an unknown charge with the callback or
+    /// <c>GetOrderAsync</c> before you charge again: a resent charge can take the money twice.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInSavedTokenPayResponse> CreateSavedTokenPayAsync(
+    /// <exception cref="ArgumentException">A required argument is <see langword="null"/> or empty.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// The token was canceled before the request was sent. Cancellation after the send returns
+    /// <see cref="PaymobCashInOutcome.Unknown"/>.
+    /// </exception>
+    Task<PaymobCashInResult<CashInSavedTokenPayResponse>> CreateSavedTokenPayAsync(
         string paymentKey,
         string savedToken,
         CancellationToken cancellationToken = default
@@ -164,11 +232,11 @@ public interface IPaymobCashInBroker
     /// <param name="request">Optional pagination and filter parameters. Pass <see langword="null"/> for the first page with default settings.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// A page of transactions including next/previous cursor URLs, or <see langword="null"/> when the
-    /// response body is empty.
+    /// A succeeded result with a page of transactions and its next and previous cursor URLs. A failed read
+    /// changes nothing, so you may retry it.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInTransactionsPage?> GetTransactionsPageAsync(
+    /// <exception cref="OperationCanceledException">The token was canceled before the request was sent.</exception>
+    Task<PaymobCashInResult<CashInTransactionsPage>> GetTransactionsPageAsync(
         CashInTransactionsPageRequest? request = null,
         CancellationToken cancellationToken = default
     );
@@ -178,18 +246,27 @@ public interface IPaymobCashInBroker
     /// </summary>
     /// <param name="transactionId">The Paymob transaction ID.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The transaction, or <see langword="null"/> when not found or the response body is empty.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInTransaction?> GetTransactionAsync(string transactionId, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// A succeeded result with the transaction, or a rejected result with status 404 when Paymob has no such
+    /// transaction. A failed read changes nothing, so you may retry it.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">The token was canceled before the request was sent.</exception>
+    Task<PaymobCashInResult<CashInTransaction>> GetTransactionAsync(
+        string transactionId,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Retrieves a single order by its Paymob-assigned numeric ID.
     /// </summary>
     /// <param name="orderId">The Paymob order ID.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
-    /// <returns>The order, or <see langword="null"/> when not found or the response body is empty.</returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInOrder?> GetOrderAsync(string orderId, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// A succeeded result with the order, or a rejected result with status 404 when Paymob has no such order.
+    /// A failed read changes nothing, so you may retry it.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">The token was canceled before the request was sent.</exception>
+    Task<PaymobCashInResult<CashInOrder>> GetOrderAsync(string orderId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves a paginated list of orders.
@@ -197,10 +274,10 @@ public interface IPaymobCashInBroker
     /// <param name="request">Optional pagination parameters. Pass <see langword="null"/> for the first page with default settings.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// A page of orders, or <see langword="null"/> when the response body is empty.
+    /// A succeeded result with a page of orders. A failed read changes nothing, so you may retry it.
     /// </returns>
-    /// <exception cref="PaymobCashInException">The HTTP request to Paymob failed.</exception>
-    Task<CashInOrdersPage?> GetOrdersPageAsync(
+    /// <exception cref="OperationCanceledException">The token was canceled before the request was sent.</exception>
+    Task<PaymobCashInResult<CashInOrdersPage>> GetOrdersPageAsync(
         CashInOrdersPageRequest? request = null,
         CancellationToken cancellationToken = default
     );

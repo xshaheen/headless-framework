@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Urls;
 
 namespace Headless.Payments.Paymob.CashIn;
 
 internal partial class PaymobCashInBroker
 {
-    public async Task<CashInTransactionsPage?> GetTransactionsPageAsync(
+    public async Task<PaymobCashInResult<CashInTransactionsPage>> GetTransactionsPageAsync(
         CashInTransactionsPageRequest? request = null,
         CancellationToken cancellationToken = default
     )
@@ -22,11 +23,13 @@ internal partial class PaymobCashInBroker
             .ConfigureAwait(false);
     }
 
-    public async Task<CashInTransaction?> GetTransactionAsync(
+    public async Task<PaymobCashInResult<CashInTransaction>> GetTransactionAsync(
         string transactionId,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(transactionId);
+
         var requestUrl = Url.Combine(Options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
 
         return await _GetWithBearerAuthAsync<CashInTransaction>(requestUrl, cancellationToken).ConfigureAwait(false);

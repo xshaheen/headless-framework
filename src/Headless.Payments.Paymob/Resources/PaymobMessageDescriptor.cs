@@ -50,6 +50,16 @@ public static class PaymobMessageDescriptor
         {
             return new("cash_in:provider_connection_failed", CashInMessages.CashInProviderConnectionFailed);
         }
+
+        public static ErrorDescriptor Declined()
+        {
+            return new("cash_in:declined", CashInMessages.CashInDeclined);
+        }
+
+        public static ErrorDescriptor OutcomeUnknown()
+        {
+            return new("cash_in:outcome_unknown", CashInMessages.CashInOutcomeUnknown);
+        }
     }
 
     public static class CashOut
@@ -72,6 +82,11 @@ public static class PaymobMessageDescriptor
         public static ErrorDescriptor InvalidRequest()
         {
             return new("cash_out:invalid_request", CashInMessages.CashOutInvalidRequest);
+        }
+
+        public static ErrorDescriptor OutcomeUnknown()
+        {
+            return new("cash_out:outcome_unknown", CashInMessages.CashOutOutcomeUnknown);
         }
     }
 }

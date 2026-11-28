@@ -43,10 +43,10 @@ public sealed partial class PaymobCashInBrokerTests : TestBase
         var result = await broker.GetTransactionAsync(transactionId, AbortToken);
 
         // then
-        result.Should().NotBeNull();
-        result.Id.Should().Be(192);
-        result.ExtensionData.Should().NotBeNull().And.ContainKey("new_paymob_field");
-        result.Order.Should().NotBeNull();
-        result.Order.ExtensionData.Should().ContainKey("new_order_field");
+        result.IsSucceeded.Should().BeTrue();
+        result.Value!.Id.Should().Be(192);
+        result.Value.ExtensionData.Should().NotBeNull().And.ContainKey("new_paymob_field");
+        result.Value.Order.Should().NotBeNull();
+        result.Value.Order.ExtensionData.Should().ContainKey("new_order_field");
     }
 }

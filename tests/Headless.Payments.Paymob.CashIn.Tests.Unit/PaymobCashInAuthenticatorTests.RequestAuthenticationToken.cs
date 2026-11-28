@@ -34,11 +34,11 @@ public sealed partial class PaymobCashInAuthenticatorTests
         var result = await authenticator.RequestAuthenticationTokenAsync(AbortToken);
 
         // then
-        JsonSerializer.Serialize(result).Should().BeEquivalentTo(expectedResponseJson);
+        JsonSerializer.Serialize(result.Value).Should().BeEquivalentTo(expectedResponseJson);
     }
 
     [Fact]
-    public async Task should_throw_http_request_exception_when_not_success()
+    public async Task should_return_unknown_and_cache_nothing_when_token_request_answers_5xx()
     {
         // given
         var apiKey = CashInTestData.Text(Faker);
@@ -59,12 +59,16 @@ public sealed partial class PaymobCashInAuthenticatorTests
             fixture.OptionsAccessor
         );
 
-        var invocation = FluentActions.Awaiting(() => authenticator.RequestAuthenticationTokenAsync(AbortToken));
+        var result = await authenticator.RequestAuthenticationTokenAsync(AbortToken);
+        var cached = await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // then
-        var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();
-        assertions.Which.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        assertions.Which.Message.Should().Be("Paymob Cash In - Http request failed with status code (500).");
-        assertions.Which.Body.Should().Be(body);
+        result.IsUnknown.Should().BeTrue();
+        result.Error!.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        result
+            .Error.Message.Should()
+            .Be("Paymob Cash In - Paymob answered with status code (500); the request may have been applied.");
+        result.Error.Body.Should().Be(body);
+        cached.IsSucceeded.Should().BeFalse("a failed token request caches nothing");
     }
 }

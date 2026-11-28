@@ -29,6 +29,6 @@ public sealed partial class PaymobCashInBrokerTests
         var result = await broker.CreateKioskPayAsync(requestPaymentKey, AbortToken);
 
         // then
-        JsonSerializer.Serialize(result).Should().Be(responseJson);
+        JsonSerializer.Serialize(result.Value).Should().Be(responseJson);
     }
 }

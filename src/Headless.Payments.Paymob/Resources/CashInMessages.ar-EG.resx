@@ -44,4 +44,13 @@
   <data name="CashOutProviderIsDown" xml:space="preserve">
     <value>خادم مزود الدفع مش متاح دلوقتي. جرّب تاني بعد شوية.</value>
   </data>
+  <data name="CashInDeclined" xml:space="preserve">
+    <value>شركة الدفع رفضت الطلب.</value>
+  </data>
+  <data name="CashInOutcomeUnknown" xml:space="preserve">
+    <value>شركة الدفع مأكدتش نتيجة العملية. اتأكد من حالة الدفع قبل ما تجرّب تاني.</value>
+  </data>
+  <data name="CashOutOutcomeUnknown" xml:space="preserve">
+    <value>شركة الدفع مأكدتش نتيجة التحويل. اتأكد من حالة التحويل قبل ما تجرّب تاني.</value>
+  </data>
 </root>

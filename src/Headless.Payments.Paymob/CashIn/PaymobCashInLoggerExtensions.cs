@@ -1,45 +1,54 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Payments.Paymob.CashIn;
 
+// Logs the outcome and the provider HTTP status, never the request or the response body, which carry customer
+// data.
 internal static partial class PaymobCashInLoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "FailedToCreateWalletCashIn",
+        EventName = "WalletCashInNotStarted",
         Level = LogLevel.Error,
-        Message = "Failed to create wallet cash-in: {Request}"
+        Message = "Wallet cash-in for order {OrderId} was {Outcome}. Provider status {StatusCode}"
     )]
-    internal static partial void LogFailedToCreateWalletCashIn(
+    internal static partial void LogWalletCashInNotStarted(
         this ILogger logger,
-        Exception exception,
-        PaymobWalletCashInRequest request
+        Exception? exception,
+        PaymobCashInOutcome outcome,
+        HttpStatusCode? statusCode,
+        long orderId
     );
 
     [LoggerMessage(
         EventId = 2,
-        EventName = "FailedToCreateKioskCashIn",
+        EventName = "KioskCashInNotStarted",
         Level = LogLevel.Error,
-        Message = "Failed to create kiosk cash-in: {Request}"
+        Message = "Kiosk cash-in for order {OrderId} was {Outcome}. Provider status {StatusCode}"
     )]
-    internal static partial void LogFailedToCreateKioskCashIn(
+    internal static partial void LogKioskCashInNotStarted(
         this ILogger logger,
-        Exception exception,
-        PaymobKioskCashInRequest request
+        Exception? exception,
+        PaymobCashInOutcome outcome,
+        HttpStatusCode? statusCode,
+        long orderId
     );
 
     [LoggerMessage(
         EventId = 3,
-        EventName = "FailedToCreateSavedTokenCashIn",
+        EventName = "SavedTokenCashInNotStarted",
         Level = LogLevel.Error,
-        Message = "Failed to create saved token cash-in: {Request}"
+        Message = "Saved token cash-in for order {OrderId} was {Outcome}. Provider status {StatusCode}"
     )]
-    internal static partial void LogFailedToCreateSavedTokenCashIn(
+    internal static partial void LogSavedTokenCashInNotStarted(
         this ILogger logger,
-        Exception exception,
-        PaymobCardSavedTokenCashInRequest request
+        Exception? exception,
+        PaymobCashInOutcome outcome,
+        HttpStatusCode? statusCode,
+        long orderId
     );
 
     [LoggerMessage(
@@ -54,11 +63,13 @@ internal static partial class PaymobCashInLoggerExtensions
         EventId = 5,
         EventName = "CannotCreatePaymentKey",
         Level = LogLevel.Error,
-        Message = "Cannot create payment key for order {OrderId}, integration {IntegrationId}, amount {AmountCents}"
+        Message = "Cannot create payment key for order {OrderId}, integration {IntegrationId}, amount {AmountCents}: {Outcome}, provider status {StatusCode}"
     )]
     internal static partial void LogCannotCreatePaymentKey(
         this ILogger logger,
-        Exception exception,
+        Exception? exception,
+        PaymobCashInOutcome outcome,
+        HttpStatusCode? statusCode,
         long orderId,
         long integrationId,
         long amountCents
@@ -68,7 +79,21 @@ internal static partial class PaymobCashInLoggerExtensions
         EventId = 6,
         EventName = "CannotCreateOrder",
         Level = LogLevel.Error,
-        Message = "Cannot create order, amount cents: {AmountCents}"
+        Message = "Cannot create order, amount cents {AmountCents}: {Outcome}, provider status {StatusCode}"
     )]
-    internal static partial void LogCannotCreateOrder(this ILogger logger, Exception exception, long amountCents);
+    internal static partial void LogCannotCreateOrder(
+        this ILogger logger,
+        Exception? exception,
+        PaymobCashInOutcome outcome,
+        HttpStatusCode? statusCode,
+        long amountCents
+    );
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "UnusableCashInPayResponse",
+        Level = LogLevel.Critical,
+        Message = "Paymob accepted the payment for order {OrderId} but returned no way to finish it; the outcome is unknown"
+    )]
+    internal static partial void LogUnusableCashInPayResponse(this ILogger logger, long orderId);
 }

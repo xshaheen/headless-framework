@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Urls;
 
 namespace Headless.Payments.Paymob.CashIn;
 
 internal partial class PaymobCashInBroker
 {
-    public async Task<CashInOrdersPage?> GetOrdersPageAsync(
+    public async Task<PaymobCashInResult<CashInOrdersPage>> GetOrdersPageAsync(
         CashInOrdersPageRequest? request = null,
         CancellationToken cancellationToken = default
     )
@@ -21,8 +22,13 @@ internal partial class PaymobCashInBroker
         return await _GetWithBearerAuthAsync<CashInOrdersPage>(requestUrl, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<CashInOrder?> GetOrderAsync(string orderId, CancellationToken cancellationToken = default)
+    public async Task<PaymobCashInResult<CashInOrder>> GetOrderAsync(
+        string orderId,
+        CancellationToken cancellationToken = default
+    )
     {
+        Argument.IsNotNullOrEmpty(orderId);
+
         var requestUrl = Url.Combine(Options.ApiBaseUrl, "ecommerce/orders", orderId);
 
         return await _GetWithBearerAuthAsync<CashInOrder>(requestUrl, cancellationToken).ConfigureAwait(false);
