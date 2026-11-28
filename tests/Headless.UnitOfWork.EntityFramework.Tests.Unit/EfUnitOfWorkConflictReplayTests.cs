@@ -419,7 +419,7 @@ public sealed class EfUnitOfWorkConflictReplayTests : TestBase
     }
 
     [Fact]
-    public async Task should_replay_and_save_both_attempts_rows_when_a_sibling_context_tracked_them_before_it_joined()
+    public async Task should_replay_and_save_both_attempts_rows_when_a_plain_sibling_context_tracked_them_before_it_joined()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         var id = await _SeedCounterAsync(host, counter: 5);
@@ -433,8 +433,8 @@ public sealed class EfUnitOfWorkConflictReplayTests : TestBase
             {
                 blockRuns++;
 
-                // Tracked before the sibling's first lookup of the unit: the unit learns of a second context only
-                // when that context joins it, so nothing tells the replay decision about this row.
+                // Tracked before the sibling's first lookup of the unit. A plain DbContext reports nothing when it
+                // tracks (a HeadlessDbContext does), so the unit learns of it only when it joins, after the fault.
                 sibling.Db.Probes.Add(new ProbeRow { Name = "audit" });
 
                 if (blockRuns == 1)
@@ -453,10 +453,13 @@ public sealed class EfUnitOfWorkConflictReplayTests : TestBase
             AbortToken
         );
 
-        // The block meant one row. The failed attempt's row is still in the sibling's tracker when the replay adds
-        // its own, and the sibling's save writes both. A block avoids this by tracking through a sibling only
-        // after the sibling joined the unit, or by keeping sibling changes out of a replayable block.
-        blockRuns.Should().Be(2, "the unit cannot see a context that has not joined it, so it does not refuse");
+        // The documented limit of a plain DbContext sibling. The block meant one row. The failed attempt's row is
+        // still in the sibling's tracker when the replay adds its own, and the sibling's save writes both. A block
+        // avoids this by tracking through a plain sibling only after it joined the unit, by using a
+        // HeadlessDbContext sibling, or by keeping sibling changes out of a replayable block.
+        blockRuns
+            .Should()
+            .Be(2, "the unit cannot see a plain context that has not joined it, so it does not refuse");
         (await host.CountProbeRowsAsync()).Should().Be(2, "the sibling still tracked the failed attempt's row");
     }
 

@@ -21,11 +21,12 @@ namespace Headless.UnitOfWork.Internal;
 /// the block cannot be restored: clearing it would drop the caller's pending changes, and the block may have edited
 /// those entities. Its fault is therefore marked non-replayable and surfaces to the caller, and a retry of a fault
 /// raised before the block ran (the connection open or the transaction begin) leaves that tracker as it is. The
-/// same holds for a second context that joined the unit over the shared connection and still tracks an entity when the attempt
-/// fails: the guard owns only the context the block was run on, and clearing another context's tracker could drop
-/// changes its own caller is still holding. A second context that has not joined yet is unknown to the unit, so
-/// what it tracked before its first lookup in the attempt does not stop a replay; the block has to track through
-/// it only after it joined.
+/// same holds for a second context over the shared connection that still tracks an entity when the attempt fails:
+/// the guard owns only the context the block was run on, and clearing another context's tracker could drop changes
+/// its own caller is still holding. The unit knows a second context once it joined, or, for a Headless context,
+/// once it started tracking an entity while the unit was active (its change-tracker handler registers it). A plain
+/// <see cref="DbContext" /> that has not joined yet is unknown to the unit, so what it tracked before its first
+/// lookup in the attempt does not stop a replay; the block has to track through it only after it joined.
 /// </remarks>
 internal sealed class DbContextReplayGuard(DbContext db, bool replays)
 {
@@ -73,7 +74,7 @@ internal sealed class DbContextReplayGuard(DbContext db, bool replays)
             // No attempt began for a block that joined a live unit: its owner's block decides any replay.
             if (
                 _attempts > 0
-                && (!_startedEmpty || DbContextUnitOfWorkBinding.HasJoinedContextWithTrackedEntities(unitOfWork))
+                && (!_startedEmpty || DbContextUnitOfWorkBinding.HasSiblingContextWithTrackedEntities(unitOfWork))
             )
             {
                 unitOfWork.PreventRetry();

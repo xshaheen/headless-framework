@@ -152,13 +152,60 @@ internal static class DbContextUnitOfWorkBinding
     }
 
     /// <summary>
-    /// Whether a context that joined <paramref name="unit" /> through the shared connection still tracks an
-    /// entity. The unit's rollback undoes such a context's rows but not its tracker, and the replay guard resets
-    /// only the context the block was run on, so a replayed block would read the failed attempt's edits back from
-    /// that tracker: a relative update would apply twice and an absolute one would be skipped as already saved.
+    /// Makes the active EF unit over <paramref name="db" />'s connection aware of <paramref name="db" /> for the
+    /// replay decision, without joining it: the context does not adopt the unit's transaction. Called from a change
+    /// tracker handler when a context starts tracking an entity, so a context that tracked something in an attempt
+    /// before it ever looked the unit up still stops the replay (see <see cref="HasSiblingContextWithTrackedEntities" />).
+    /// </summary>
+    /// <returns>
+    /// The unit that now knows about <paramref name="db" />, or that <paramref name="db" /> is bound to itself;
+    /// <see langword="null" /> when no active EF unit runs over the connection.
+    /// </returns>
+    /// <remarks>
+    /// Runs once per tracked entity until it returns a unit, so the path without a unit reads two weak-table
+    /// entries and allocates nothing. It never evicts, abandons, or throws, because it runs inside EF's tracking
+    /// call. The context the unit is bound to is left out: the replay guard clears that tracker itself.
+    /// </remarks>
+    public static IUnitOfWork? RegisterTrackingContext(DbContext db)
+    {
+#pragma warning disable CA2000 // False positive: the lookups hand back units the binding already holds; whoever began them ends them.
+        if (
+            !DbConnectionUnitOfWorkBinding.TryPeek(db.Database.GetDbConnection(), out var unit)
+            || unit.Resource is not EfUnitOfWorkResource { IsTransactionCompleted: false } resource
+        )
+        {
+            return null;
+        }
+
+        if (_Binding.TryPeek(db, out var own) && ReferenceEquals(own, unit))
+        {
+            return unit;
+        }
+#pragma warning restore CA2000
+
+        try
+        {
+            unit.GetOrAdd(resource.Transaction, static (_, transaction) => new SharedConnectionContexts(transaction))
+                .Register(db);
+        }
+        catch (InvalidOperationException)
+        {
+            // The unit ended between the state read and the registration, so no replay of it is left to stop.
+            return null;
+        }
+
+        return unit;
+    }
+
+    /// <summary>
+    /// Whether a context other than the block's own, over the unit's connection, still tracks an entity: one that
+    /// joined the unit, or one <see cref="RegisterTrackingContext" /> made the unit aware of. The unit's rollback
+    /// undoes such a context's rows but not its tracker, and the replay guard resets only the context the block was
+    /// run on, so a replayed block would read the failed attempt's edits back from that tracker: a relative update
+    /// would apply twice, an absolute one would be skipped as already saved, and an added row would be saved twice.
     /// A sibling that tracked nothing (a no-tracking read, a set-based update) leaves nothing to replay over.
     /// </summary>
-    public static bool HasJoinedContextWithTrackedEntities(IUnitOfWork unit)
+    public static bool HasSiblingContextWithTrackedEntities(IUnitOfWork unit)
     {
         // A unit the block already ended accepts no state lookup, and is never replayed.
         if (
@@ -229,8 +276,8 @@ internal static class DbContextUnitOfWorkBinding
     }
 
     /// <summary>
-    /// Tracks every joined context for replay. When the unit ends, releases only the transaction wrappers
-    /// created by the framework for those contexts.
+    /// Tracks every joined or registered context for replay. When the unit ends, releases only the transaction
+    /// wrappers created by the framework for those contexts.
     /// </summary>
     private sealed class SharedConnectionContexts(DbTransaction transaction) : IDisposable
     {
@@ -255,6 +302,22 @@ internal static class DbContextUnitOfWorkBinding
                 else
                 {
                     // A pre-existing wrapper belongs to the caller. Keep any framework-owned wrapper from an earlier join.
+                    _contexts.TryAdd(db, value: null);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Adds a context that tracks through the unit's connection without having joined it. It adopts nothing,
+        /// so there is no wrapper to release; a later join replaces the entry with the wrapper it creates.
+        /// </summary>
+        public void Register(DbContext db)
+        {
+            lock (_gate)
+            {
+                // A unit that is ending replays nothing, so a late registration has nothing to stop.
+                if (!_disposed)
+                {
                     _contexts.TryAdd(db, value: null);
                 }
             }
