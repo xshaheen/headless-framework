@@ -36,7 +36,9 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
                         Credentials = new BasicAWSCredentials("test", "test"),
                     }
                 ),
-                NullLogger<AmazonSqsConsumerClient>.Instance
+                NullLogger<AmazonSqsConsumerClient>.Instance,
+                // Each test owns its topology, so the client creates it in place of 'resources provision'.
+                provisionsTopology: true
             )
         );
     }

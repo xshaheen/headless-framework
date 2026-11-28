@@ -172,8 +172,8 @@ public sealed class AmazonSqsRawPayloadTests(LocalStackTestFixture fixture) : Te
         services.ConfigureMessaging(configureMessaging);
 
         var provider = services.BuildServiceProvider();
-        await provider.ApplyMessagingSchemaAsync(AbortToken);
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        // The host creates no topology, so the test runs the deploy step first, as the deployment would.
+        await provider.SetupResourcesAndBootstrapAsync(AbortToken);
 
         return provider;
     }

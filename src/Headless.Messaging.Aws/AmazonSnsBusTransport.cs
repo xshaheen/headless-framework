@@ -20,13 +20,13 @@ internal sealed class AmazonSnsBusTransport(
     private IAmazonSimpleNotificationService? _snsClient;
     private ConcurrentDictionary<string, string>? _topicArnMaps;
 
-    // One create per topic: concurrent first sends share it instead of each calling CreateTopic for the same name.
-    // Lazy starts the create once even when GetOrAdd races; a failed create is removed so a later send retries.
-    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _topicCreations = new(StringComparer.Ordinal);
+    // One lookup per topic: concurrent first sends share it instead of each paging through the account's topics.
+    // Lazy starts the lookup once even when GetOrAdd races; a failed lookup is removed so a later send retries.
+    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _topicLookups = new(StringComparer.Ordinal);
 
     // A topic the lookup did not find, mapped to the tick count before which a send fails without looking again.
-    // With AutoProvision off the lookup pages through every topic in the account, so without this each retry of
-    // each message to a not-yet-provisioned topic repeats that full listing and can run into SNS throttling.
+    // The lookup pages through every topic in the account, so without this each retry of each message to a
+    // not-yet-provisioned topic repeats that full listing and can run into SNS throttling.
     private readonly ConcurrentDictionary<string, long> _missingTopicRetryAt = new(StringComparer.Ordinal);
 
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
@@ -53,8 +53,7 @@ internal sealed class AmazonSnsBusTransport(
             await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
             var normalizeForAws = AwsPhysicalAddress.BusTopic(sqsOptionsAccessor.Value.HostPrefix, message.Name);
-            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken)
-                .ConfigureAwait(false);
+            var (success, arn) = await _TryGetTopicArnAsync(normalizeForAws, cancellationToken).ConfigureAwait(false);
 
             if (success)
             {
@@ -92,9 +91,11 @@ internal sealed class AmazonSnsBusTransport(
 
             _logger.LogSnsTopicNotFound(normalizeForAws);
 
+            var missing = AwsTopology.Missing($"SNS topic '{normalizeForAws}'");
+
             return OperateResult.Failed(
-                new PublisherSentFailedException($"Can't be found SNS topics for [{normalizeForAws}]"),
-                new OperateError { Code = "SNS", Description = $"Can't be found SNS topics for [{normalizeForAws}]" }
+                new PublisherSentFailedException(missing.Message, missing),
+                new OperateError { Code = "SNS", Description = missing.Message }
             );
         }
         catch (OperationCanceledException)
@@ -145,24 +146,10 @@ internal sealed class AmazonSnsBusTransport(
             {
                 // Publish the cache only once the listing completes: a sender that sees it skips the lock, so a cache
                 // published early sends against a partial listing, and a failed listing would never be retried.
-                var topicArnMaps = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
-
-                string? nextToken = null;
-                do
-                {
-                    var topics =
-                        nextToken == null
-                            ? await _snsClient.ListTopicsAsync(cancellationToken).ConfigureAwait(false)
-                            : await _snsClient.ListTopicsAsync(nextToken, cancellationToken).ConfigureAwait(false);
-
-                    // The SDK leaves Topics null for a page with no topics, such as an account with none yet.
-                    foreach (var topic in topics.Topics ?? [])
-                    {
-                        topicArnMaps[topic.TopicArn.Split(':')[^1]] = topic.TopicArn;
-                    }
-
-                    nextToken = topics.NextToken;
-                } while (!string.IsNullOrEmpty(nextToken));
+                var topicArnMaps = new ConcurrentDictionary<string, string>(
+                    await AwsTopology.ListTopicArnsAsync(_snsClient, cancellationToken).ConfigureAwait(false),
+                    StringComparer.Ordinal
+                );
 
                 _topicArnMaps = topicArnMaps;
             }
@@ -173,7 +160,7 @@ internal sealed class AmazonSnsBusTransport(
         }
     }
 
-    private async Task<(bool success, string? topicArn)> _TryGetOrCreateTopicArnAsync(
+    private async Task<(bool success, string? topicArn)> _TryGetTopicArnAsync(
         string topicName,
         CancellationToken cancellationToken = default
     )
@@ -189,7 +176,7 @@ internal sealed class AmazonSnsBusTransport(
             return (false, null);
         }
 
-        var creation = _topicCreations.GetOrAdd(
+        var lookup = _topicLookups.GetOrAdd(
             topicName,
             static (name, state) => new Lazy<Task<string?>>(() => state._ResolveTopicAsync(name)),
             this
@@ -197,47 +184,32 @@ internal sealed class AmazonSnsBusTransport(
 
         try
         {
-            // The shared create outlives one caller's cancellation, so a cancelled send stops waiting without
-            // failing the other senders that wait on the same create.
-            topicArn = await creation.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // The shared lookup outlives one caller's cancellation, so a cancelled send stops waiting without
+            // failing the other senders that wait on the same lookup.
+            topicArn = await lookup.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch when (!cancellationToken.IsCancellationRequested)
         {
-            // Drop the failed create so the next send retries instead of rethrowing a cached failure.
-            _topicCreations.TryRemove(KeyValuePair.Create(topicName, creation));
+            // Drop the failed lookup so the next send retries instead of rethrowing a cached failure.
+            _topicLookups.TryRemove(KeyValuePair.Create(topicName, lookup));
             throw;
         }
 
         if (topicArn is null)
         {
             _missingTopicRetryAt[topicName] = Environment.TickCount64 + _MissingTopicRetryMilliseconds;
-            _topicCreations.TryRemove(KeyValuePair.Create(topicName, creation));
+            _topicLookups.TryRemove(KeyValuePair.Create(topicName, lookup));
             return (false, null);
         }
 
         return (true, topicArn);
     }
 
-    // Creates the topic, or with AutoProvision off looks it up again, so a topic created after the listing is found
-    // without a restart. CreateTopic is idempotent and returns the ARN of an existing topic.
+    // Looks the topic up again, so a topic resources provision created after the listing is found without a restart.
     private async Task<string?> _ResolveTopicAsync(string topicName)
     {
-        string? topicArn;
-
-        if (!sqsOptionsAccessor.Value.AutoProvision)
-        {
-            var topic = await _snsClient!.FindTopicAsync(topicName).ConfigureAwait(false);
-            topicArn = topic?.TopicArn;
-        }
-        else
-        {
-            var response = topicName.IsAwsFifoName()
-                ? await _snsClient!
-                    .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), CancellationToken.None)
-                    .ConfigureAwait(false)
-                : await _snsClient!.CreateTopicAsync(topicName, CancellationToken.None).ConfigureAwait(false);
-            topicArn = response.TopicArn;
-        }
+        var topic = await _snsClient!.FindTopicAsync(topicName).ConfigureAwait(false);
+        var topicArn = topic?.TopicArn;
 
         if (string.IsNullOrEmpty(topicArn))
         {
@@ -300,7 +272,7 @@ internal static partial class AmazonSnsBusTransportLog
         EventId = 2,
         EventName = "SnsTopicNotFound",
         Level = LogLevel.Warning,
-        Message = "Can't be found SNS topics for [{NormalizeForAws}]"
+        Message = "SNS topic [{NormalizeForAws}] does not exist; run 'resources provision' to create it"
     )]
     internal static partial void LogSnsTopicNotFound(this ILogger logger, string normalizeForAws);
 }

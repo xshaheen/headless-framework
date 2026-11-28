@@ -47,18 +47,6 @@ public sealed class AmazonSqsMessagingOptions
     public string? SqsServiceUrl { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/> (default), SNS topics, SQS queues, the queue access policy, and the SNS-to-SQS
-    /// subscriptions are created on first use. Set to <see langword="false"/> when they are managed externally (for
-    /// example by Infrastructure as Code), so the runtime identity needs no create or policy permissions.
-    /// </summary>
-    /// <remarks>
-    /// When <see langword="false"/>, the transport only looks entities up: queues by <c>sqs:GetQueueUrl</c> and topics by
-    /// <c>sns:ListTopics</c>. Every topic, queue, and subscription must exist before the host starts, and each SNS-to-SQS
-    /// subscription must enable raw message delivery, the envelope Bus consumers read.
-    /// </remarks>
-    public bool AutoProvision { get; set; } = true;
-
-    /// <summary>
     /// How long a received message stays hidden from other consumers. Defaults to 30 seconds.
     /// </summary>
     /// <remarks>

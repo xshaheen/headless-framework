@@ -8,6 +8,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
@@ -16,13 +17,20 @@ namespace Headless.Messaging;
 /// Extension members that register Amazon SQS (queue) and SNS (bus/fan-out) as the message transport.
 /// </summary>
 /// <remarks>
-/// Topics are modelled as SNS topics and queues as SQS queues. SNS fan-out to SQS subscriptions
-/// is wired automatically, with raw message delivery; set <see cref="AmazonSqsMessagingOptions.AutoProvision"/>
-/// to <see langword="false"/> when the topology is managed externally. AWS credentials are resolved through the standard AWS SDK credential
-/// chain unless <see cref="AmazonSqsMessagingOptions.Credentials"/> is provided explicitly.
+/// Topics are modelled as SNS topics and queues as SQS queues, and SNS fans out to SQS subscriptions with raw message
+/// delivery. The shared topology is the deployment's: <c>resources provision</c> creates it (resource kind
+/// <see cref="TopologyResourceKind"/>), and the running host only looks it up. AWS credentials are resolved through the
+/// standard AWS SDK credential chain unless <see cref="AmazonSqsMessagingOptions.Credentials"/> is provided explicitly.
 /// </remarks>
 public static class SetupMessagingAws
 {
+    /// <summary>
+    /// The <see cref="IResourceProvisioner.Kind" /> of the SNS/SQS topology (topics, queues, queue policies, and
+    /// subscriptions), which <c>resources provision -k</c> selects and a provisioner that needs the topology selects in
+    /// its <c>DependsOn</c>.
+    /// </summary>
+    public const string TopologyResourceKind = "AmazonSqs";
+
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
@@ -137,6 +145,11 @@ public static class SetupMessagingAws
             services.AddSingleton<IQueueTransport, AmazonSqsQueueTransport>();
             services.AddSingleton<SnsTopicArnCache>();
             services.AddSingleton<IConsumerClientFactory, AmazonSqsConsumerClientFactory>();
+
+            // The shared topology is the deployment's: resources provision creates it, and the transport only looks it up.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ITransportTopologyProvisioner, AwsTopologyProvisioner>()
+            );
         }
     }
 }

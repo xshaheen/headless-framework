@@ -160,7 +160,9 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, null),
             },
             // The custom headers builder receives the service provider, and the client refuses to call it without one.
-            serviceProvider: _NoServices
+            serviceProvider: _NoServices,
+            // These sessions stand in for a deployed host and its topology at once, so the client creates it.
+            provisionsTopology: true
         );
         var cleanupClient = AwsClientFactory.CreateSqsClient(options.Value);
 #pragma warning restore CA2000

@@ -47,7 +47,13 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
             Credentials = new Amazon.Runtime.BasicAWSCredentials("test", "test"),
         };
         using var client = AwsClientFactory.CreateSqsClient(options);
-        string? queueUrl = null;
+        // The publisher only looks its queue up, so the queue exists first, as 'resources provision' would leave it.
+        var queueUrl = (
+            await client.CreateQueueAsync(
+                AwsPhysicalAddress.QueueDestination("", destination).ToSqsCreateQueueRequest(),
+                cancellationToken
+            )
+        ).QueueUrl;
         try
         {
             await TransportRoutingAffinityConformance.AssertPublisherPathsAsync(
@@ -55,9 +61,6 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
                 destination,
                 async (expectedId, token) =>
                 {
-                    queueUrl ??= (
-                        await client.GetQueueUrlAsync(AwsPhysicalAddress.QueueDestination("", destination), token)
-                    ).QueueUrl;
                     var response = await client.ReceiveMessageAsync(
                         new ReceiveMessageRequest(queueUrl)
                         {
@@ -85,10 +88,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
         }
         finally
         {
-            if (queueUrl is not null)
-            {
-                await client.DeleteQueueAsync(queueUrl, CancellationToken.None);
-            }
+            await client.DeleteQueueAsync(queueUrl, CancellationToken.None);
         }
     }
 
@@ -109,7 +109,9 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
             1,
             Options.Create(options),
             NullLogger<AmazonSqsConsumerClient>.Instance,
-            MessageLane.Bus
+            MessageLane.Bus,
+            // This client exists to create the topology the publisher paths send through.
+            provisionsTopology: true
         );
         using var client = AwsClientFactory.CreateSqsClient(options);
         using var sns = AwsClientFactory.CreateSnsClient(options);

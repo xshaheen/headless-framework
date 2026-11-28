@@ -46,7 +46,9 @@ internal sealed class AmazonSqsConsumerClientFactory(
                 amazonSqsOptions,
                 logger,
                 lane,
-                serviceProvider: serviceProvider
+                serviceProvider: serviceProvider,
+                // A registered subscription's topology is the deployment's; only a runtime subscription creates its own.
+                provisionsTopology: request.ProvisionsTopology
             );
             return Task.FromResult<IConsumerClient>(client);
         }

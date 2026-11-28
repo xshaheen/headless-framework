@@ -60,8 +60,12 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
             new AmazonSimpleNotificationServiceConfig { ServiceURL = fixture.ConnectionString }
         );
 
-        // Pre-create the default test topic
-        await _snsClient.CreateTopicAsync("TestMessage".NormalizeForAws(), AbortToken);
+        // The publisher creates no topic, so the test creates the topics of the messages the base tests send, as a
+        // deployment would.
+        foreach (var messageName in new[] { "TestMessage", "TestMessageName" })
+        {
+            await _snsClient.CreateTopicAsync(AwsPhysicalAddress.BusTopic("", messageName), AbortToken);
+        }
     }
 
     /// <inheritdoc />

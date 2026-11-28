@@ -186,18 +186,18 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         );
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
-            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/orders" });
+            .GetQueueUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GetQueueUrlResponse { QueueUrl = "https://sqs.local/orders" });
         _SetPrivateFields(client, sqsClient, string.Empty);
         using var cts = new CancellationTokenSource();
 
         await client.FetchMessageNamesAsync(["orders"], cts.Token);
 
-        await sqsClient.Received(1).CreateQueueAsync(Arg.Any<CreateQueueRequest>(), cts.Token);
+        await sqsClient.Received(1).GetQueueUrlAsync(Arg.Any<string>(), cts.Token);
     }
 
     [Fact]
-    public async Task should_report_actionable_queue_provisioning_denial()
+    public async Task should_report_an_actionable_queue_lookup_denial()
     {
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Queue);
@@ -206,14 +206,16 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             ErrorCode = "AccessDenied",
         };
-        sqsClient.CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
+        sqsClient.GetQueueUrlAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).ThrowsAsync(denied);
         _SetPrivateFields(client, sqsClient, string.Empty);
 
         var act = async () => await client.FetchMessageNamesAsync(["orders"], AbortToken);
 
         var exception = await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*AWS_MESSAGING_PROVISIONING_DENIED*Queue*billing*AccessDenied*sqs:CreateQueue*");
+            .WithMessage(
+                "*AWS_MESSAGING_PROVISIONING_DENIED*Queue*billing*AccessDenied*sqs:GetQueueUrl*resources provision*"
+            );
         exception.Which.InnerException.Should().BeNull();
         exception.Which.ToString().Should().NotContain("secret").And.NotContain("token=leaked");
     }
@@ -222,7 +224,15 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     public async Task should_report_actionable_bus_provisioning_denial()
     {
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
-        await using var client = new AmazonSqsConsumerClient("billing", 1, _CreateOptions(), logger, MessageLane.Bus);
+        // A runtime subscription: the only Bus client that creates topology.
+        await using var client = new AmazonSqsConsumerClient(
+            "billing",
+            1,
+            _CreateOptions(),
+            logger,
+            MessageLane.Bus,
+            provisionsTopology: true
+        );
         var sqsClient = Substitute.For<IAmazonSQS>();
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         var denied = new AmazonSimpleNotificationServiceException(

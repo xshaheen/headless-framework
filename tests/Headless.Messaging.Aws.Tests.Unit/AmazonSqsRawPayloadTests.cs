@@ -339,13 +339,13 @@ public sealed class AmazonSqsRawPayloadTests : TestBase
         Action<AmazonSqsMessagingOptions>? configure = null
     )
     {
-        // AutoProvision off keeps SNS out of a Bus subscribe: these tests drive the receive path only.
+        // The default client only looks its queue up, which keeps SNS out of a Bus subscribe: these tests drive the
+        // receive path only.
         var options = new AmazonSqsMessagingOptions
         {
             Region = Amazon.RegionEndpoint.USEast1,
             SqsServiceUrl = "http://localhost:4566",
             SnsServiceUrl = "http://localhost:4566",
-            AutoProvision = false,
         };
         configure?.Invoke(options);
 

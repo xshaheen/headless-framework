@@ -42,7 +42,7 @@ internal sealed class AmazonSqsQueueTransport(
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = SqsHeaderCodec.Encode(message);
 
-            var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
+            var queueUrl = await _GetQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var request = new SendMessageRequest
             {
                 QueueUrl = queueUrl,
@@ -114,7 +114,7 @@ internal sealed class AmazonSqsQueueTransport(
         return ValueTask.CompletedTask;
     }
 
-    private async Task<string> _GetOrCreateQueueUrlAsync(string queueName, CancellationToken cancellationToken)
+    private async Task<string> _GetQueueUrlAsync(string queueName, CancellationToken cancellationToken)
     {
         if (_queueUrlMaps.TryGetValue(queueName, out var queueUrl))
         {
@@ -133,13 +133,11 @@ internal sealed class AmazonSqsQueueTransport(
             var options = sqsOptionsAccessor.Value;
             _sqsClient ??= AwsClientFactory.CreateSqsClient(options);
 
-            queueUrl = options.AutoProvision
-                ? await _CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false)
-                : (
-                    await _sqsClient
-                        .GetQueueUrlAsync(queueName.NormalizeForSqsQueueName(), cancellationToken)
-                        .ConfigureAwait(false)
-                ).QueueUrl;
+            // The queue is the deployment's (resources provision); a missing one fails the send naming that step, and
+            // the failure is not cached, so the next retry finds a queue provisioned since.
+            queueUrl = await AwsTopology
+                .RequireQueueUrlAsync(_sqsClient, queueName, cancellationToken)
+                .ConfigureAwait(false);
 
             _queueUrlMaps[queueName] = queueUrl;
 
@@ -149,18 +147,6 @@ internal sealed class AmazonSqsQueueTransport(
         {
             _semaphore.Release();
         }
-    }
-
-    // CreateQueue is idempotent and returns the URL of an existing queue.
-    private async Task<string> _CreateQueueAsync(string queueName, CancellationToken cancellationToken)
-    {
-        var response = queueName.IsAwsFifoName()
-            ? await _sqsClient!
-                .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
-                .ConfigureAwait(false)
-            : await _sqsClient!.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
-
-        return response.QueueUrl;
     }
 
     private string _GetBrokerEndpoint()

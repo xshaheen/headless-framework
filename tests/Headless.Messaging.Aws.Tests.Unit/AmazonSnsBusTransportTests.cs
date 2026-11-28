@@ -254,7 +254,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_topic_if_not_exists()
+    public async Task should_look_up_a_topic_provisioned_after_the_listing_instead_of_creating_it()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -262,13 +262,13 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-NewTopic" });
+            .FindTopicAsync("bus-NewTopic")
+            .Returns(new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-NewTopic" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        // Empty topic map forces CreateTopicAsync to be called
+        // An empty topic map forces the lookup
         _SetSnsClient(transport, snsClient, []);
 
         var message = new TransportMessage(
@@ -281,26 +281,24 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await snsClient.Received(1).CreateTopicAsync("bus-NewTopic", Arg.Any<CancellationToken>());
+        await snsClient.Received(1).FindTopicAsync("bus-NewTopic");
+        await snsClient.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(string)!, AbortToken);
+        await snsClient.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(CreateTopicRequest)!, AbortToken);
     }
 
     [Fact]
-    public async Task should_issue_one_create_per_topic_when_first_sends_are_concurrent()
+    public async Task should_issue_one_lookup_per_topic_when_first_sends_are_concurrent()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
 
-        // The creates stay pending until every send has started, so the sends overlap on each missing topic.
-        var ordersCreated = new TaskCompletionSource<CreateTopicResponse>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        var invoicesCreated = new TaskCompletionSource<CreateTopicResponse>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
+        // The lookups stay pending until every send has started, so the sends overlap on each unlisted topic.
+        var ordersFound = new TaskCompletionSource<Topic?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invoicesFound = new TaskCompletionSource<Topic?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        snsClient.CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>()).Returns(ordersCreated.Task);
-        snsClient.CreateTopicAsync("bus-invoices", Arg.Any<CancellationToken>()).Returns(invoicesCreated.Task);
+        snsClient.FindTopicAsync("bus-orders").Returns(ordersFound.Task);
+        snsClient.FindTopicAsync("bus-invoices").Returns(invoicesFound.Task);
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
@@ -324,16 +322,14 @@ public sealed class AmazonSnsBusTransportTests : TestBase
             )
             .ToArray();
 
-        ordersCreated.SetResult(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-orders" });
-        invoicesCreated.SetResult(
-            new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-invoices" }
-        );
+        ordersFound.SetResult(new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-orders" });
+        invoicesFound.SetResult(new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-invoices" });
         var results = await Task.WhenAll(sends);
 
         // then
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
-        await snsClient.Received(1).CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>());
-        await snsClient.Received(1).CreateTopicAsync("bus-invoices", Arg.Any<CancellationToken>());
+        await snsClient.Received(1).FindTopicAsync("bus-orders");
+        await snsClient.Received(1).FindTopicAsync("bus-invoices");
         await snsClient
             .Received(10)
             .PublishAsync(
@@ -349,7 +345,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_topic_creation_on_the_next_send_after_a_failed_create()
+    public async Task should_retry_the_topic_lookup_on_the_next_send_after_a_failed_lookup()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -357,11 +353,10 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>())
+            .FindTopicAsync("bus-orders")
             .Returns(
-                _ => Task.FromException<CreateTopicResponse>(new AmazonSimpleNotificationServiceException("Throttled")),
-                _ =>
-                    Task.FromResult(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-orders" })
+                _ => Task.FromException<Topic?>(new AmazonSimpleNotificationServiceException("Throttled")),
+                _ => Task.FromResult<Topic?>(new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-orders" })
             );
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
@@ -382,12 +377,12 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         first.Succeeded.Should().BeFalse();
         first.Exception!.Message.Should().Contain("Throttled");
         second.Succeeded.Should().BeTrue("the send failed with {0}", second.Exception);
-        await snsClient.Received(2).CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>());
+        await snsClient.Received(2).FindTopicAsync("bus-orders");
         await snsClient.Received(1).PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_create_fifo_topic_and_publish_with_fifo_metadata()
+    public async Task should_publish_to_a_fifo_topic_with_fifo_metadata()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -396,13 +391,17 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}" });
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient, []);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [expectedTopicName] = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -421,16 +420,6 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         result.Succeeded.Should().BeTrue();
         await snsClient
             .Received(1)
-            .CreateTopicAsync(
-                Arg.Is<CreateTopicRequest>(r =>
-                    r.Name == expectedTopicName
-                    && r.Attributes["FifoTopic"] == "true"
-                    && r.Attributes["ContentBasedDeduplication"] == "true"
-                ),
-                Arg.Any<CancellationToken>()
-            );
-        await snsClient
-            .Received(1)
             .PublishAsync(
                 Arg.Is<PublishRequest>(r => r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"),
                 Arg.Any<CancellationToken>()
@@ -446,13 +435,18 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-order-created.fifo" });
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient, []);
+        var topicName = AwsPhysicalAddress.BusTopic("", "order.created.fifo");
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [topicName] = $"arn:aws:sns:us-east-1:123456789:{topicName}",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -483,13 +477,18 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-order-created.fifo" });
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient, []);
+        var topicName = AwsPhysicalAddress.BusTopic("", "order.created.fifo");
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [topicName] = $"arn:aws:sns:us-east-1:123456789:{topicName}",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -547,18 +546,16 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_failed_when_topic_not_found_and_creation_fails()
+    public async Task should_return_failed_when_the_lookup_finds_no_topic()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
         await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        snsClient
-            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = string.Empty }); // Empty ARN indicates failure
+        snsClient.FindTopicAsync(Arg.Any<string>()).Returns((Topic?)null);
 
-        // Empty topic map forces CreateTopicAsync to be called
+        // An empty topic map forces the lookup
         _SetSnsClient(transport, snsClient, []);
 
         var message = new TransportMessage(
@@ -583,13 +580,13 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}" });
+            .FindTopicAsync(expectedTopicName)
+            .Returns(new Topic { TopicArn = $"arn:aws:sns:us-east-1:123456789:{expectedTopicName}" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        // Empty topic map forces CreateTopicAsync to be called
+        // An empty topic map forces the lookup
         _SetSnsClient(transport, snsClient, []);
 
         // Topic name with dots and colons should be normalized
@@ -607,7 +604,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         // Normalized characters retain a stable discriminator so distinct logical names remain distinct.
-        await snsClient.Received(1).CreateTopicAsync(expectedTopicName, Arg.Any<CancellationToken>());
+        await snsClient.Received(1).FindTopicAsync(expectedTopicName);
     }
 
     [Fact]
@@ -678,7 +675,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         await transport.SendAsync(message, AbortToken);
 
         // then - _topicArnMaps is pre-populated, so ListTopicsAsync should never be called
-        await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<ListTopicsRequest>(), Arg.Any<CancellationToken>());
 
         // All three messages should be published successfully
         await snsClient.Received(3).PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
@@ -743,7 +740,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_create_topic_when_the_account_lists_no_topics()
+    public async Task should_fail_the_send_naming_resources_provision_when_the_topic_does_not_exist()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -751,13 +748,9 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         // The SDK leaves Topics null when the listing has no topics.
-        snsClient.ListTopicsAsync(Arg.Any<CancellationToken>()).Returns(new ListTopicsResponse { Topics = null });
         snsClient
-            .CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>())
-            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:bus-orders" });
-        snsClient
-            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PublishResponse { MessageId = "msg-123" });
+            .ListTopicsAsync(Arg.Any<ListTopicsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ListTopicsResponse { Topics = null });
 
         _SetSnsClientWithoutTopicCache(transport, snsClient);
 
@@ -769,9 +762,12 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // when
         var result = await transport.SendAsync(message, AbortToken);
 
-        // then
-        result.Succeeded.Should().BeTrue("the send failed with {0}", result.Exception);
-        await snsClient.Received(1).CreateTopicAsync("bus-orders", Arg.Any<CancellationToken>());
+        // then - the publisher never creates the topic; the deploy step does
+        result.Succeeded.Should().BeFalse();
+        result.Exception!.Message.Should().Contain("bus-orders").And.Contain("resources provision");
+        await snsClient.DidNotReceive().CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await snsClient.DidNotReceive().CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>());
+        await snsClient.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -783,7 +779,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<CancellationToken>())
+            .ListTopicsAsync(Arg.Any<ListTopicsRequest>(), Arg.Any<CancellationToken>())
             .Returns(
                 _ => Task.FromException<ListTopicsResponse>(new AmazonSimpleNotificationServiceException("Throttled")),
                 _ =>
@@ -812,7 +808,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         // then - the second send uses the listed topic instead of a partial cache from the failed listing
         first.Succeeded.Should().BeFalse();
         second.Succeeded.Should().BeTrue("the send failed with {0}", second.Exception);
-        await snsClient.Received(2).ListTopicsAsync(Arg.Any<CancellationToken>());
+        await snsClient.Received(2).ListTopicsAsync(Arg.Any<ListTopicsRequest>(), Arg.Any<CancellationToken>());
         await snsClient.DidNotReceive().CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await snsClient
             .Received(1)
