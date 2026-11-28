@@ -70,53 +70,29 @@ internal static partial class DataProtectionLoggerExtensions
 
     [LoggerMessage(
         EventId = 10,
-        EventName = "KeyRingValidationRoundTripSucceeded",
+        EventName = "KeyRingValidationSucceeded",
         Level = LogLevel.Information,
-        Message = "Data protection key-ring validation succeeded: a protect/unprotect round-trip exercised the key ring against the '{Container}' container"
+        Message = "Data protection key-ring validation succeeded: read {KeyCount} keys from the '{Container}' container"
     )]
-    internal static partial void LogKeyRingValidationRoundTripSucceeded(this ILogger logger, string container);
-
-    [LoggerMessage(
-        EventId = 11,
-        EventName = "KeyRingValidationReadProbeSucceeded",
-        Level = LogLevel.Information,
-        Message = "Data protection key-ring validation succeeded: the read-only key-ring probe loaded {KeyCount} keys from the '{Container}' container (AutoGenerateKeys is false, so no key was generated)"
-    )]
-    internal static partial void LogKeyRingValidationReadProbeSucceeded(
-        this ILogger logger,
-        int keyCount,
-        string container
-    );
+    internal static partial void LogKeyRingValidationSucceeded(this ILogger logger, int keyCount, string container);
 
     [LoggerMessage(
         EventId = 12,
         EventName = "KeyRingValidationFailed",
         Level = LogLevel.Critical,
-        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried. The key ring could not be exercised against the '{Container}' blob container; the first key write or the ~90-day key rotation will likely fail the same way. Verify the container exists and the credentials allow access, wire an IBlobContainerManager so PersistKeysToBlobStorage ensures the container before writes, or provision the container out-of-band (BlobContainerProvisioning.PreProvisioned)"
+        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried. The key ring could not be read from the '{Container}' blob container; the first protected operation will likely fail the same way. Verify the credentials can read the container and that 'resources provision -k DataProtectionKeys' ran for this environment"
     )]
     internal static partial void LogKeyRingValidationFailed(this ILogger logger, Exception exception, string container);
 
     [LoggerMessage(
-        EventId = 13,
-        EventName = "KeyRingValidationWriteProbeSucceeded",
-        Level = LogLevel.Information,
-        Message = "Data protection key-ring validation write probe succeeded: uploaded and deleted the reserved sentinel blob in the '{Container}' container through the key-write pipeline"
-    )]
-    internal static partial void LogKeyRingValidationWriteProbeSucceeded(this ILogger logger, string container);
-
-    [LoggerMessage(
-        EventId = 14,
-        EventName = "KeyRingValidationWriteProbeSkipped",
-        Level = LogLevel.Debug,
-        Message = "Data protection key-ring validation write probe skipped: the configured IXmlRepository ('{RepositoryType}') is not the blob-storage repository, so there is no generic write to safely perform"
-    )]
-    internal static partial void LogKeyRingValidationWriteProbeSkipped(this ILogger logger, string repositoryType);
-
-    [LoggerMessage(
         EventId = 15,
-        EventName = "KeyRingValidationEmptyKeyRing",
+        EventName = "KeyRingValidationNotProvisioned",
         Level = LogLevel.Critical,
-        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried. The key-ring read probe reached the '{Container}' container but found no keys; AutoGenerateKeys is false on this node so it cannot create one, and its first protected operation will fail. Has the designated key writer run yet? Is this the right container/storage for this environment?"
+        Message = "Data protection key-ring validation failed and Check is LogOnly, so readiness is not gated and the validation is not retried: {Problem}. The host never creates the '{Container}' container or the first key; run 'resources provision -k DataProtectionKeys' for this environment"
     )]
-    internal static partial void LogKeyRingValidationEmptyKeyRing(this ILogger logger, string container);
+    internal static partial void LogKeyRingValidationNotProvisioned(
+        this ILogger logger,
+        string container,
+        string problem
+    );
 }

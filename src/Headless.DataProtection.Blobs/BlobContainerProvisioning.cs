@@ -11,15 +11,16 @@ namespace Headless.DataProtection;
 public enum BlobContainerProvisioning
 {
     /// <summary>
-    /// Default: an <see cref="Headless.Blobs.IBlobContainerManager"/> must be available to ensure the container when
-    /// the storage requires provisioning (<see cref="Headless.Blobs.IBlobStorage.RequiresContainerProvisioning"/>);
-    /// otherwise configuration throws.
+    /// Default: an <see cref="Headless.Blobs.IBlobContainerManager"/> must be available so <c>resources provision</c>
+    /// can create the container when the storage requires provisioning
+    /// (<see cref="Headless.Blobs.IBlobStorage.RequiresContainerProvisioning"/>); otherwise configuration throws.
     /// </summary>
     Managed = 0,
 
     /// <summary>
     /// The consumer acknowledges the container is provisioned out-of-band (portal, CLI, IaC), suppressing the
-    /// guardrail. Required for providers that ship no container manager, such as Cloudflare R2.
+    /// guardrail. <c>resources provision</c> then only creates the first key. Required for providers that ship no
+    /// container manager, such as Cloudflare R2.
     /// </summary>
     PreProvisioned = 1,
 }

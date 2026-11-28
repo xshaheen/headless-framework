@@ -3,6 +3,7 @@
 using System.Xml.Linq;
 using Headless.Blobs;
 using Headless.DataProtection;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.DependencyInjection;
@@ -153,7 +154,7 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     #region PersistKeysToBlobStorage(storage, containerManager) Tests
 
     [Fact]
-    public async Task should_ensure_container_via_manager_before_first_store()
+    public async Task should_store_keys_without_creating_the_container()
     {
         // given
         var services = new ServiceCollection();
@@ -170,11 +171,14 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
 
         options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
 
-        // The first key write must ensure the DataProtection container through the supplied manager: the blob data
-        // plane treats a missing container as an error, so a fresh deployment would otherwise fail right here.
+        // A running host never creates shared resources: the manager is kept for 'resources provision' and the
+        // read-only checks, and a key write goes straight to the existing container.
+        ((BlobStorageDataProtectionXmlRepository)options.XmlRepository!)
+            .ContainerManager.Should()
+            .BeSameAs(containerManager);
         options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
 
-        await containerManager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+        await containerManager.DidNotReceiveWithAnyArgs().EnsureContainerAsync(default!, CancellationToken.None);
         await storage
             .Received(1)
             .UploadAsync(
@@ -199,13 +203,15 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         // when
         builder.PersistKeysToBlobStorage(storage, containerManager);
 
-        // then: configures without acknowledgment and the ensure still runs before the first write.
+        // then: configures without acknowledgment, with the manager wired for the provision step.
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
 
-        options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
-
-        await containerManager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+        options
+            .XmlRepository.Should()
+            .BeOfType<BlobStorageDataProtectionXmlRepository>()
+            .Which.ContainerManager.Should()
+            .BeSameAs(containerManager);
     }
 
     #endregion
@@ -233,7 +239,6 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
         options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
 
-        await containerManager.Received(1).EnsureContainerAsync("orders-api-keys", Arg.Any<CancellationToken>());
         await storage
             .Received(1)
             .UploadAsync(
@@ -678,8 +683,8 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     [Fact]
     public async Task should_still_use_manager_even_when_di_paths_pre_provisioned_is_acknowledged()
     {
-        // PreProvisioned only suppresses the guardrail; a manager that IS resolvable must still be wired so the
-        // repository keeps ensuring the container before writes.
+        // PreProvisioned only suppresses the guardrail; a manager that IS resolvable must still be wired so
+        // 'resources provision' can create the container and the checks can read its existence.
         var services = new ServiceCollection();
         var storage = Substitute.For<IBlobStorage>();
         storage.RequiresContainerProvisioning.Returns(true);
@@ -693,10 +698,44 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
         // when
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
-        options.XmlRepository!.StoreElement(new XElement("key"), "friendly");
 
         // then
-        await containerManager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+        options
+            .XmlRepository.Should()
+            .BeOfType<BlobStorageDataProtectionXmlRepository>()
+            .Which.ContainerManager.Should()
+            .BeSameAs(containerManager);
+    }
+
+    #endregion
+
+    #region Resource provisioning
+
+    [Fact]
+    public async Task should_offer_the_key_ring_as_a_provisioned_resource_once_when_called_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddDataProtection();
+        var storage = Substitute.For<IBlobStorage>();
+        var containerManager = Substitute.For<IBlobContainerManager>();
+
+        // when: two composition helpers wire the same key ring.
+        builder.PersistKeysToBlobStorage(storage, containerManager);
+        builder.PersistKeysToBlobStorage(storage, containerManager);
+
+        // then
+        await using var provider = services.BuildServiceProvider();
+        var sources = provider.GetServices<IResourceProvisionerSource>().ToList();
+        sources.Should().ContainSingle(source => source is DataProtectionKeysProvisionerSource);
+        var provisioners = await sources.Single().GetProvisionersAsync(AbortToken);
+        provisioners
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<IResourceProvisioner>(p =>
+                p.Kind == BlobStorageDataProtectionOptions.KeysResourceKind && p.Name == "DataProtection"
+            );
     }
 
     #endregion

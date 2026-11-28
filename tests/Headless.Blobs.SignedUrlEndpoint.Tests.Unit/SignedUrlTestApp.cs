@@ -2,6 +2,7 @@
 
 using Headless.Blobs;
 using Headless.DataProtection;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -98,6 +99,12 @@ internal sealed class SignedUrlTestApp : IAsyncDisposable
         await app
             .Services.GetRequiredKeyedService<IBlobContainerManager>(NamedStore)
             .EnsureContainerAsync(Container, cancellationToken);
+
+        if (persistKeysToBlobStorage)
+        {
+            // The host never creates the key container or the first key; the deploy step does.
+            await app.Services.ProvisionResourcesAsync(cancellationToken);
+        }
 
         return testApp;
     }

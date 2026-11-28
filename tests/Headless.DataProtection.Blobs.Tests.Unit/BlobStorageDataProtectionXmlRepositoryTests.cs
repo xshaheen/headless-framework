@@ -407,41 +407,26 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_ensure_data_protection_container_before_upload_when_manager_is_available()
+    public async Task should_upload_without_creating_the_container_when_a_manager_is_wired()
     {
+        // The running host never creates shared resources; 'resources provision' owns the container.
         var storage = Substitute.For<IBlobStorage>();
+        _SetupUpload(storage);
         var manager = Substitute.For<IBlobContainerManager>();
-        var calls = new List<string>();
-
-        manager
-            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                calls.Add("ensure");
-                return ValueTask.CompletedTask;
-            });
-
-        storage
-            .UploadAsync(
-                Arg.Any<BlobLocation>(),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ =>
-            {
-                calls.Add("upload");
-                return ValueTask.CompletedTask;
-            });
-
         var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
 
         sut.StoreElement(new XElement("key", new XAttribute("id", "test")), "test-key");
 
-        calls.Should().Equal("ensure", "upload");
-
-        await manager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+        await storage
+            .Received(1)
+            .UploadAsync(
+                new BlobLocation("DataProtection", "test-key.xml"),
+                Arg.Any<Stream>(),
+                Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            );
+        manager.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -510,47 +495,10 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_when_container_ensure_throws_transient_exception()
+    public void should_wrap_terminal_store_failure_naming_the_container_and_resources_provision()
     {
-        // The container ensure runs INSIDE the same resilience pipeline as the upload, so a transient
-        // ensure failure is retried under the same predicate instead of failing the key write outright.
-        var storage = Substitute.For<IBlobStorage>();
-        _SetupUpload(storage);
-        var manager = Substitute.For<IBlobContainerManager>();
-        var ensureCalls = 0;
-        manager
-            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                ensureCalls++;
-                if (ensureCalls == 1)
-                {
-                    throw new IOException("Simulated transient ensure failure");
-                }
-
-                return ValueTask.CompletedTask;
-            });
-        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
-
-        sut.StoreElement(new XElement("key", new XAttribute("id", "test")), "test-key");
-
-        ensureCalls.Should().Be(2);
-        await storage
-            .Received(1)
-            .UploadAsync(
-                Arg.Any<BlobLocation>(),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
-    public void should_wrap_terminal_store_failure_with_container_context_when_no_manager()
-    {
-        // Retries exhausted on a transient-shaped failure → the surfaced exception adds the container name and
-        // the no-manager (pre-provisioned) context, with the original backend exception preserved as the inner.
+        // Retries exhausted on a transient-shaped failure → the surfaced exception names the container and the
+        // provision step, with the original backend exception preserved as the inner.
         var storage = Substitute.For<IBlobStorage>();
         storage
             .UploadAsync(
@@ -569,15 +517,15 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*'DataProtection'*")
-            .WithMessage("*No IBlobContainerManager*")
+            .WithMessage("*resources provision -k DataProtectionKeys*")
             .WithInnerException<IOException>();
     }
 
     [Fact]
-    public async Task should_wrap_non_retried_store_failure_noting_manager_was_wired()
+    public async Task should_wrap_non_retried_store_failure_with_container_context()
     {
         // A non-transient failure is not retried (the predicate only covers IOException/HttpRequestException)
-        // but is still wrapped with the container + manager-was-wired context.
+        // but is still wrapped with the container and remediation context.
         var storage = Substitute.For<IBlobStorage>();
         storage
             .UploadAsync(
@@ -597,7 +545,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*'DataProtection'*")
-            .WithMessage("*IBlobContainerManager was wired*")
+            .WithMessage("*resources provision -k DataProtectionKeys*")
             .WithInnerException<NotSupportedException>();
         await storage
             .Received(1)
@@ -635,19 +583,12 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
     [Fact]
     public async Task should_upload_then_delete_sentinel_when_probing_write_access()
     {
-        // The write probe must exercise the exact write path the key writes use: ensure (when a manager is
-        // wired) → upload the reserved sentinel → delete it.
+        // The opt-in write probe exercises the write path the key writes use: upload the reserved sentinel, then
+        // delete it. It never creates the container.
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
         var calls = new List<string>();
 
-        manager
-            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                calls.Add("ensure");
-                return ValueTask.CompletedTask;
-            });
         storage
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
@@ -673,7 +614,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
 
         await sut.ProbeWriteAccessAsync(AbortToken);
 
-        calls.Should().Equal("ensure", "upload", "delete");
+        calls.Should().Equal("upload", "delete");
+        manager.ReceivedCalls().Should().BeEmpty();
         await storage
             .Received(1)
             .UploadAsync(
@@ -742,8 +684,56 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*'DataProtection'*")
-            .WithMessage("*No IBlobContainerManager*")
+            .WithMessage("*resources provision -k DataProtectionKeys*")
             .WithInnerException<InvalidOperationException, NotSupportedException>();
+    }
+
+    #endregion
+
+    #region CountKeyBlobsAsync Tests
+
+    [Fact]
+    public async Task should_count_key_blobs_without_downloading_and_skip_the_write_probe_sentinel()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(
+            storage,
+            [
+                _CreateBlobInfo("key1.xml"),
+                _CreateBlobInfo(BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
+                _CreateBlobInfo("key2.xml"),
+            ]
+        );
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var count = await sut.CountKeyBlobsAsync(maxCount: 10, AbortToken);
+
+        count.Should().Be(2);
+        await storage.DidNotReceiveWithAnyArgs().OpenReadStreamAsync(default!, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_stop_counting_key_blobs_at_the_limit()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(storage, [_CreateBlobInfo("key1.xml"), _CreateBlobInfo("key2.xml")]);
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var count = await sut.CountKeyBlobsAsync(maxCount: 1, AbortToken);
+
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_count_zero_key_blobs_in_an_empty_container()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        _SetupStorageWithBlobs(storage, []);
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var count = await sut.CountKeyBlobsAsync(maxCount: 1, AbortToken);
+
+        count.Should().Be(0);
     }
 
     #endregion
