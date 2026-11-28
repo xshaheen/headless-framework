@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting;
+
 namespace Headless.Jobs;
 
 /// <summary>
@@ -93,8 +95,11 @@ internal sealed class ExceptionDetailClassForSerialization
     /// </summary>
     public string? StackTrace { get; set; }
 
-    /// <summary>Returns <paramref name="exception"/> as the JSON a failed attempt stores.</summary>
-    public static string Serialize(Exception exception)
+    /// <summary>
+    /// Returns <paramref name="exception"/> as the JSON a failed attempt stores, its message and stack text masked by
+    /// <paramref name="masker"/> when one is given, because the row outlives the process and the dashboard shows it.
+    /// </summary>
+    public static string Serialize(Exception exception, ILogTextMasker? masker = null)
     {
         // ExpandMessage writes the inner chain (and a flattened AggregateException) the way Messaging stores its
         // failures, bounded to a few levels so a deep chain cannot grow a row without limit.
@@ -108,11 +113,13 @@ internal sealed class ExceptionDetailClassForSerialization
                     )
                 );
 
-        var fullStackTrace = stackTrace.Length == 0 ? null : stackTrace;
+        // Masked before the fields are cut, so a value the cut would split is still found whole.
+        var message = masker?.Mask(exception.Message) ?? exception.Message;
+        var fullStackTrace = stackTrace.Length == 0 ? null : masker?.Mask(stackTrace) ?? stackTrace;
         var detail = new ExceptionDetailClassForSerialization
         {
             Type = exception.GetType().FullName,
-            Message = exception.Message,
+            Message = message,
             StackTrace = fullStackTrace,
         };
 
@@ -125,7 +132,7 @@ internal sealed class ExceptionDetailClassForSerialization
 
         while (true)
         {
-            detail.Message = exception.Message.TruncateEnd(messageLimit, JobExceptionText.TruncationMarker);
+            detail.Message = message.TruncateEnd(messageLimit, JobExceptionText.TruncationMarker);
             detail.StackTrace = fullStackTrace.TruncateEnd(stackLimit, JobExceptionText.TruncationMarker);
             var json = JsonSerializer.Serialize(
                 detail,

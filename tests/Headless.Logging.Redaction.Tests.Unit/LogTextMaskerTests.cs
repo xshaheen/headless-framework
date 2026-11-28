@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using Headless.Hosting;
 using Headless.Logging;
 using Headless.Testing.Tests;
@@ -143,6 +145,61 @@ public sealed class LogTextMaskerTests : TestBase
     }
 
     [Fact]
+    public void should_mask_the_stack_trace_text_of_a_masked_copy()
+    {
+        // given: a rethrown exception whose remote trace carries the id its message also names
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = ExceptionDispatchInfo.SetRemoteStackTrace(
+            new InvalidOperationException($"no citizen {_NationalId}"),
+            $"   at Registry.Find(String id = {_NationalId})"
+        );
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then: the copy keeps the type, and neither its trace nor its full text carries the id
+        masked.Should().BeOfType<InvalidOperationException>().And.NotBeSameAs(original);
+        masked.StackTrace.Should().Contain("Registry.Find").And.NotContain(_NationalId);
+        masked.ToString().Should().NotContain(_NationalId);
+        original.StackTrace.Should().Contain(_NationalId);
+    }
+
+    [Fact]
+    public void should_keep_the_stack_trace_of_a_masked_copy_when_it_holds_no_match()
+    {
+        // given: a thrown exception whose message matches and whose frames do not
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = _Thrown($"no citizen {_NationalId}");
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then
+        masked.Should().BeOfType<InvalidOperationException>();
+        masked.StackTrace.Should().Be(original.StackTrace);
+        new StackTrace(masked).FrameCount.Should().BePositive();
+    }
+
+    [Fact]
+    public void should_fall_back_when_a_type_builds_its_stack_trace_itself()
+    {
+        // given: a type whose StackTrace override returns text a copy cannot rewrite
+        using var provider = _Build(static setup => setup.MaskText(@"\b\d{14}\b"));
+        var masker = provider.GetRequiredService<LogTextMasker>();
+        var original = new OwnStackTraceException($"no citizen {_NationalId}", $"   at Registry.Find({_NationalId})");
+
+        // when
+        var masked = masker.Mask(original);
+
+        // then
+        var redacted = masked.Should().BeOfType<RedactedException>().Subject;
+        redacted.OriginalTypeName.Should().Be(typeof(OwnStackTraceException).FullName);
+        redacted.StackTrace.Should().Be("   at Registry.Find(***)");
+    }
+
+    [Fact]
     public void should_return_its_arguments_when_no_text_redactor_is_registered()
     {
         // given
@@ -219,6 +276,23 @@ public sealed class LogTextMaskerTests : TestBase
     private sealed class UpperCaseRedactor : ILogTextRedactor
     {
         public string Redact(string text) => text.ToUpperInvariant();
+    }
+
+    private sealed class OwnStackTraceException(string message, string stackTrace) : Exception(message)
+    {
+        public override string StackTrace => stackTrace;
+    }
+
+    private static InvalidOperationException _Thrown(string message)
+    {
+        try
+        {
+            throw new InvalidOperationException(message);
+        }
+        catch (InvalidOperationException e)
+        {
+            return e;
+        }
     }
 
     private sealed class OwnDataException() : Exception("lookup failed")

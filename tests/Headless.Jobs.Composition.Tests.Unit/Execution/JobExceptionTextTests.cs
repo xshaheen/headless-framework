@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 
@@ -69,6 +70,21 @@ public sealed class JobExceptionTextTests : TestBase
     }
 
     [Fact]
+    public void the_stored_message_and_inner_chain_are_masked_when_a_text_masker_is_given()
+    {
+        // The row outlives the process and the dashboard shows it, so an id in any exception of the chain is masked.
+        var exception = new InvalidOperationException(
+            "charge for 29001011234567 failed",
+            new FormatException("card of 29001011234567 is invalid")
+        );
+
+        var detail = _Read(ExceptionDetailClassForSerialization.Serialize(exception, new NationalIdMasker()));
+
+        detail.Message.Should().Be("charge for *** failed");
+        detail.StackTrace.Should().Contain("card of *** is invalid").And.NotContain("29001011234567");
+    }
+
+    [Fact]
     public void a_plain_reason_is_bounded_for_the_store_and_for_a_tag()
     {
         var reason = new string('r', 10_000);
@@ -77,6 +93,13 @@ public sealed class JobExceptionTextTests : TestBase
         JobExceptionText.ForTag(reason).Should().HaveLength(JobExceptionText.TagMaxLength);
         JobExceptionText.ForTag("short").Should().Be("short");
         JobExceptionText.ForTag(null).Should().BeNull();
+    }
+
+    private sealed class NationalIdMasker : ILogTextMasker
+    {
+        public string Mask(string text) => text.Replace("29001011234567", "***", StringComparison.Ordinal);
+
+        public Exception Mask(Exception exception) => exception;
     }
 
     private static ExceptionDetailClassForSerialization _Read(string stored) =>

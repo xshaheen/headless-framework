@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Headless.Fencing;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -64,7 +65,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         MessagingOptions options,
         ICircuitBreakerStateManager? circuitBreaker = null,
         TimeProvider? timeProvider = null,
-        IMessageStateObserver? stateObserver = null
+        IMessageStateObserver? stateObserver = null,
+        ILogTextMasker? masker = null
     )
     {
         storage
@@ -121,7 +123,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             timeProvider ?? TimeProvider.System,
             logger,
             Options.Create(options),
-            circuitBreaker
+            circuitBreaker,
+            masker is null ? null : new MessagingTelemetry([], masker: masker)
         );
     }
 
@@ -1619,6 +1622,31 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_store_the_failure_text_masked_when_a_text_masker_is_registered()
+    {
+        // given — a handler that fails naming an order, and an app masker that masks order ids
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ConsumerExecutedResult>(_Catch(() => _ThrowOutOfStock("order-1001"))));
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions(), masker: new OrderIdMasker());
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(FailurePolicyDefinition.None),
+            AbortToken
+        );
+
+        // then — the stored text the dashboard shows carries the mask, not the order id
+        var write = writes.Should().ContainSingle(write => _IsTerminal(write)).Subject;
+        write.ExceptionInfo.Should().Contain("Order *** has an item out of stock").And.NotContain("order-1001");
+    }
+
+    [Fact]
     public async Task should_store_a_fingerprint_on_the_retry_write_and_a_different_one_when_the_cause_changes()
     {
         // given — the first attempt fails one way and its immediate retry fails another
@@ -1954,6 +1982,13 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         }
 
         throw new InvalidOperationException("The action did not throw.");
+    }
+
+    private sealed class OrderIdMasker : ILogTextMasker
+    {
+        public string Mask(string text) => text.Replace("order-1001", "***", StringComparison.Ordinal);
+
+        public Exception Mask(Exception exception) => exception;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

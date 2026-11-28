@@ -288,7 +288,7 @@ internal sealed partial class ConsumerRegister
                 {
                     dispatchBypassException = receiveOutcome.Exception!;
                     receiveRejectIsPolicy = receiveOutcome.IsPolicyReject;
-                    exceptionInfo = dispatchBypassException.ExpandMessage();
+                    exceptionInfo = _telemetry.ExceptionInfoOf(dispatchBypassException);
                     message = _BuildPoisonMessage(transportMessage, receiveContext, dispatchBypassException);
 
                     MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeRejected);
@@ -338,7 +338,7 @@ internal sealed partial class ConsumerRegister
             {
                 dispatchBypassException = e;
                 receiveRejectIsPolicy = false;
-                exceptionInfo = e.ExpandMessage();
+                exceptionInfo = _telemetry.ExceptionInfoOf(e);
                 message = _BuildPoisonMessage(transportMessage, receiveContext, e);
 
                 // Every row built here is a poison-on-arrival outcome: subscriber-not-found,

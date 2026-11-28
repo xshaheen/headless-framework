@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Hosting;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,10 +116,13 @@ internal sealed class ResponderReplies(
                 var cause = exception is SubscriberExecutionFailedException { InnerException: { } inner }
                     ? inner
                     : exception;
+                // The fault leaves the process to another service, so its message is masked like a log entry's.
+                var detail = cause.Message;
+                detail = services.GetService<ILogTextMasker>()?.Mask(detail) ?? detail;
                 fault = fault with
                 {
                     ExceptionType = cause.GetType().FullName ?? cause.GetType().Name,
-                    Detail = LogSanitizer.Sanitize(cause.Message, ReplyProtocol.MaxFaultDetailLength),
+                    Detail = LogSanitizer.Sanitize(detail, ReplyProtocol.MaxFaultDetailLength),
                 };
             }
 

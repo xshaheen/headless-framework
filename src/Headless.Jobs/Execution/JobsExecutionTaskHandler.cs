@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Headless.Context;
+using Headless.Hosting;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
@@ -22,6 +23,10 @@ internal sealed class JobsExecutionTaskHandler
     private readonly JobFunctionRegistry _functionRegistry;
     private readonly JobsExecutionCancellationRegistry _cancellationRegistry;
     private readonly ILogger<JobsExecutionTaskHandler> _logger;
+
+    // Masks the failure text a run stores, which outlives the process and the dashboard shows; null when the app
+    // registers no text redaction.
+    private readonly ILogTextMasker? _textMasker;
 
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
     private readonly TimeSpan _leaseRenewalInterval;
@@ -64,9 +69,11 @@ internal sealed class JobsExecutionTaskHandler
         ICurrentTenant? currentTenant = null,
         IOptions<JobsTenancyOptions>? tenancyOptions = null,
         JobsTaskScheduler? taskScheduler = null,
-        IJobsOwnerIdentity? ownerIdentity = null
+        IJobsOwnerIdentity? ownerIdentity = null,
+        ILogTextMasker? textMasker = null
     )
     {
+        _textMasker = textMasker;
         _propagateTenant = tenancyOptions?.Value.PropagateTenant ?? false;
         _serviceProvider = serviceProvider;
         _timeProvider = timeProvider;
@@ -709,7 +716,7 @@ internal sealed class JobsExecutionTaskHandler
                         + "was not invoked again."
                 );
                 var exhaustedAt = _timeProvider.GetUtcNow();
-                var exhaustedDetails = ExceptionDetailClassForSerialization.Serialize(exhaustedByRecovery);
+                var exhaustedDetails = ExceptionDetailClassForSerialization.Serialize(exhaustedByRecovery, _textMasker);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)
                     .SetProperty(x => x.ExecutedAt, exhaustedAt)
@@ -900,7 +907,7 @@ internal sealed class JobsExecutionTaskHandler
                                     attemptEnd(
                                         JobAttemptOutcome.Failed,
                                         _timeProvider.GetUtcNow(),
-                                        ExceptionDetailClassForSerialization.Serialize(exception),
+                                        ExceptionDetailClassForSerialization.Serialize(exception, _textMasker),
                                         retryFingerprint
                                     )
                                 );
@@ -979,7 +986,7 @@ internal sealed class JobsExecutionTaskHandler
                     }
 
                     var cancelledAt = _timeProvider.GetUtcNow();
-                    var cancelledDetails = ExceptionDetailClassForSerialization.Serialize(ex);
+                    var cancelledDetails = ExceptionDetailClassForSerialization.Serialize(ex, _textMasker);
                     context
                         .SetProperty(x => x.Status, JobStatus.Cancelled)
                         .SetProperty(x => x.ExecutedAt, cancelledAt)
@@ -1032,7 +1039,8 @@ internal sealed class JobsExecutionTaskHandler
                 }
 
                 var terminatedAt = _timeProvider.GetUtcNow();
-                var terminateReason = JobExceptionText.ForStore(ex.InnerException?.Message ?? ex.Message);
+                var terminateText = ex.InnerException?.Message ?? ex.Message;
+                var terminateReason = JobExceptionText.ForStore(_textMasker?.Mask(terminateText) ?? terminateText);
                 context
                     .SetProperty(x => x.Status, ex.Status)
                     .SetProperty(x => x.ExecutedAt, terminatedAt)
@@ -1090,7 +1098,7 @@ internal sealed class JobsExecutionTaskHandler
                         attemptEnd(
                             JobAttemptOutcome.Failed,
                             _timeProvider.GetUtcNow(),
-                            ExceptionDetailClassForSerialization.Serialize(deferral.Exception),
+                            ExceptionDetailClassForSerialization.Serialize(deferral.Exception, _textMasker),
                             deferredFingerprint
                         ),
                         cancellationRegistration,
@@ -1162,7 +1170,7 @@ internal sealed class JobsExecutionTaskHandler
             }
             else if (lastException != null)
             {
-                var failedDetails = ExceptionDetailClassForSerialization.Serialize(lastException);
+                var failedDetails = ExceptionDetailClassForSerialization.Serialize(lastException, _textMasker);
                 var failedFingerprint = FailureFingerprint.Compute(lastException);
                 context
                     .SetProperty(x => x.Status, JobStatus.Failed)

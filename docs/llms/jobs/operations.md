@@ -219,7 +219,7 @@ A failed time job or cron occurrence stores `FailureFingerprint`, a versioned ke
 - **Stored with the failure.** The row keeps the fingerprint of its most recent failed attempt, even after a later attempt succeeds. A requeue clears it.
 - **Fixed causes.** A failure the store writes without an exception stores a constant from `JobFailureFingerprints`: `v1:node-not-alive` (dead-node sweep, `MarkFailed`), `v1:lease-lapsed` (lapsed-lease sweep, `MarkFailed`), `v1:interrupted-by-shutdown` (a graceful stop settled a `MarkFailed` run), or `v1:retry-budget-exhausted-by-recovery`.
 - **Versioned.** A change to the algorithm is a new prefix. Rows under an older version keep their groups until they age out.
-- **Bounds.** The column holds at most `JobFailureFingerprints.MaxLength` (64) characters. The stored exception text is JSON with the outer exception's type and message, its frames, and up to five inner exceptions, at most 4,096 characters, with the message capped at 1,024. Cut text ends with `… [truncated]`.
+- **Bounds.** The column holds at most `JobFailureFingerprints.MaxLength` (64) characters. The stored exception text is JSON with the outer exception's type and message, its frames, and up to five inner exceptions, at most 4,096 characters, with the message capped at 1,024. Cut text ends with `… [truncated]`. When `AddHeadlessRedaction()` registers a text redactor, the message and frames are masked before they are stored and truncated, and so are a terminated run's reason and the node's host exception that the dashboard shows.
 
 ---
 

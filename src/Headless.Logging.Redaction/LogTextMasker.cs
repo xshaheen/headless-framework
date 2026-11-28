@@ -70,8 +70,8 @@ public sealed class LogTextMasker : ILogTextMasker
 
     /// <summary>
     /// Returns <paramref name="exception"/> itself when no message or <see cref="Exception.Data"/> value in its chain
-    /// matched; otherwise a copy of the same type whose own message, data values, and inner exceptions are masked,
-    /// keeping its stack frames, or a <see cref="RedactedException"/> when such a copy cannot be masked. The exception
+    /// matched; otherwise a copy of the same type whose own message, data values, stack trace text, and inner exceptions
+    /// are masked, keeping its stack frames, or a <see cref="RedactedException"/> when such a copy cannot be masked. The exception
     /// passed in, and its <see cref="Exception.Data"/>, are never changed.
     /// </summary>
     /// <remarks>

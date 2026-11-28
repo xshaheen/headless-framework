@@ -19,8 +19,10 @@ namespace Headless.Logging;
 /// every entry. Nothing is scanned until one is registered. A logged exception is scanned in its
 /// <see cref="Exception.Message"/> and every inner exception's; when one matches, providers receive a copy of the
 /// exception, of the same type and with the same stack frames, whose messages are masked, or a
-/// <see cref="RedactedException"/> when such a copy cannot be masked. Text only in a stack trace or a
-/// <see cref="Exception.ToString"/> override is not looked for, because rendering it would cost every logged exception. A non-string value is scanned in its invariant text
+/// <see cref="RedactedException"/> when such a copy cannot be masked; the copy's stack trace text is masked too. The
+/// stack trace of an exception whose messages and data match nothing, and text only in an
+/// <see cref="Exception.ToString"/> override, are not looked for, because rendering them would cost every logged
+/// exception. A non-string value is scanned in its invariant text
 /// form and replaced by its masked text only when that text matches; booleans, GUIDs, enums, and date and time values
 /// are not scanned, the members of a destructured <c>{@Value}</c> are not either.
 /// </para>

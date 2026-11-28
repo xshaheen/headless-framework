@@ -272,7 +272,7 @@ Fault codes are stable wire values in `RequestFaultCodes`:
 | `null_response` | The responder returned `null` | It ran to completion |
 | `response_not_sent` | The responder completed, but its response could not be serialized or the transport refused the reply | Yes; its effects stand |
 
-A fault body is never empty, and an unreadable one surfaces as `handler_failed`. `RemoteExceptionType` and `Detail` stay `null` unless the responding host sets `RequestReply.IncludeExceptionDetailsInFaults`, because exception messages can carry internal details.
+A fault body is never empty, and an unreadable one surfaces as `handler_failed`. `RemoteExceptionType` and `Detail` stay `null` unless the responding host sets `RequestReply.IncludeExceptionDetailsInFaults`, because exception messages can carry internal details. When `AddHeadlessRedaction()` on the responding host registers a text redactor, `Detail` is masked before it is sent.
 
 ```csharp
 public sealed class QuoteGateway(IRequestClient requests)
