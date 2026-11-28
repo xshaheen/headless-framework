@@ -478,6 +478,83 @@ public sealed class PaymobCashOutBrokerTests(PaymobCashOutFixture fixture)
         return (authenticator, token);
     }
 
+    [Fact]
+    public async Task should_return_rejected_without_sending_reads_when_authentication_fails()
+    {
+        // given
+        var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
+        authenticator
+            .GetAccessTokenAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                PaymobCashOutResult.Rejected<string>(
+                    new PaymobCashOutResultError("bad credentials", HttpStatusCode.Unauthorized)
+                )
+            );
+        using var handler = new ThrowingHandler(new InvalidOperationException("must not be sent"));
+        using var httpClient = new HttpClient(handler);
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+
+        // when
+        var budget = await broker.GetBudgetAsync(AbortToken);
+        var transactions = await broker.GetTransactionsAsync(
+            ["1"],
+            isBankTransactions: false,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        budget.IsRejected.Should().BeTrue();
+        budget.Error!.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        transactions.IsRejected.Should().BeTrue();
+        handler.Calls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task should_return_unknown_when_the_disburse_response_stream_breaks(HttpStatusCode status)
+    {
+        // given
+        var (authenticator, _) = _SetupAuthenticator();
+        using var handler = new BrokenBodyHandler(status);
+        using var httpClient = new HttpClient(handler);
+        var broker = new PaymobCashOutBroker(httpClient, authenticator, fixture.OptionsAccessor);
+
+        // when
+        var result = await broker.DisburseAsync(CashOutDisburseRequest.Vodafone(10m, "01099999999"), AbortToken);
+
+        // then - the payout reached Paymob, so a lost answer cannot be read as a rejection
+        // HttpClient buffers the body before it returns, so the break surfaces as a fault of the send itself.
+        result.Outcome.Should().Be(PaymobCashOutOutcome.Unknown);
+        result.Error!.Exception.Should().NotBeNull();
+    }
+
+    private sealed class BrokenBodyHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new BrokenContent() });
+        }
+    }
+
+    private sealed class BrokenContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return Task.FromException(new IOException("response stream closed"));
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+
+            return false;
+        }
+    }
+
     private sealed class ThrowingHandler(Exception fault) : HttpMessageHandler
     {
         public int Calls { get; private set; }

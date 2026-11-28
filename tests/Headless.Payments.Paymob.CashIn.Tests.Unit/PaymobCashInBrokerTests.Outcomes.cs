@@ -323,6 +323,23 @@ public sealed partial class PaymobCashInBrokerTests
         handler.Calls.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    public async Task should_return_unknown_when_the_response_stream_breaks(HttpStatusCode status)
+    {
+        // given
+        using var handler = new StubHandler(_ => new HttpResponseMessage(status) { Content = new BrokenContent() });
+
+        // when
+        var (outcome, error, _) = await _InvokeAsync(MoneyCall.Refund, handler);
+
+        // then
+        // HttpClient buffers the body before it returns, so the break surfaces as a fault of the send itself.
+        outcome.Should().Be(PaymobCashInOutcome.Unknown);
+        error!.Exception.Should().NotBeNull();
+    }
+
     private async Task<(PaymobCashInOutcome Outcome, PaymobCashInResultError? Error, bool HasValue)> _InvokeAsync(
         MoneyCall call,
         StubHandler handler,
@@ -412,6 +429,21 @@ public sealed partial class PaymobCashInBrokerTests
         }
 
         return data;
+    }
+
+    private sealed class BrokenContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return Task.FromException(new IOException("response stream closed"));
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+
+            return false;
+        }
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
