@@ -779,14 +779,18 @@ public abstract class CacheConformanceTestsBase : TestBase
         await ResetAsync();
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var key = Faker.Random.AlphaNumeric(10);
-        var options = _CreateSlidingOptions(sliding: TimeSpan.FromMilliseconds(150));
+        // A provider whose store keeps real time (Redis) advances by a real delay, so each wait ends a full second
+        // inside the window it must stay inside: a 150 ms window with 50 ms margins failed whenever a loaded machine
+        // ran the delay late. The two waits still total a second past the first window, so only the refresh keeps
+        // the entry alive.
+        var options = _CreateSlidingOptions(duration: TimeSpan.FromSeconds(10), sliding: TimeSpan.FromSeconds(3));
 
         await cache.UpsertEntryAsync(key, "value", options, AbortToken);
-        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+        await AdvanceAsync(TimeSpan.FromSeconds(2));
 
         await cache.RefreshAsync(key, AbortToken);
 
-        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        await AdvanceAsync(TimeSpan.FromSeconds(2));
         var refreshed = await cache.GetAsync<string>(key, AbortToken);
 
         refreshed.HasValue.Should().BeTrue();
