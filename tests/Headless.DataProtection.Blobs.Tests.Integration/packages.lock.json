@@ -232,6 +232,20 @@
         "resolved": "22.1.0",
         "contentHash": "mTdHWGsNCWpKyQxqyNcSS+q4BtBTSOUfhdG+Lwo6eAOznCLSwrZQ5VKtDG2G8VrUp1ul4DwWHefoBS1umjO/VQ=="
       },
+      "AWSSDK.Core": {
+        "type": "Transitive",
+        "resolved": "4.1.1.1",
+        "contentHash": "paZNy+g/hXMCsEpWvmOFr14x9gVzIY2JRSzSk+nXpKcnaASxEFBMWE4CNBuI/WwGN1ygTwojRTsPRn3yXuhSYQ==",
+        "dependencies": {
+          "AWSSDK.Extensions.Numerics": "[4.1.0, 5.0.0)",
+          "System.IO.Hashing": "11.0.0"
+        }
+      },
+      "AWSSDK.Extensions.Numerics": {
+        "type": "Transitive",
+        "resolved": "4.1.0",
+        "contentHash": "hhoiXT1aUyVgIiQbQoqG3L1EEneqXDh2GKyH5izUlO6Rzi9GAAi8S6mlLiVwow23+EGg77zHjdmUi+ia3RSUTg=="
+      },
       "Azure.Core": {
         "type": "Transitive",
         "resolved": "1.60.0",
@@ -722,8 +736,8 @@
       },
       "System.IO.Hashing": {
         "type": "Transitive",
-        "resolved": "10.0.9",
-        "contentHash": "vixglGnKEexAJDeIRhyayZYzxyrgK1K9GU3K/zRZVwDbaDcMkSqj4WDHoVmQMNfsdUtLALfNSJw6mBIpdxie4A=="
+        "resolved": "11.0.0",
+        "contentHash": "U+Bv2qCYt6eONi+arSP0QIp4uTO6os6uceBsqiAwruZ+Wo2HrRhO/0tj38M9URJtS+4DhAtT3ka2TGNFYsnhyQ=="
       },
       "System.Memory.Data": {
         "type": "Transitive",
@@ -798,6 +812,16 @@
         "dependencies": {
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )"
+        }
+      },
+      "headless.blobs.aws": {
+        "type": "Project",
+        "dependencies": {
+          "AWSSDK.Extensions.NETCore.Setup": "[4.1.0.3, )",
+          "AWSSDK.S3": "[4.1.2.1, )",
+          "Headless.Blobs": "[1.0.0, )",
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.blobs.azure": {
@@ -931,6 +955,27 @@
           "Testcontainers.Redis": "[4.17.0, )",
           "Testcontainers.XunitV3": "[4.17.0, )",
           "xunit.v3.extensibility.core": "[4.0.3, )"
+        }
+      },
+      "AWSSDK.Extensions.NETCore.Setup": {
+        "type": "CentralTransitive",
+        "requested": "[4.1.0.3, )",
+        "resolved": "4.1.0.3",
+        "contentHash": "SVJfEZPUE6/KodsEE/JwGsc2BbS0lfsPA7USW9e/Mv6Uf0p39XrUurpagYDJKUKjIGd/8Gn0hNA7VCL+nKCdOQ==",
+        "dependencies": {
+          "AWSSDK.Core": "4.1.1.1",
+          "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "2.0.0"
+        }
+      },
+      "AWSSDK.S3": {
+        "type": "CentralTransitive",
+        "requested": "[4.1.2.1, )",
+        "resolved": "4.1.2.1",
+        "contentHash": "5NYXkjBc8uQz5RFtpubw6NcjFahIiVTIq4rucZv6y8q9QSaO33PWsJHnkxrtmXRCXft0Fke1gnv6gvMP5wR1nw==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.1.1.1, 5.0.0)"
         }
       },
       "Azure.Storage.Blobs": {

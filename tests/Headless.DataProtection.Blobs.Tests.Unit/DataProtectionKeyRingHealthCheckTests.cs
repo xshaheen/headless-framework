@@ -15,29 +15,30 @@ namespace Tests;
 public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
 {
     [Fact]
-    public async Task should_write_probe_by_default_even_when_manager_wired()
+    public async Task should_probe_container_existence_without_writing_by_default_when_manager_wired()
     {
-        // given: default style with a manager wired — the wiring must NOT weaken the guarantee: managers can
-        // succeed on read/stat permission while writes are revoked, so the default always write-probes.
+        // given: the default style with a manager wired. A health check runs on every probe interval, so by default
+        // it only reads.
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
+        manager
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
         var (check, context) = _CreateCheck(storage, manager);
 
         // when
         var result = await check.CheckHealthAsync(context, AbortToken);
 
-        // then: healthy via the definitive write probe — the sentinel was uploaded AND deleted, and the
-        // existence API was never consulted.
+        // then
         result.Status.Should().Be(HealthStatus.Healthy);
         result
             .Description.Should()
             .Be(
-                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
                     BlobStorageDataProtectionOptions.DefaultContainerName
                 )
             );
-        await _AssertSentinelUploadedAndDeletedAsync(storage);
-        await manager.DidNotReceive().ContainerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        storage.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
@@ -126,7 +127,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                     BlobStorageDataProtectionOptions.DefaultContainerName
                 )
             );
-        result.Description.Should().Contain("key rotation will fail");
+        result.Description.Should().Contain("resources provision -k DataProtectionKeys");
     }
 
     [Fact]
@@ -157,36 +158,83 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
     }
 
     [Fact]
-    public async Task should_fall_back_to_write_probe_when_existence_style_requested_without_manager()
+    public async Task should_report_healthy_by_listing_keys_without_writing_when_no_manager_wired()
     {
-        // given: the opt-down was requested but no manager is wired (pre-provisioned mode) — there is no
-        // existence API to ask, so the stronger write probe is the only probe possible. That is a legitimate
-        // wiring, not misuse, so it must NOT report Degraded.
-        var storage = Substitute.For<IBlobStorage>();
-        var (check, context) = _CreateCheck(storage, manager: null, KeyRingProbeStyle.ContainerExistence);
+        // given: pre-provisioned wiring has no existence API, so the read-only probe lists the key blobs instead.
+        var storage = _StorageListing("key-1.xml");
+        var (check, context) = _CreateCheck(storage, manager: null);
 
         // when
         var result = await check.CheckHealthAsync(context, AbortToken);
 
-        // then: healthy via the write probe, with a description noting the fallback.
+        // then
         result.Status.Should().Be(HealthStatus.Healthy);
         result
             .Description.Should()
             .Be(
-                DataProtectionKeyRingHealthCheck.ExistenceFallbackHealthyDescription(
+                DataProtectionKeyRingHealthCheck.KeyListingHealthyDescription(
                     BlobStorageDataProtectionOptions.DefaultContainerName
                 )
             );
-        await _AssertSentinelUploadedAndDeletedAsync(storage);
+        _AssertNothingWritten(storage);
     }
 
     [Fact]
-    public async Task should_report_healthy_via_write_probe_when_no_manager_wired()
+    public async Task should_report_failure_status_naming_resources_provision_when_no_key_is_listed()
     {
-        // given: default style, pre-provisioned wiring (no manager). The bare substitute accepts uploads and
-        // deletes.
-        var storage = Substitute.For<IBlobStorage>();
+        // given: the probe's own sentinel is not a key, so a ring holding only it is still empty.
+        var storage = _StorageListing(BlobStorageDataProtectionXmlRepository.WriteProbeBlobName);
         var (check, context) = _CreateCheck(storage, manager: null);
+
+        // when
+        var result = await check.CheckHealthAsync(context, AbortToken);
+
+        // then
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.KeyListingEmptyDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            )
+            .And.Contain("resources provision");
+        _AssertNothingWritten(storage);
+    }
+
+    [Fact]
+    public async Task should_report_unhealthy_with_exception_when_the_key_listing_fails()
+    {
+        // given
+        var storage = Substitute.For<IBlobStorage>();
+        var failure = new IOException("Simulated read failure");
+        storage
+            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<BlobPage>(failure));
+        var (check, context) = _CreateCheck(storage, manager: null);
+
+        // when
+        var result = await check.CheckHealthAsync(context, AbortToken);
+
+        // then
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result
+            .Description.Should()
+            .Be(
+                DataProtectionKeyRingHealthCheck.KeyListingFailedDescription(
+                    BlobStorageDataProtectionOptions.DefaultContainerName
+                )
+            );
+        result.Exception.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_report_healthy_via_write_probe_when_write_probe_style_opted_in()
+    {
+        // given: the opt-in write probe on pre-provisioned wiring (no manager). The bare substitute accepts uploads
+        // and deletes.
+        var storage = Substitute.For<IBlobStorage>();
+        var (check, context) = _CreateCheck(storage, manager: null, KeyRingProbeStyle.WriteProbe);
 
         // when
         var result = await check.CheckHealthAsync(context, AbortToken);
@@ -218,7 +266,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
-        var (check, context) = _CreateCheck(storage, manager: null);
+        var (check, context) = _CreateCheck(storage, manager: null, KeyRingProbeStyle.WriteProbe);
 
         // when
         var result = await check.CheckHealthAsync(context, AbortToken);
@@ -308,7 +356,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 name: "keys",
                 failureStatus: HealthStatus.Degraded,
                 tags: ["ready"],
-                probeStyle: KeyRingProbeStyle.ContainerExistence
+                probeStyle: KeyRingProbeStyle.WriteProbe
             );
 
         // then
@@ -323,45 +371,48 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
     [Fact]
     public async Task should_flow_probe_style_through_registration_factory()
     {
-        // given: a ContainerExistence registration resolved through DI — the style must reach the activated
-        // check, not just the registration metadata.
+        // given: a WriteProbe registration resolved through DI — the style must reach the activated check, not just
+        // the registration metadata.
         var services = new ServiceCollection();
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
-        manager
-            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(true));
         services.AddDataProtection().PersistKeysToBlobStorage(storage, manager);
-        services.AddHealthChecks().AddDataProtectionKeyRing(probeStyle: KeyRingProbeStyle.ContainerExistence);
+        services.AddHealthChecks().AddDataProtectionKeyRing(probeStyle: KeyRingProbeStyle.WriteProbe);
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value;
-        var registration = options.Registrations.Should().ContainSingle().Which;
+        var registration = options
+            .Registrations.Should()
+            .ContainSingle(r => r.Name == DataProtectionHealthChecksExtensions.DefaultName)
+            .Which;
         var check = registration.Factory(provider);
 
         // when
         var result = await check.CheckHealthAsync(new HealthCheckContext { Registration = registration }, AbortToken);
 
-        // then: the existence probe ran (not the default write probe).
+        // then: the write probe ran (not the default existence probe).
         result
             .Description.Should()
             .Be(
-                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
+                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
                     BlobStorageDataProtectionOptions.DefaultContainerName
                 )
             );
-        storage.ReceivedCalls().Should().BeEmpty();
+        await _AssertSentinelUploadedAndDeletedAsync(storage);
+        await manager.DidNotReceive().ContainerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_resolve_from_di_and_report_through_health_check_service()
     {
-        // given: a full DI composition — data protection persisting to a managed blob store. The default style
-        // write-probes even though a manager is wired.
+        // given: a full DI composition — data protection persisting to a managed blob store.
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.AddProvider(LoggerProvider));
         var storage = Substitute.For<IBlobStorage>();
         var manager = Substitute.For<IBlobContainerManager>();
+        manager
+            .ContainerExistsAsync(BlobStorageDataProtectionOptions.DefaultContainerName, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
         services.AddDataProtection().PersistKeysToBlobStorage(storage, manager);
         services.AddHealthChecks().AddDataProtectionKeyRing();
 
@@ -376,7 +427,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
         entry
             .Description.Should()
             .Be(
-                DataProtectionKeyRingHealthCheck.WriteProbeHealthyDescription(
+                DataProtectionKeyRingHealthCheck.ExistenceProbeHealthyDescription(
                     BlobStorageDataProtectionOptions.DefaultContainerName
                 )
             );
@@ -388,7 +439,7 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
     private static (DataProtectionKeyRingHealthCheck Check, HealthCheckContext Context) _CreateCheck(
         IBlobStorage storage,
         IBlobContainerManager? manager,
-        KeyRingProbeStyle probeStyle = KeyRingProbeStyle.WriteProbe
+        KeyRingProbeStyle probeStyle = KeyRingProbeStyle.ContainerExistence
     )
     {
         var repository = new BlobStorageDataProtectionXmlRepository(storage, manager);
@@ -411,6 +462,41 @@ public sealed class DataProtectionKeyRingHealthCheckTests : TestBase
                 tags: null
             ),
         };
+    }
+
+    /// <summary>A storage substitute whose container listing returns the given blob names.</summary>
+    private static IBlobStorage _StorageListing(params string[] names)
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        storage
+            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromResult(
+                    new BlobPage(
+                        names
+                            .Select(name => new BlobInfo
+                            {
+                                BlobKey = name,
+                                Created = DateTimeOffset.UnixEpoch,
+                                Modified = DateTimeOffset.UnixEpoch,
+                                Size = 1,
+                            })
+                            .ToList(),
+                        null
+                    )
+                )
+            );
+
+        return storage;
+    }
+
+    private static void _AssertNothingWritten(IBlobStorage storage)
+    {
+        storage
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([nameof(IBlobStorage.UploadAsync), nameof(IBlobStorage.DeleteAsync)]);
     }
 
     private static async Task _AssertSentinelUploadedAndDeletedAsync(IBlobStorage storage)

@@ -28,11 +28,11 @@ namespace Headless.DataProtection;
 /// </para>
 /// <para>
 /// <see cref="StoreElement"/> retries transient I/O and HTTP failures up to 4 times with exponential
-/// back-off and jitter. The container ensure (when an <see cref="IBlobContainerManager"/> is wired) runs inside the
-/// same resilience pipeline as the upload, so transient ensure failures are retried under the same predicate.
-/// When the write terminally fails (retries exhausted or a non-retried exception), the failure is wrapped in an
-/// <see cref="InvalidOperationException"/> naming the container, whether the ensure ran, and
-/// the remediation — with the original exception preserved as the inner exception.
+/// back-off and jitter. It never creates the container: <c>resources provision</c> does, through the
+/// <see cref="IBlobContainerManager"/>, so a running host needs no container-create permission. When the write
+/// terminally fails (retries exhausted or a non-retried exception), the failure is wrapped in an
+/// <see cref="InvalidOperationException"/> naming the container and the remediation, with the original exception
+/// preserved as the inner exception.
 /// </para>
 /// <para>Instances of this type are thread-safe.</para>
 /// </remarks>
@@ -77,7 +77,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     /// <summary>Initializes a new instance that reads and writes data-protection key XML to the given blob storage.</summary>
     /// <param name="storage">The blob storage backend to read and write key XML files.</param>
-    /// <param name="containerManager">Optional container manager used to ensure the DataProtection container before writing.</param>
+    /// <param name="containerManager">
+    /// Optional container manager the <c>resources provision</c> step creates the container with, and the startup check
+    /// and health check read its existence through. Key writes never call it.
+    /// </param>
     /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
     /// <param name="containerName">The top-level container that holds the key XML blobs.</param>
     /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
@@ -101,9 +104,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     }
 
     /// <summary>
-    /// The container manager wired for ensure/existence probing, or <see langword="null"/> in pre-provisioned mode.
-    /// Exposed so the key-ring health check can pivot between the cheap container-existence probe (manager wired)
-    /// and the sentinel write probe (no manager).
+    /// The container manager that provisions the container and answers existence checks, or <see langword="null"/> in
+    /// pre-provisioned mode.
     /// </summary>
     internal IBlobContainerManager? ContainerManager { get; }
 
@@ -244,10 +246,9 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// <inheritdoc />
     /// <remarks>
     /// Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.
-    /// The container ensure (when a manager is wired) and the upload run inside one resilience pipeline that retries
-    /// up to 4 times on transient <see cref="IOException"/> or <see cref="HttpRequestException"/> failures.
-    /// A terminal failure (retries exhausted or a non-retried exception) is wrapped in an
-    /// <see cref="InvalidOperationException"/> carrying the container name, whether the ensure ran, and the
+    /// The upload runs inside a resilience pipeline that retries up to 4 times on transient <see cref="IOException"/>
+    /// or <see cref="HttpRequestException"/> failures. A terminal failure (retries exhausted or a non-retried
+    /// exception) is wrapped in an <see cref="InvalidOperationException"/> carrying the container name and the
     /// remediation, with the original exception as the inner exception.
     /// When <paramref name="friendlyName"/> is <see langword="null"/> or empty, a random GUID-based file name is used.
     /// </remarks>
@@ -290,10 +291,6 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             var (repository, element, location) = state;
 
-            // The ensure runs INSIDE the resilience pipeline so the same transient predicate that protects the
-            // upload also protects the container-ensure backend call.
-            await repository._EnsureContainerAsync(cancellationToken).ConfigureAwait(false);
-
             await using var memoryStream = new MemoryStream();
             await element
                 .SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken)
@@ -308,10 +305,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     /// <summary>
     /// Verifies write access to the key container by uploading and deleting a reserved sentinel
-    /// blob (<see cref="WriteProbeBlobName"/>) through the exact ensure + resilience pipeline the key writes use.
-    /// This is how key-ring validation exercises the write path even when the key ring already holds a valid key —
-    /// a state in which the protect/unprotect round-trip performs no write and lost write permission would
-    /// otherwise stay hidden until the ~90-day key rotation.
+    /// blob (<see cref="WriteProbeBlobName"/>) through the resilience pipeline the key writes use. Only the opt-in
+    /// <see cref="KeyRingProbeStyle.WriteProbe"/> health check calls it; the host never writes it at start.
     /// </summary>
     /// <exception cref="InvalidOperationException">The probe write terminally failed; the original backend exception is the inner exception.</exception>
     internal async Task ProbeWriteAccessAsync(CancellationToken cancellationToken = default)
@@ -340,11 +335,8 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             var (repository, location) = state;
 
-            // Same shape as the key write: ensure INSIDE the pipeline, then upload — followed by a delete so the
-            // sentinel does not accumulate. A retry re-running the upload after a transient delete failure is
-            // harmless because the sentinel name is fixed and overwritten idempotently.
-            await repository._EnsureContainerAsync(cancellationToken).ConfigureAwait(false);
-
+            // Upload, then delete so the sentinel does not accumulate. A retry re-running the upload after a transient
+            // delete failure is harmless because the sentinel name is fixed and overwritten idempotently.
             await using var memoryStream = new MemoryStream("<startupWriteProbe />"u8.ToArray());
             await repository
                 ._storage.UploadAsync(location, memoryStream, metadata: null, cancellationToken: cancellationToken)
@@ -355,28 +347,42 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     }
 
     /// <summary>
-    /// Builds the terminal-failure message: context, not classification. It names the container, states whether a
-    /// manager was wired (ensure ran) or not (pre-provisioned mode), and points at the remediation — it deliberately
-    /// does NOT sniff the backend exception to guess a failure kind (e.g. "container missing").
+    /// Counts the key blobs in the container with one listing, without downloading any: the cheap read the startup
+    /// check, the provisioner status, and the read-only health probe use. The write-probe sentinel is not a key.
     /// </summary>
-    private string _BuildTerminalStoreFailureMessage(string fileName)
+    /// <param name="maxCount">Stops listing once this many keys are seen.</param>
+    /// <param name="cancellationToken">Cancels the listing.</param>
+    internal async Task<int> CountKeyBlobsAsync(int maxCount, CancellationToken cancellationToken)
     {
-        var ensureContext = ContainerManager is not null
-            ? "An IBlobContainerManager was wired, so the container ensure ran inside the same retry pipeline as the write."
-            : "No IBlobContainerManager is wired (pre-provisioned mode), so the container was not ensured before the write.";
+        var count = 0;
 
-        return $"Failed to persist data-protection key '{fileName}' to the '{ContainerName}' blob container. "
-            + $"{ensureContext} Verify the '{ContainerName}' container exists and the credentials allow writes, wire "
-            + "an IBlobContainerManager (the storage+manager overload of PersistKeysToBlobStorage, or a DI/keyed "
-            + "overload that resolves one) so the container is ensured before writes, or see the "
-            + "PersistKeysToBlobStorage provisioning documentation (BlobContainerProvisioning).";
+        await foreach (
+            var blob in _storage
+                .GetBlobsAsync(new BlobQuery(ContainerName), "*.xml", cancellationToken)
+                .ConfigureAwait(false)
+        )
+        {
+            if (string.Equals(blob.BlobKey, WriteProbeBlobName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (++count >= maxCount)
+            {
+                break;
+            }
+        }
+
+        return count;
     }
 
-    private async ValueTask _EnsureContainerAsync(CancellationToken cancellationToken)
+    // Context, not classification: names the container and the remediation, and deliberately does not sniff the
+    // backend exception to guess a failure kind such as "container missing".
+    private string _BuildTerminalStoreFailureMessage(string fileName)
     {
-        if (ContainerManager is not null)
-        {
-            await ContainerManager.EnsureContainerAsync(ContainerName, cancellationToken).ConfigureAwait(false);
-        }
+        return $"Failed to persist data-protection key '{fileName}' to the '{ContainerName}' blob container. "
+            + $"Verify the '{ContainerName}' container exists and the credentials allow writes. The host never creates "
+            + $"the container: run 'resources provision -k {BlobStorageDataProtectionOptions.KeysResourceKind}' to create "
+            + "it, or create it out of band (portal, CLI, IaC).";
     }
 }

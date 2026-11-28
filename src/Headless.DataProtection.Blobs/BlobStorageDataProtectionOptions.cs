@@ -12,6 +12,13 @@ public sealed class BlobStorageDataProtectionOptions
     public const string DefaultContainerName = "DataProtection";
 
     /// <summary>
+    /// The <see cref="Headless.Hosting.IResourceProvisioner.Kind" /> of the blob-backed key ring (its container and
+    /// first key), which <c>resources provision -k</c> selects and
+    /// <see cref="Headless.Hosting.ResourceProvisioningOptions.StartupChecks" /> is keyed by.
+    /// </summary>
+    public const string KeysResourceKind = "DataProtectionKeys";
+
+    /// <summary>
     /// The top-level blob container that holds the key XML blobs. Defaults to <c>DataProtection</c>.
     /// </summary>
     /// <remarks>

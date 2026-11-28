@@ -12,25 +12,22 @@ namespace Headless.DataProtection;
 /// <summary>
 /// Readiness health check for the blob-backed data-protection key ring — the continuous complement to the
 /// <c>ValidateKeyRing</c> warm-up: the warm-up validates once after the host starts, this check keeps validating on
-/// every probe, catching a container deleted or write permission revoked later (which the one-shot warm-up cannot
-/// see). Registered by
+/// every probe, catching a container deleted later (which the one-shot warm-up cannot see). Registered by
 /// <see cref="DataProtectionHealthChecksExtensions.AddDataProtectionKeyRing"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The probe is selected by <see cref="KeyRingProbeStyle"/>, not by the wiring, so <c>Healthy</c> has ONE meaning
-/// per registration (each probe reports a distinct description so operators can tell which ran):
+/// The probe is selected by <see cref="KeyRingProbeStyle"/>, and each probe reports a distinct description so
+/// operators can tell which ran:
 /// </para>
 /// <list type="bullet">
-/// <item><description><see cref="KeyRingProbeStyle.WriteProbe"/> (default) — the definitive sentinel write probe
-/// (<see cref="BlobStorageDataProtectionXmlRepository.ProbeWriteAccessAsync"/>): a reserved sentinel blob is
-/// uploaded and deleted through the same ensure + retry pipeline the key writes use, manager or not. Crash-safe —
-/// the sentinel is always excluded from key-ring loading. <c>Healthy</c> means the key ring can actually be
-/// persisted (what rotation needs).</description></item>
-/// <item><description><see cref="KeyRingProbeStyle.ContainerExistence"/> (explicit opt-down) — a cheap
-/// <see cref="IBlobContainerManager.ContainerExistsAsync"/> existence check on the key container. Does NOT verify write access; a missing container means key rotation will fail. When no manager is
-/// wired, the check falls back to the write probe (the only probe possible) with a description noting the
-/// fallback.</description></item>
+/// <item><description><see cref="KeyRingProbeStyle.ContainerExistence"/> (default) — read-only. With a manager wired,
+/// <see cref="IBlobContainerManager.ContainerExistsAsync"/> on the key container; without one, a listing that
+/// requires at least one key. Does NOT verify write access.</description></item>
+/// <item><description><see cref="KeyRingProbeStyle.WriteProbe"/> (explicit opt-in) — the sentinel write probe
+/// (<see cref="BlobStorageDataProtectionXmlRepository.ProbeWriteAccessAsync"/>): a reserved sentinel blob is uploaded
+/// and deleted through the retry pipeline the key writes use. Crash-safe — the sentinel is always excluded from
+/// key-ring loading. <c>Healthy</c> means the key ring can actually be persisted (what rotation needs).</description></item>
 /// </list>
 /// <para>
 /// When the configured <see cref="KeyManagementOptions.XmlRepository"/> is not the blob-backed repository, the
@@ -51,8 +48,8 @@ internal sealed class DataProtectionKeyRingHealthCheck(
 
     /// <summary>Description reported when the container-manager existence probe finds no container.</summary>
     internal static string ContainerMissingDescription(string containerName) =>
-        $"The '{containerName}' blob container is missing — key rotation "
-        + "will fail (container-manager existence probe).";
+        $"The '{containerName}' blob container is missing; run 'resources provision -k "
+        + $"{BlobStorageDataProtectionOptions.KeysResourceKind}' (container-manager existence probe).";
 
     /// <summary>Description reported when the container-manager existence probe itself throws.</summary>
     internal static string ExistenceProbeFailedDescription(string containerName) =>
@@ -67,23 +64,19 @@ internal sealed class DataProtectionKeyRingHealthCheck(
         $"Write access to the '{containerName}' blob container could not "
         + "be verified (sentinel write probe: upload + delete).";
 
-    /// <summary>
-    /// Description reported when a <see cref="KeyRingProbeStyle.ContainerExistence"/> registration succeeded via
-    /// the write-probe fallback because no container manager is wired.
-    /// </summary>
-    internal static string ExistenceFallbackHealthyDescription(string containerName) =>
-        $"Write access to the '{containerName}' blob container verified "
-        + "(sentinel write probe — the requested container-existence probe is unavailable because no "
-        + "IBlobContainerManager is wired).";
+    /// <summary>Description reported when the key listing (no manager wired) finds at least one key.</summary>
+    internal static string KeyListingHealthyDescription(string containerName) =>
+        $"The '{containerName}' blob container holds a data-protection key "
+        + "(key listing; no IBlobContainerManager is wired; write access not verified).";
 
-    /// <summary>
-    /// Description reported when a <see cref="KeyRingProbeStyle.ContainerExistence"/> registration failed via the
-    /// write-probe fallback because no container manager is wired.
-    /// </summary>
-    internal static string ExistenceFallbackFailedDescription(string containerName) =>
-        $"Write access to the '{containerName}' blob container could not "
-        + "be verified (sentinel write probe — the requested container-existence probe is unavailable because no "
-        + "IBlobContainerManager is wired).";
+    /// <summary>Description reported when the key listing (no manager wired) finds no key.</summary>
+    internal static string KeyListingEmptyDescription(string containerName) =>
+        $"The '{containerName}' blob container holds no data-protection key; run 'resources provision -k "
+        + $"{BlobStorageDataProtectionOptions.KeysResourceKind}' (key listing).";
+
+    /// <summary>Description reported when the key listing (no manager wired) itself throws.</summary>
+    internal static string KeyListingFailedDescription(string containerName) =>
+        $"The '{containerName}' blob container could not be listed (key listing).";
 
     /// <summary>Description reported when <see cref="KeyManagementOptions"/> cannot be materialized.</summary>
     internal const string OptionsResolutionFailedDescription =
@@ -129,42 +122,54 @@ internal sealed class DataProtectionKeyRingHealthCheck(
             );
         }
 
-        if (probeStyle is KeyRingProbeStyle.ContainerExistence)
+        if (probeStyle is KeyRingProbeStyle.WriteProbe)
         {
-            if (repository.ContainerManager is { } containerManager)
-            {
-                return await _RunExistenceProbeAsync(
-                        containerManager,
-                        repository.ContainerName,
-                        context,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            // The consumer opted down to the existence probe but no manager is wired (pre-provisioned mode), so
-            // the stronger write probe is the only probe possible — fall back to it (with a description noting
-            // the fallback) rather than degrading a legitimate wiring.
             return await _RunWriteProbeAsync(
                     repository,
                     context,
-                    ExistenceFallbackHealthyDescription(repository.ContainerName),
-                    ExistenceFallbackFailedDescription(repository.ContainerName),
+                    WriteProbeHealthyDescription(repository.ContainerName),
+                    WriteProbeFailedDescription(repository.ContainerName),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
         }
 
-        // Default (WriteProbe): the definitive probe runs manager or not, so Healthy uniformly means "the key
-        // ring can be persisted" — an existence-only manager answer must never mask revoked write access.
-        return await _RunWriteProbeAsync(
-                repository,
-                context,
-                WriteProbeHealthyDescription(repository.ContainerName),
-                WriteProbeFailedDescription(repository.ContainerName),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        if (repository.ContainerManager is { } containerManager)
+        {
+            return await _RunExistenceProbeAsync(containerManager, repository.ContainerName, context, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Pre-provisioned mode has no manager to ask, so a one-page key listing is the read that proves the container
+        // is reachable and provisioned.
+        return await _RunKeyListingProbeAsync(repository, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<HealthCheckResult> _RunKeyListingProbeAsync(
+        BlobStorageDataProtectionXmlRepository repository,
+        HealthCheckContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var keys = await repository.CountKeyBlobsAsync(maxCount: 1, cancellationToken).ConfigureAwait(false);
+
+            return keys > 0
+                ? HealthCheckResult.Healthy(KeyListingHealthyDescription(repository.ContainerName))
+                : new HealthCheckResult(
+                    context.Registration.FailureStatus,
+                    KeyListingEmptyDescription(repository.ContainerName)
+                );
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new HealthCheckResult(
+                context.Registration.FailureStatus,
+                KeyListingFailedDescription(repository.ContainerName),
+                exception
+            );
+        }
     }
 
     private static async Task<HealthCheckResult> _RunExistenceProbeAsync(

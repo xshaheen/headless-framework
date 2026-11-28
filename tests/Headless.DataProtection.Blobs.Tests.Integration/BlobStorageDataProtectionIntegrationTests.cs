@@ -69,12 +69,21 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         );
     }
 
+    // The repository never creates its container, so each test creates it first, as the provision step would.
+    private async Task<BlobStorageDataProtectionXmlRepository> _CreateRepositoryAsync(AzureBlobStorage storage)
+    {
+        var manager = _CreateContainerManager();
+        await manager.EnsureContainerAsync(BlobStorageDataProtectionOptions.DefaultContainerName, AbortToken);
+
+        return new BlobStorageDataProtectionXmlRepository(storage, manager, LoggerFactory);
+    }
+
     [Fact]
     public async Task should_persist_multiple_keys()
     {
         // given
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
+        var repository = await _CreateRepositoryAsync(storage);
 
         var keys = Enumerable
             .Range(0, 3)
@@ -113,10 +122,9 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_preserve_xml_structure()
     {
-        // given: the manager is required — the Azure data plane treats a missing container as an error
-        // (no auto-create), so a fresh Azurite instance needs the ensure-before-write path.
+        // given
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
+        var repository = await _CreateRepositoryAsync(storage);
 
         var keyId = Faker.Random.Guid().ToString("N");
         var complexElement = new XElement(
@@ -171,10 +179,9 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_handle_concurrent_operations()
     {
-        // given: the manager is required — the Azure data plane treats a missing container as an error
-        // (no auto-create), so a fresh Azurite instance needs the ensure-before-write path.
+        // given
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
+        var repository = await _CreateRepositoryAsync(storage);
         const int keyCount = 10;
 
         var keys = Enumerable
@@ -209,95 +216,6 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             );
             retrieved.Should().NotBeNull($"concurrent key {keyId} should be retrieved");
         }
-    }
-
-    [Fact]
-    public async Task should_keep_the_host_unready_until_the_key_container_exists_then_become_ready()
-    {
-        // given: the container is acknowledged as pre-provisioned but does not exist yet, so every key write fails
-        // against the real backend until someone creates it.
-        await using var storage = _CreateStorage();
-        var container = _blobServiceClient!.GetBlobContainerClient("dataprotection");
-        await container.DeleteIfExistsAsync(cancellationToken: AbortToken);
-
-        var builder = Host.CreateApplicationBuilder();
-        builder.Logging.AddProvider(LoggerProvider);
-        using var warmupFailed = new WarmupFailedSignal();
-        builder.Logging.AddProvider(warmupFailed);
-        builder
-            .Services.AddDataProtection()
-            .PersistKeysToBlobStorage(storage, provisioning: BlobContainerProvisioning.PreProvisioned)
-            .ValidateKeyRing();
-        using var host = builder.Build();
-
-        // when: the start does not wait for the key store. The runner records each failure as the readiness check's
-        // last error before it logs the failed attempt.
-        await host.StartAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
-        await warmupFailed.Failed.Bounded();
-        var failing = await _CheckReadinessAsync(host.Services);
-
-        // then: unready, naming the validation and the missing container.
-        failing.Status.Should().Be(HealthStatus.Unhealthy);
-        failing.Exception!.Message.Should().Contain("DataProtectionKeyRing");
-        failing.Exception.Message.Should().Contain("key-ring validation failed");
-
-        // when: the container is provisioned, the retried validation writes a real key.
-        await container.CreateIfNotExistsAsync(cancellationToken: AbortToken);
-        await host.Services.WaitForWarmupAsync(AbortToken).Bounded();
-        var ready = await _CheckReadinessAsync(host.Services);
-
-        // then
-        ready.Status.Should().Be(HealthStatus.Healthy);
-        var blobs = new List<string>();
-        await foreach (var blob in container.GetBlobsAsync(cancellationToken: AbortToken))
-        {
-            blobs.Add(blob.Name);
-        }
-
-        blobs.Should().ContainSingle(name => name.StartsWith("key-", StringComparison.Ordinal));
-        await host.StopAsync(AbortToken);
-    }
-
-    private static async Task<HealthReportEntry> _CheckReadinessAsync(IServiceProvider services)
-    {
-        var report = await services
-            .GetRequiredService<HealthCheckService>()
-            .CheckHealthAsync(
-                r => string.Equals(r.Name, HeadlessHealthCheckNames.Warmup, StringComparison.Ordinal),
-                AbortToken
-            );
-
-        return report.Entries[HeadlessHealthCheckNames.Warmup];
-    }
-
-    private sealed class WarmupFailedSignal : ILoggerProvider, ILogger
-    {
-        private readonly TaskCompletionSource _failed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public Task Failed => _failed.Task;
-
-        public ILogger CreateLogger(string categoryName) => this;
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            if (string.Equals(eventId.Name, "WarmupFailed", StringComparison.Ordinal))
-            {
-                _failed.TrySetResult();
-            }
-        }
-
-        public void Dispose() { }
     }
 
     private sealed class TestAzureBlobContainerManager(

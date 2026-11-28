@@ -13,44 +13,27 @@ namespace Headless.DataProtection;
 public static class DataProtectionKeyRingValidationExtensions
 {
     /// <summary>
-    /// Registers an opt-in warm-up that validates the data-protection key ring once the host has started, converting
-    /// lazy first-write/rotation failures (missing container, bad credentials, missing write permission, misconfigured
-    /// manager) into deploy-time failures without delaying the start.
+    /// Registers an opt-in warm-up that reads the data-protection key ring once the host has started, so a missing
+    /// container or key, bad credentials, or a misconfigured manager keeps the host unready at deploy time without
+    /// delaying the start.
     /// </summary>
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
     /// <param name="configure">
     /// Optional configuration for <see cref="DataProtectionKeyRingValidationOptions"/>; by default a failure keeps the
-    /// host unready (<see cref="KeyRingCheck.GateReadiness"/>) and the write probe
-    /// (<see cref="DataProtectionKeyRingValidationOptions.ProbeWritePath"/>) is enabled.
+    /// host unready (<see cref="KeyRingCheck.GateReadiness"/>).
     /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <remarks>
     /// <para>
-    /// Key writes are lazy — the first write happens on first boot and again at the ~90-day key rotation — so a
-    /// misconfigured container or manager can stay hidden for months post-deploy. The validation behaves per
-    /// <see cref="KeyManagementOptions.AutoGenerateKeys"/>:
-    /// </para>
-    /// <para>
-    /// <b><c>AutoGenerateKeys == true</c> (default):</b> protects and unprotects a small payload through the real
-    /// provider. On a fresh deployment this generates a key and drives the full persistence path (container ensure +
-    /// blob upload), so any container/permission problem surfaces at deploy time.
-    /// <b><c>AutoGenerateKeys == false</c> (designated-key-writer topologies):</b> performs a read-only probe via
-    /// <c>IKeyManager.GetAllKeys()</c> — the repository read path is exercised but no key is ever generated. A
-    /// reachable-but-empty key ring fails validation: the node would have no usable key for its first protected
-    /// operation.
-    /// </para>
-    /// <para>
-    /// In BOTH modes (unless <see cref="DataProtectionKeyRingValidationOptions.ProbeWritePath"/> is disabled), write
-    /// access is verified with a real write: a reserved sentinel blob is uploaded to and deleted from the
-    /// key container through the same ensure + retry pipeline the key writes use. Without it, a
-    /// valid existing key means the round-trip performs no write and lost write permission stays hidden until
-    /// rotation day.
+    /// The validation writes nothing. With a container manager wired it checks that the key container exists, then it
+    /// loads the key ring through <see cref="IKeyManager.GetAllKeys"/> and fails when the ring holds no key, whatever
+    /// <see cref="KeyManagementOptions.AutoGenerateKeys"/> says: <c>resources provision</c> creates the container and
+    /// the first key, never the host.
     /// </para>
     /// <para>
     /// The validation is an <c>IWarmup</c>: it runs in the background after the host has started, so reading the key
-    /// blobs and writing the sentinel never delay the start. With
-    /// <see cref="KeyRingCheck.GateReadiness"/> the <c>warmup</c> readiness check stays <c>Unhealthy</c>,
-    /// reporting the validation error, and the validation is retried until it succeeds. With
+    /// blobs never delays the start. With <see cref="KeyRingCheck.GateReadiness"/> the <c>warmup</c> readiness check
+    /// stays <c>Unhealthy</c>, reporting the validation error, and the validation is retried until it succeeds. With
     /// <see cref="KeyRingCheck.LogOnly"/> it runs once and never gates readiness. Registration is idempotent:
     /// calling this method twice registers a single warm-up; a second call's <paramref name="configure"/> still
     /// applies on top of the first.

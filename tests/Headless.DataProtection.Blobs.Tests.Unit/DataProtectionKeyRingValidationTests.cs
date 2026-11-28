@@ -23,57 +23,36 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
     #region Probe behavior
 
     [Fact]
-    public async Task should_persist_key_through_real_path_and_round_trip_when_auto_generate_keys_enabled()
+    public async Task should_read_the_key_ring_without_writing_when_the_container_and_a_key_exist()
     {
-        // given: a working blob backend and a fresh deployment (no keys yet).
+        // given: a provisioned key ring.
+        var stored = await _SeedKeyRingAsync();
         var services = _CreateServices();
-        var storage = _CreateWorkingStorage();
-        var manager = Substitute.For<IBlobContainerManager>();
+        var storage = InMemoryKeyStorage.Fake(stored);
+        var manager = _Manager();
         services.AddDataProtection().PersistKeysToBlobStorage(storage, manager).ValidateKeyRing();
 
         await using var provider = services.BuildServiceProvider();
-        var sut = _GetWarmup(provider);
 
         // when
-        await sut.WarmUpAsync(AbortToken);
+        await _GetWarmup(provider).WarmUpAsync(AbortToken);
 
-        // then: the round-trip forced key generation through the REAL persistence path — the container was
-        // ensured and StoreElement reached the storage — and the write probe uploaded AND deleted its sentinel.
-        await manager.Received().EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
-        await storage
-            .Received(1)
-            .UploadAsync(
-                Arg.Is<BlobLocation>(l => l.Path != BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            );
-        await storage
-            .Received(1)
-            .UploadAsync(
-                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            );
-        await storage
-            .Received(1)
-            .DeleteAsync(
-                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
-                Arg.Any<CancellationToken>()
-            );
+        // then: one existence read and the key-ring read; nothing created, uploaded, or deleted.
+        await manager.Received(1).ContainerExistsAsync("DataProtection", Arg.Any<CancellationToken>());
+        await manager.DidNotReceiveWithAnyArgs().EnsureContainerAsync(default!, CancellationToken.None);
+        await storage.Received().ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>());
+        _AssertNothingWritten(storage);
     }
 
     [Fact]
-    public async Task should_throw_actionable_error_with_cause_when_store_fails_and_mode_is_gate_readiness()
+    public async Task should_fail_naming_resources_provision_without_reading_keys_when_the_container_is_missing()
     {
-        // given: a fresh-deployment-shaped failure — the key write to the backend always fails.
+        // given
         var services = _CreateServices();
+        var storage = InMemoryKeyStorage.Fake();
         services
             .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateFailingStorage(), Substitute.For<IBlobContainerManager>())
+            .PersistKeysToBlobStorage(storage, _Manager(containerExists: false))
             .ValidateKeyRing();
 
         await using var provider = services.BuildServiceProvider();
@@ -82,26 +61,68 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         // when
         var act = async () => await sut.WarmUpAsync(AbortToken);
 
+        // then
+        sut.GatesReadiness.Should().BeTrue();
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'DataProtection' blob container does not exist*")
+            .WithMessage("*resources provision -k DataProtectionKeys*");
+        await storage.DidNotReceiveWithAnyArgs().ListAsync(default!, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_fail_without_generating_a_key_when_the_key_ring_is_empty_and_auto_generate_keys_is_on()
+    {
+        // given: a fresh deployment whose provision step never ran. AutoGenerateKeys keeps its default (true), which
+        // used to make the validation create and upload the first key itself.
+        var services = _CreateServices();
+        var storage = InMemoryKeyStorage.Fake();
+        services.AddDataProtection().PersistKeysToBlobStorage(storage, _Manager()).ValidateKeyRing();
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = async () => await _GetWarmup(provider).WarmUpAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'DataProtection' blob container holds no key*")
+            .WithMessage("*resources provision -k DataProtectionKeys*");
+        _AssertNothingWritten(storage);
+    }
+
+    [Fact]
+    public async Task should_throw_actionable_error_with_cause_when_the_store_cannot_be_read_and_mode_is_gate_readiness()
+    {
+        // given
+        var services = _CreateServices();
+        services.AddDataProtection().PersistKeysToBlobStorage(_CreateUnreadableStorage(), _Manager()).ValidateKeyRing();
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = async () => await _GetWarmup(provider).WarmUpAsync(AbortToken);
+
         // then: the readiness check reports this message, so it names the container, the remediation, and the
         // backend's own reason.
-        sut.GatesReadiness.Should().BeTrue();
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*key-ring validation failed*")
             .WithMessage("*'DataProtection'*")
-            .WithMessage("*IBlobContainerManager*")
-            .WithMessage("*Simulated fresh-deployment write failure*");
+            .WithMessage("*resources provision -k DataProtectionKeys*")
+            .WithMessage("*Simulated read failure*");
     }
 
     [Fact]
-    public async Task should_log_critical_and_complete_without_gating_when_store_fails_and_mode_is_log_only()
+    public async Task should_log_critical_and_complete_without_gating_when_the_store_cannot_be_read_and_mode_is_log_only()
     {
-        // given: the same failure, but the consumer opted into LogOnly.
+        // given
         var services = _CreateServices();
         var logger = _RegisterCapturingLogger(services);
         services
             .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateFailingStorage(), Substitute.For<IBlobContainerManager>())
+            .PersistKeysToBlobStorage(_CreateUnreadableStorage(), _Manager())
             .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
 
         await using var provider = services.BuildServiceProvider();
@@ -117,65 +138,15 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
     }
 
     [Fact]
-    public async Task should_probe_read_path_without_generating_keys_when_auto_generate_keys_disabled()
-    {
-        // given: a designated-key-writer topology with a key already written by the designated writer.
-        var stored = await _SeedKeyRingAsync();
-        var services = _CreateServices();
-        var storage = _CreateWorkingStorage(stored);
-        services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing(options => options.ProbeWritePath = false);
-        services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
-
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        await _GetWarmup(provider).WarmUpAsync(AbortToken);
-
-        // then: the read-only GetAllKeys probe exercised the repository read path and passed (keys present),
-        // and the protect path was never taken (no key generated, nothing uploaded).
-        await storage.Received(1).ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>());
-        await storage.DidNotReceiveWithAnyArgs().UploadAsync(default, null!, null, null, CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task should_fail_when_key_ring_empty_and_auto_generate_keys_disabled()
-    {
-        // given: the backend is reachable but holds NO keys — this node cannot create one (AutoGenerateKeys is
-        // false), so its first protected operation would fail later. That must fail validation, not pass it.
-        var services = _CreateServices();
-        services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing();
-        services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
-
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        var act = async () => await _GetWarmup(provider).WarmUpAsync(AbortToken);
-
-        // then: the message distinguishes "reachable but empty" from backend errors.
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*'DataProtection'*")
-            .WithMessage("*found no keys*")
-            .WithMessage("*designated key writer*");
-    }
-
-    [Fact]
-    public async Task should_log_critical_when_key_ring_empty_and_mode_is_log_only()
+    public async Task should_log_critical_when_the_key_ring_is_empty_and_mode_is_log_only()
     {
         // given
         var services = _CreateServices();
         var logger = _RegisterCapturingLogger(services);
         services
             .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>())
+            .PersistKeysToBlobStorage(InMemoryKeyStorage.Fake(), _Manager())
             .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
-        services.Configure<KeyManagementOptions>(options => options.AutoGenerateKeys = false);
 
         await using var provider = services.BuildServiceProvider();
 
@@ -188,77 +159,23 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_when_write_access_lost_and_valid_key_already_exists()
-    {
-        // given: a valid key already exists, so the protect/unprotect round-trip performs NO write — without the
-        // write probe, lost write access would stay hidden until the ~90-day rotation.
-        var stored = await _SeedKeyRingAsync();
-        var services = _CreateServices();
-        var storage = _CreateReadOnlyStorage(stored);
-        services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing();
-
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        var act = async () => await _GetWarmup(provider).WarmUpAsync(AbortToken);
-
-        // then: the sentinel write is the only write attempted, and it fails with the container context.
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*key-ring validation failed*")
-            .WithMessage("*'DataProtection'*");
-        await storage
-            .Received(1)
-            .UploadAsync(
-                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
-    public async Task should_skip_write_probe_when_probe_write_path_disabled()
-    {
-        // given
-        var services = _CreateServices();
-        var storage = _CreateWorkingStorage();
-        services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(storage, Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing(options => options.ProbeWritePath = false);
-
-        await using var provider = services.BuildServiceProvider();
-
-        // when
-        await _GetWarmup(provider).WarmUpAsync(AbortToken);
-
-        // then: the round-trip key write still happened, but no sentinel was uploaded or deleted.
-        await storage
-            .DidNotReceive()
-            .UploadAsync(
-                Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            );
-        await storage.DidNotReceiveWithAnyArgs().DeleteAsync(default, CancellationToken.None);
-    }
-
-    [Fact]
     public async Task should_propagate_cancellation_when_the_host_stops_during_validation()
     {
         // given: LogOnly would swallow a validation failure, but a stop request is not one.
         var services = _CreateServices();
         var logger = _RegisterCapturingLogger(services);
+        var manager = _Manager();
+        manager
+            .ContainerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
+
+                return ValueTask.FromResult(true);
+            });
         services
             .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>())
+            .PersistKeysToBlobStorage(InMemoryKeyStorage.Fake(), manager)
             .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
 
         await using var provider = services.BuildServiceProvider();
@@ -278,9 +195,7 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
     {
         // given: wiring the validation twice (e.g. from two composition helpers) must not run it twice.
         var services = _CreateServices();
-        var builder = services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateWorkingStorage(), Substitute.For<IBlobContainerManager>());
+        var builder = services.AddDataProtection().PersistKeysToBlobStorage(InMemoryKeyStorage.Fake(), _Manager());
 
         // when
         builder.ValidateKeyRing();
@@ -312,8 +227,9 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         // given: every key-store read hangs until released. A validation that ran during the start would hang the
         // start with it. ASP.NET Core's own data-protection hosted service also loads the key ring during the start,
         // so it is removed here to isolate this package's contribution.
+        var stored = await _SeedKeyRingAsync();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var storage = _CreateWorkingStorage(readGate: release.Task);
+        var storage = InMemoryKeyStorage.Fake(stored, readGate: release.Task);
         using var host = _BuildHost(
             builder =>
                 builder.Services.AddDataProtection().PersistKeysToBlobStorage(storage, _Manager()).ValidateKeyRing(),
@@ -331,15 +247,17 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         release.SetResult();
         await _WaitUntilWarmAsync(host.Services);
         (await _CheckReadinessAsync(host.Services)).Status.Should().Be(HealthStatus.Healthy);
+        _AssertNothingWritten(storage);
         await host.StopAsync(AbortToken);
     }
 
     [Fact]
     public async Task should_keep_readiness_unhealthy_with_the_error_until_the_store_works_when_mode_is_gate_readiness()
     {
-        // given: the store rejects every write until it is fixed.
+        // given: the store rejects every read until it is fixed.
+        var stored = await _SeedKeyRingAsync();
         var broken = new StrongBox<bool>(true);
-        var storage = _CreateWorkingStorage(writesFail: broken);
+        var storage = InMemoryKeyStorage.Fake(stored, readsFail: broken);
         using var logs = new RecordingLoggerProvider();
         using var host = _BuildHost(builder =>
         {
@@ -355,8 +273,8 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         // then: unready, naming the validation and its actionable error, while the store is broken.
         failing.Status.Should().Be(HealthStatus.Unhealthy);
         failing.Exception!.Message.Should().Contain(DataProtectionKeyRingValidationWarmup.WarmupName);
-        failing.Exception.Message.Should().Contain("key-ring validation failed");
-        failing.Exception.Message.Should().Contain("Simulated write failure");
+        // The key ring's own startup check reads the same store, so either warm-up's error may be the last one.
+        failing.Exception.Message.Should().Contain("Simulated read failure");
 
         // when: the store is fixed, the retried validation succeeds.
         broken.Value = false;
@@ -366,15 +284,16 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         (await _CheckReadinessAsync(host.Services))
             .Status.Should()
             .Be(HealthStatus.Healthy);
+        _AssertNothingWritten(storage);
         await host.StopAsync(AbortToken);
     }
 
     [Fact]
     public async Task should_stay_ready_and_log_the_failure_once_without_retry_when_mode_is_log_only()
     {
-        // given: a store that never accepts a write.
-        var broken = new StrongBox<bool>(true);
-        var storage = _CreateWorkingStorage(writesFail: broken);
+        // given: a store that never answers a read. The key ring's own startup check is turned off, so only the
+        // LogOnly validation sees the failure.
+        var storage = _CreateUnreadableStorage();
         using var logs = new RecordingLoggerProvider();
         using var host = _BuildHost(builder =>
         {
@@ -383,12 +302,16 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
                 .Services.AddDataProtection()
                 .PersistKeysToBlobStorage(storage, _Manager())
                 .ValidateKeyRing(options => options.Check = KeyRingCheck.LogOnly);
+            builder.Services.ConfigureResourceProvisioning(options =>
+                options.StartupChecks[BlobStorageDataProtectionOptions.KeysResourceKind] = ResourceStartupCheck.None
+            );
         });
 
         // when
         await host.StartAsync(AbortToken).WaitAsync(_WaitLimit, AbortToken);
+        await _WaitUntilWarmAsync(host.Services);
 
-        // then: ready at once, because the validation does not gate readiness.
+        // then: ready, because the failed validation does not gate readiness.
         (await _CheckReadinessAsync(host.Services))
             .Status.Should()
             .Be(HealthStatus.Healthy);
@@ -440,7 +363,24 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
         return builder.Build();
     }
 
-    private static IBlobContainerManager _Manager() => Substitute.For<IBlobContainerManager>();
+    private static IBlobContainerManager _Manager(bool containerExists = true)
+    {
+        var manager = Substitute.For<IBlobContainerManager>();
+        manager
+            .ContainerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(containerExists));
+
+        return manager;
+    }
+
+    private static void _AssertNothingWritten(IBlobStorage storage)
+    {
+        storage
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([nameof(IBlobStorage.UploadAsync), nameof(IBlobStorage.DeleteAsync)]);
+    }
 
     private static DataProtectionKeyRingValidationWarmup _GetWarmup(IServiceProvider provider)
     {
@@ -487,158 +427,27 @@ public sealed class DataProtectionKeyRingValidationTests : TestBase
     }
 
     /// <summary>
-    /// Runs a full validation against a fresh working backend so a REAL key (generated and persisted by the actual
-    /// key manager) exists in the returned store — the designated-key-writer / existing-key scenarios build on it.
+    /// Runs the deploy step against a fresh working backend so a REAL key (generated and persisted by the actual key
+    /// manager) exists in the returned store.
     /// </summary>
     private async Task<ConcurrentDictionary<string, byte[]>> _SeedKeyRingAsync()
     {
         var stored = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
         var services = _CreateServices();
-        services
-            .AddDataProtection()
-            .PersistKeysToBlobStorage(_CreateWorkingStorage(stored), Substitute.For<IBlobContainerManager>())
-            .ValidateKeyRing();
+        services.AddDataProtection().PersistKeysToBlobStorage(InMemoryKeyStorage.Fake(stored), _Manager());
 
         await using var provider = services.BuildServiceProvider();
-        await _GetWarmup(provider).WarmUpAsync(AbortToken);
+        await provider.ProvisionResourcesAsync(AbortToken);
+
+        stored.Should().ContainSingle("the provision step creates exactly one key on an empty ring");
 
         return stored;
     }
 
-    /// <summary>
-    /// A stateful storage substitute: uploads are captured in memory and served back by the listing/read calls, and
-    /// deletes remove them, so the real DataProtection key manager can complete a genuine store-then-load cycle
-    /// against it. <paramref name="readGate"/> holds every listing until it completes; <paramref name="writesFail"/>
-    /// rejects every upload while its value is <see langword="true"/>.
-    /// </summary>
-    private static IBlobStorage _CreateWorkingStorage(
-        ConcurrentDictionary<string, byte[]>? seed = null,
-        Task? readGate = null,
-        StrongBox<bool>? writesFail = null
-    )
+    /// <summary>A storage substitute whose every listing fails.</summary>
+    private static IBlobStorage _CreateUnreadableStorage()
     {
-        var stored = seed ?? new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
-        var storage = Substitute.For<IBlobStorage>();
-        _ConfigureReads(storage, stored, readGate);
-
-        storage
-            .UploadAsync(
-                Arg.Any<BlobLocation>(),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                // Honors the token like a real backend, so a stop request surfaces as cancellation.
-                call.Arg<CancellationToken>().ThrowIfCancellationRequested();
-
-                return writesFail?.Value == true
-                    ? throw new NotSupportedException("Simulated write failure")
-                    : new ValueTask(captureAsync(call.Arg<BlobLocation>(), call.Arg<Stream>()));
-            });
-
-        storage
-            .DeleteAsync(Arg.Any<BlobLocation>(), Arg.Any<CancellationToken>())
-            .Returns(call => ValueTask.FromResult(stored.TryRemove(call.Arg<BlobLocation>().Path, out _)));
-
-        return storage;
-
-        async Task captureAsync(BlobLocation location, Stream content)
-        {
-            await using var buffer = new MemoryStream();
-            await content.CopyToAsync(buffer);
-            stored[location.Path] = buffer.ToArray();
-        }
-    }
-
-    /// <summary>
-    /// A storage substitute that serves the given blobs for listing/reads but rejects every write — the
-    /// "lost write permission after deployment" shape.
-    /// </summary>
-    private static IBlobStorage _CreateReadOnlyStorage(ConcurrentDictionary<string, byte[]> stored)
-    {
-        var storage = Substitute.For<IBlobStorage>();
-        _ConfigureReads(storage, stored, readGate: null);
-
-        storage
-            .UploadAsync(
-                Arg.Any<BlobLocation>(),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
-
-        return storage;
-    }
-
-    private static void _ConfigureReads(
-        IBlobStorage storage,
-        ConcurrentDictionary<string, byte[]> stored,
-        Task? readGate
-    )
-    {
-        storage
-            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<BlobPage>(listAsync()));
-
-        storage
-            .OpenReadStreamAsync(Arg.Any<BlobLocation>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var path = call.Arg<BlobLocation>().Path;
-
-                var result = stored.TryGetValue(path, out var bytes)
-                    ? new BlobDownloadResult(new MemoryStream(bytes), path)
-                    : null;
-
-                return ValueTask.FromResult(result);
-            });
-
-        async Task<BlobPage> listAsync()
-        {
-            if (readGate is not null)
-            {
-                await readGate;
-            }
-
-            var blobs = stored
-                .Select(pair => new BlobInfo
-                {
-                    BlobKey = pair.Key,
-                    Created = DateTimeOffset.UtcNow,
-                    Modified = DateTimeOffset.UtcNow,
-                    Size = pair.Value.Length,
-                })
-                .ToList();
-
-            return new BlobPage(blobs, null);
-        }
-    }
-
-    /// <summary>A storage substitute whose listing is empty and whose upload always fails non-transiently.</summary>
-    private static IBlobStorage _CreateFailingStorage()
-    {
-        var storage = Substitute.For<IBlobStorage>();
-
-        storage
-            .ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(BlobPage.Empty));
-
-        storage
-            .UploadAsync(
-                Arg.Any<BlobLocation>(),
-                Arg.Any<Stream>(),
-                Arg.Any<string?>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ => throw new NotSupportedException("Simulated fresh-deployment write failure"));
-
-        return storage;
+        return InMemoryKeyStorage.Fake(readsFail: new StrongBox<bool>(true));
     }
 
     /// <summary>Records each log entry's event name so a test can count events and wait for one.</summary>

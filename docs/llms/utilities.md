@@ -489,7 +489,7 @@ For anything else, change the registration in `services.PostConfigure<HealthChec
 - One dependency gives one check. Checks that reach the same database (same provider, host, port, and database) or the same Redis deployment (same endpoints) collapse into one. The owner's check (`sql-*`, `dbcontext-*`) keeps its name, failure status, and timeout and takes the others' tags. So `jobs-storage-{T}` folds into `dbcontext-{T}`, a Messaging store on the application's database folds into `sql-postgresql`, and `distributed-locks-redis` folds into `cache-redis` when both use one deployment. A store on its own database keeps its own check. Turning the owner off leaves the next check probing the dependency.
 - Two connection pools to one database with different users share one probe. A credential that breaks for one of them shows up in its queries, not in readiness.
 
-**Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` or `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check. Add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection. SQLite and in-memory providers contribute no check. The data-protection key-ring check is opt-in through `AddDataProtectionKeyRing()`, because its probe writes to the store (see [api.md](api.md)).
+**Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` or `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check. Add one with `AddHeadlessHealthCheck`. Messaging PostgreSQL and SQL Server storage is the exception: it probes each store's own connection. SQLite and in-memory providers contribute no check. The data-protection key-ring check is opt-in through `AddDataProtectionKeyRing()`, because it adds a round trip to the key store on every probe (see [api.md](api.md#headlessdataprotectionblobs)).
 
 **Add your own check.** `AddHeadlessHealthCheck(name, probe, tags)` contributes a check with the same tags, naming, and failure reporting. The probe receives the check scope's services and a cancellation token. Completing means healthy. Throwing means unhealthy.
 
@@ -526,7 +526,7 @@ If your `/alive` endpoint filters on another tag, pass that tag (`AddHeadlessHea
 | `ProbeAllAsync(ct)` | Runs every check against its dependency | An operator's "run all checks now" action. Returns the run's `HealthReport`. |
 | `ProbeAsync(name, ct)` | Runs one check against its dependency | An operator's "run this check" action. Matches the name case-insensitively and returns `null` for a name no registration has. |
 
-Display code reads `GetSnapshot()`. Do not call a probe method on every page refresh: each probe reaches the real dependency, and some checks write to their store, such as the opt-in data-protection key-ring check (`AddDataProtectionKeyRing()`), which uploads and deletes a sentinel blob.
+Display code reads `GetSnapshot()`. Do not call a probe method on every page refresh: each probe reaches the real dependency, and some checks write to their store, such as the data-protection key-ring check registered with `KeyRingProbeStyle.WriteProbe`, which uploads and deletes a sentinel blob.
 
 To show this history to operators, add the dashboard's Cluster module (`AddCluster()`, [Headless.Cluster.Dashboard](coordination.md#headlessclusterdashboard)). Register your health checks before `AddCluster()` and it registers the monitor for you; register them after, and call `AddHeadlessHealthCheckMonitor()` yourself, or its Health view names this call as the missing step.
 
@@ -697,6 +697,7 @@ These kinds belong to one package each, and its guide describes the operations:
 | Kind | Constant | Registered by |
 | --- | --- | --- |
 | `EncryptionKeys` | `SetupEncryption.KeysResourceKind` | `AddHeadlessEncryption` ([Encryption](encryption.md)) |
+| `DataProtectionKeys` | `BlobStorageDataProtectionOptions.KeysResourceKind` | `PersistKeysToBlobStorage` ([Data protection](api.md#headlessdataprotectionblobs)) |
 | `MaxMind` | `SetupMaxMind.DatabasesResourceKind` | `UseMaxMind` ([IP geolocation](ip-geolocation.md)) |
 | `AuditLogPartitions` | `SetupAuditLogPostgreSql.PartitionsResourceKind` | `UsePostgreSql` with `AuditLogPartitioning.Monthly` ([Audit log](audit-log.md#monthly-partitions-postgresql)) |
 
